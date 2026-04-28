@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(py -m venv venv)",
+      "Bash(python -m venv venv)",
+      "Bash(where python *)",
+      "Bash(where python3 *)",
+      "Bash(where py *)",
+      "Bash(\"C:/Users/elif.cakir/Desktop/python-3.12.4/python.exe\" --version)",
+      "Bash(\"C:/Users/elif.cakir/Desktop/python-3.12.4/python.exe\" -m venv venv)",
+      "Bash(\"C:/Users/elif.cakir/Desktop/python-3.12.4/python.exe\" -c \"import sys; print\\(sys.executable\\); print\\(sys.path\\)\")",
+      "Bash(\"C:/Users/elif.cakir/Desktop/python-3.12.4/python.exe\" -m pip install -r requirements-dev.txt)",
+      "Bash(\"C:/Users/elif.cakir/Desktop/python-3.12.4/python.exe\" -m pytest tests/test_week.py -v)",
+      "Bash(\"C:/Users/elif.cakir/Desktop/python-3.12.4/python.exe\" -m pip install bcrypt)",
+      "Bash(\"C:/Users/elif.cakir/Desktop/python-3.12.4/python.exe\" -m py_compile app.py)",
+      "Bash(\"C:/Users/elif.cakir/Desktop/python-3.12.4/python.exe\" -m pytest tests/ -q)",
+      "Bash(\"C:/Users/elif.cakir/Desktop/python-3.12.4/python.exe\" -m py_compile pages/99_admin.py)",
+      "Bash(\"C:/Users/elif.cakir/Desktop/python-3.12.4/python.exe\" -m py_compile pages/01_sayim_girisi.py)",
+      "Bash(\"C:/Users/elif.cakir/Desktop/python-3.12.4/python.exe\" -m py_compile seed_test_data.py pages/04_analiz.py)",
+      "Bash(\"C:/Users/elif.cakir/Desktop/python-3.12.4/python.exe\" -m py_compile pages/04_analiz.py)",
+      "Bash(\"C:/Users/elif.cakir/Desktop/python-3.12.4/python.exe\" -m py_compile app.py utils/ui.py pages/01_sayim_girisi.py pages/02_anlik_durum.py pages/03_haftalik_takip.py pages/04_analiz.py pages/99_admin.py)"
+    ]
+  }
+}
