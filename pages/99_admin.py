@@ -10,6 +10,9 @@ Tüm değişiklikler audit_log'a yazılır.
 
 from __future__ import annotations
 
+from datetime import datetime
+from decimal import Decimal
+
 import streamlit as st
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -17,17 +20,22 @@ from sqlalchemy.orm import selectinload
 from db.connection import get_session
 from db.models import (
     AuditLog,
+    Color,
+    CountDetail,
+    CountSubmission,
     Department,
+    LateWindowOverride,
     ProductionSite,
     User,
     UserDepartment,
 )
-from utils.auth import hash_password, require_admin
+from utils.auth import hash_password, require_admin, restore_session_from_cookie
 from utils.ui import inject_css, page_header, render_sidebar_user
+from utils.week import current_week_iso, format_week_human, now_tr
 
 
-st.set_page_config(page_title="Admin Paneli", page_icon="⚙️", layout="wide")
 inject_css()
+restore_session_from_cookie()
 
 # ---------------------------------------------------------------------------
 # Yetki kontrolü — sadece adminler
@@ -41,10 +49,14 @@ render_sidebar_user(current_admin.full_name, current_admin.role)
 page_header(
     title="Admin Paneli",
     subtitle=f"Giriş yapan yönetici: {admin_username}",
-    icon="⚙️",
-)
+    )
 
-tab_users, tab_perms = st.tabs(["👥 Kullanıcılar", "🔗 Yetkilendirme"])
+tab_users, tab_perms, tab_late, tab_override = st.tabs([
+    "Kullanıcılar",
+    "Yetkilendirme",
+    "Geç Giriş",
+    "Sayım Override",
+])
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +112,7 @@ with tab_users:
                                 "role": u.role,
                             },
                         ))
-                        st.success(f"✅ '{new_username}' oluşturuldu.")
+                        st.success(f"'{new_username}' oluşturuldu.")
             except Exception as exc:
                 st.error(f"Hata: {exc}")
 
@@ -120,7 +132,7 @@ with tab_users:
             cols[0].write(f"**{u.username}**")
             cols[1].write(u.full_name)
             cols[2].write("Yönetici" if u.role == "admin" else "Kullanıcı")
-            cols[3].write("✅ Aktif" if u.is_active else "🚫 Pasif")
+            cols[3].write("Aktif" if u.is_active else "Pasif")
 
             # Kendini pasifleştirmesin
             if u.id == admin_id:
@@ -238,8 +250,326 @@ with tab_perms:
                             new_value={"department_ids": sorted(new_selection)},
                         ))
                     st.success(
-                        f"✅ Güncellendi: +{len(to_add)} eklendi, -{len(to_remove)} kaldırıldı."
+                        f"Güncellendi: +{len(to_add)} eklendi, -{len(to_remove)} kaldırıldı."
                     )
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Hata: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# TAB 3 — GEÇ GİRİŞ PENCERESİ
+# ---------------------------------------------------------------------------
+with tab_late:
+    st.subheader("Geç Giriş Penceresi")
+    st.caption("Kapanmış bir hafta için kullanıcıların sayım girebilmesini sağlar.")
+
+    with get_session() as s:
+        known_weeks = list(s.execute(
+            select(CountSubmission.week_iso)
+            .distinct()
+            .order_by(CountSubmission.week_iso.desc())
+        ).scalars())
+
+    current_week = current_week_iso()
+    if current_week not in known_weeks:
+        known_weeks = [current_week] + known_weeks
+
+    with st.form("late_window_form"):
+        selected_week = st.selectbox(
+            "Hafta",
+            known_weeks,
+            index=0,
+            format_func=lambda w: f"{w} — {format_week_human(w)}",
+        )
+        col_date, col_time = st.columns(2)
+        closes_date = col_date.date_input("Kapanış tarihi", value=now_tr().date())
+        closes_time = col_time.time_input("Kapanış saati", value=now_tr().time().replace(microsecond=0))
+        reason = st.text_area("Açıklama", placeholder="Örn. bölüm sayımı zamanında tamamlanamadı")
+        open_clicked = st.form_submit_button("Pencereyi Aç / Güncelle", use_container_width=True)
+
+    if open_clicked:
+        closes_at = now_tr(datetime.combine(closes_date, closes_time))
+        if closes_at <= now_tr():
+            st.error("Kapanış zamanı şu andan ileri olmalı.")
+        else:
+            try:
+                with get_session() as s:
+                    existing = s.get(LateWindowOverride, selected_week)
+                    old_value = None
+                    if existing is None:
+                        override = LateWindowOverride(
+                            week_iso=selected_week,
+                            opened_by=admin_id,
+                            closes_at=closes_at,
+                            reason=(reason.strip() or None),
+                        )
+                        s.add(override)
+                    else:
+                        old_value = {
+                            "closes_at": existing.closes_at.isoformat(),
+                            "reason": existing.reason,
+                        }
+                        existing.opened_by = admin_id
+                        existing.opened_at = now_tr()
+                        existing.closes_at = closes_at
+                        existing.reason = reason.strip() or None
+
+                    s.add(AuditLog(
+                        user_id=admin_id,
+                        action="late_window_open",
+                        entity_type="late_window_override",
+                        entity_id=None,
+                        old_value=old_value,
+                        new_value={
+                            "week_iso": selected_week,
+                            "closes_at": closes_at.isoformat(),
+                            "reason": reason.strip() or None,
+                        },
+                    ))
+                st.success(f"{selected_week} için geç giriş penceresi açıldı.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Hata: {exc}")
+
+    st.divider()
+    st.subheader("Açık / Geçmiş Pencereler")
+
+    with get_session() as s:
+        overrides = list(s.execute(
+            select(LateWindowOverride, User)
+            .join(User, User.id == LateWindowOverride.opened_by)
+            .order_by(LateWindowOverride.closes_at.desc())
+        ).all())
+
+    if not overrides:
+        st.info("Henüz geç giriş penceresi yok.")
+    else:
+        rows = []
+        current_time = now_tr()
+        for override, opened_by in overrides:
+            rows.append({
+                "Hafta": override.week_iso,
+                "Tarih Aralığı": format_week_human(override.week_iso),
+                "Durum": "Açık" if now_tr(override.closes_at) > current_time else "Kapandı",
+                "Kapanış": now_tr(override.closes_at).strftime("%Y-%m-%d %H:%M"),
+                "Açan": opened_by.full_name,
+                "Açıklama": override.reason or "-",
+            })
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+
+
+# ---------------------------------------------------------------------------
+# TAB 4 — SAYIM OVERRIDE
+# ---------------------------------------------------------------------------
+with tab_override:
+    st.subheader("Sayım Override")
+    st.caption("Pencere kapandıktan sonra hatalı sayımı yönetici olarak düzelt.")
+
+    with get_session() as s:
+        override_weeks = list(s.execute(
+            select(CountSubmission.week_iso)
+            .distinct()
+            .order_by(CountSubmission.week_iso.desc())
+        ).scalars())
+        if current_week_iso() not in override_weeks:
+            override_weeks = [current_week_iso()] + override_weeks
+
+        override_depts = list(s.execute(
+            select(Department, ProductionSite)
+            .join(ProductionSite, Department.production_site_id == ProductionSite.id)
+            .where(Department.is_active.is_(True))
+            .order_by(ProductionSite.name, Department.name)
+        ).all())
+
+        override_colors = list(s.execute(
+            select(Color)
+            .where(Color.is_active.is_(True))
+            .order_by(Color.sort_order, Color.id)
+        ).scalars())
+
+    if not override_depts or not override_colors:
+        st.info("Aktif bölüm veya renk bulunamadı.")
+    else:
+        override_week = st.selectbox(
+            "Override haftası",
+            override_weeks,
+            index=0,
+            format_func=lambda w: f"{w} — {format_week_human(w)}",
+            key="override_week",
+        )
+        dept_options = {
+            f"{site.name} — {dept.name}": dept.id for dept, site in override_depts
+        }
+        override_dept_label = st.selectbox(
+            "Bölüm",
+            list(dept_options.keys()),
+            key="override_dept",
+        )
+        override_dept_id = dept_options[override_dept_label]
+
+        with get_session() as s:
+            existing_sub = s.execute(
+                select(CountSubmission).where(
+                    CountSubmission.department_id == override_dept_id,
+                    CountSubmission.week_iso == override_week,
+                )
+            ).scalar_one_or_none()
+            existing_details = {
+                detail.color_id: detail
+                for detail in (existing_sub.details if existing_sub else [])
+            }
+
+        if existing_sub is None:
+            st.warning("Bu bölüm/hafta için kayıt yok. Kaydederseniz yeni admin override kaydı oluşur.")
+        else:
+            st.info(f"Mevcut kayıt durumu: {existing_sub.status}. Kaydetmek eski değerlerin üstüne yazar.")
+
+        with st.form("admin_override_form"):
+            override_tonnage = st.number_input(
+                "Gerçekleşen tonaj (ton)",
+                min_value=0.0,
+                value=float(existing_sub.actual_tonnage) if existing_sub and existing_sub.actual_tonnage else 0.0,
+                step=0.1,
+                format="%.2f",
+            )
+            override_reason = st.text_area(
+                "Düzeltme nedeni",
+                placeholder="Örn. kullanıcı yanlış renk sayısı girdi",
+            )
+
+            h1, h2, h3, h4 = st.columns([2, 1, 1, 1])
+            h1.markdown("**Renk**")
+            h2.markdown("**Boş**")
+            h3.markdown("**Dolu**")
+            h4.markdown("**Kanban**")
+
+            override_counts: dict[int, dict[str, int]] = {}
+            for color in override_colors:
+                previous = existing_details.get(color.id)
+                c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+                c1.write(color.name)
+                empty_value = c2.number_input(
+                    f"override_empty_{color.id}",
+                    min_value=0,
+                    value=previous.empty_count if previous else 0,
+                    step=1,
+                    label_visibility="collapsed",
+                )
+                full_value = c3.number_input(
+                    f"override_full_{color.id}",
+                    min_value=0,
+                    value=previous.full_count if previous else 0,
+                    step=1,
+                    label_visibility="collapsed",
+                )
+                kanban_value = c4.number_input(
+                    f"override_kanban_{color.id}",
+                    min_value=0,
+                    value=previous.kanban_count if previous else 0,
+                    step=1,
+                    label_visibility="collapsed",
+                )
+                override_counts[color.id] = {
+                    "empty": int(empty_value),
+                    "full": int(full_value),
+                    "kanban": int(kanban_value),
+                }
+
+            override_clicked = st.form_submit_button(
+                "Override Kaydet",
+                use_container_width=True,
+                type="primary",
+            )
+
+        if override_clicked:
+            errors = []
+            for color in override_colors:
+                values = override_counts[color.id]
+                if values["kanban"] > values["full"]:
+                    errors.append(
+                        f"{color.name}: kanban ({values['kanban']}) dolu ({values['full']}) değerinden büyük olamaz."
+                    )
+
+            if errors:
+                for error in errors:
+                    st.error(error)
+            elif not override_reason.strip():
+                st.error("Düzeltme nedeni zorunlu.")
+            else:
+                try:
+                    with get_session() as s:
+                        sub = s.execute(
+                            select(CountSubmission).where(
+                                CountSubmission.department_id == override_dept_id,
+                                CountSubmission.week_iso == override_week,
+                            )
+                        ).scalar_one_or_none()
+
+                        old_value = None
+                        if sub is not None:
+                            old_value = {
+                                "status": sub.status,
+                                "actual_tonnage": float(sub.actual_tonnage) if sub.actual_tonnage else None,
+                                "details": {
+                                    str(detail.color_id): {
+                                        "empty": detail.empty_count,
+                                        "full": detail.full_count,
+                                        "kanban": detail.kanban_count,
+                                    }
+                                    for detail in sub.details
+                                },
+                            }
+                            for detail in list(sub.details):
+                                s.delete(detail)
+                            s.flush()
+                        else:
+                            now_value = now_tr()
+                            sub = CountSubmission(
+                                department_id=override_dept_id,
+                                user_id=admin_id,
+                                week_iso=override_week,
+                                count_date=now_value.date(),
+                                count_time=now_value.time().replace(microsecond=0),
+                                status="submitted",
+                                submitted_at=now_value,
+                            )
+                            s.add(sub)
+                            s.flush()
+
+                        sub.user_id = admin_id
+                        sub.actual_tonnage = Decimal(str(override_tonnage))
+                        sub.status = "submitted"
+                        sub.submitted_at = now_tr()
+
+                        for color_id, values in override_counts.items():
+                            s.add(CountDetail(
+                                submission_id=sub.id,
+                                color_id=color_id,
+                                empty_count=values["empty"],
+                                full_count=values["full"],
+                                kanban_count=values["kanban"],
+                            ))
+
+                        s.add(AuditLog(
+                            user_id=admin_id,
+                            action="admin_override",
+                            entity_type="count_submission",
+                            entity_id=sub.id,
+                            old_value=old_value,
+                            new_value={
+                                "week_iso": override_week,
+                                "department_id": override_dept_id,
+                                "status": "submitted",
+                                "actual_tonnage": float(override_tonnage),
+                                "reason": override_reason.strip(),
+                                "details": {
+                                    str(color_id): values
+                                    for color_id, values in override_counts.items()
+                                },
+                            },
+                        ))
+                    st.success("Admin override kaydedildi.")
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Hata: {exc}")

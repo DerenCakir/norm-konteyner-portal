@@ -4,11 +4,11 @@ Analiz sayfası — kapsamlı görünüm.
 Bölümler:
   1. KPI kartları (seçili hafta)
   2. Genel tablo (her zaman açık)
-  3. 🏭 Üretim yeri kırılımı (expander)
-  4. 🎨 Renk kırılımı (expander)
-  5. ⚠️ Eksik bölümler + ilgili kullanıcılar (expander)
-  6. 📊 Trend grafikleri (boş/dolu/kanban + tonaj actual vs target)
-  7. 🔍 Üretim yeri trend sapma (expander)
+  3. Üretim yeri kırılımı (expander)
+  4. Renk kırılımı (expander)
+  5. Eksik bölümler + ilgili kullanıcılar (expander)
+  6. Trend grafikleri (boş/dolu/kanban + tonaj actual vs target)
+  7. Üretim yeri trend sapma (expander)
 
 Tonaj sapma kuralı: actual > target → KIRMIZI (fazla üretim sinyali).
 Az üretim sorun değil, sadece görsel olarak farkını göster.
@@ -31,13 +31,13 @@ from db.models import (
     User,
     UserDepartment,
 )
-from utils.auth import require_auth
+from utils.auth import require_auth, restore_session_from_cookie
 from utils.ui import inject_css, kpi_card, page_header, render_kpis, render_sidebar_user
 from utils.week import current_week_iso, format_week_human, week_iso_from_date
 
 
-st.set_page_config(page_title="Analiz", page_icon="📈", layout="wide")
 inject_css()
+restore_session_from_cookie()
 
 with get_session() as _s:
     me = require_auth(_s)
@@ -46,8 +46,7 @@ render_sidebar_user(me.full_name, me.role)
 page_header(
     title="Analiz",
     subtitle="Konteyner ve tonaj trendleri, üretim yeri ve renk kırılımları",
-    icon="📈",
-)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -160,43 +159,96 @@ missing_count = total_dept_count - submitted_dept_count
 
 st.markdown(f"#### Seçili Hafta: {format_week_human(selected_week)}")
 total_containers = total_empty + total_full  # kanban dolu'nun alt kümesi, ayrı sayma
+completion_pct = (submitted_dept_count / total_dept_count * 100) if total_dept_count else 0
+kanban_rate = (total_kanban / total_full * 100) if total_full else 0
 
 if total_actual > total_target and total_target > 0:
-    tonaj_delta = f"↑ +{excess:.1f} t fazla"
+    tonnage_diff = total_actual - total_target
+    tonnage_pct = tonnage_diff / total_target * 100
+    tonaj_value = f"{tonnage_diff:+.1f} t"
+    tonaj_delta = f"%{tonnage_pct:+.1f}"
     tonaj_kind = "pos"  # kırmızı (fazla üretim sinyali)
 elif total_target > 0:
-    tonaj_delta = f"↓ hedef altı"
+    tonnage_diff = total_actual - total_target
+    tonnage_pct = tonnage_diff / total_target * 100
+    tonaj_value = f"{tonnage_diff:+.1f} t"
+    tonaj_delta = f"%{tonnage_pct:+.1f}"
     tonaj_kind = "neg"
 else:
-    tonaj_delta = "hedef tanımsız"
+    tonaj_value = "Hedef tanımsız"
+    tonaj_delta = ""
     tonaj_kind = "neutral"
 
-cards = [
-    kpi_card("Toplam Boş", f"{total_empty:,}"),
-    kpi_card("Toplam Dolu", f"{total_full:,}"),
-    kpi_card("Toplam Konteyner", f"{total_containers:,}", sub="Boş + Dolu"),
-    kpi_card("Toplam Kanban", f"{total_kanban:,}", sub="Dolu'nun alt kümesi"),
+primary_cards = [
+    kpi_card("Toplam Konteyner", f"{total_containers:,}", sub="Boş + dolu"),
+    kpi_card("Dolu Konteyner", f"{total_full:,}", sub="Ürün / yarı mamul taşıyan"),
+    kpi_card("Boş Konteyner", f"{total_empty:,}", sub="Kullanılabilir kasa"),
+    kpi_card("Kanban", f"{total_kanban:,}", sub="Dolu konteynerin alt kümesi"),
+]
+render_kpis(primary_cards)
+
+secondary_cards = [
     kpi_card(
-        "Tonaj (Gerçekleşen / Hedef)",
-        f"{total_actual:.1f} / {total_target:.1f}",
+        "Sayım Kapsamı",
+        f"{submitted_dept_count} / {total_dept_count}",
+        sub=f"%{completion_pct:.0f} tamamlandı",
+        delta=f"{missing_count} eksik" if missing_count else "Eksik yok",
+        delta_kind="neutral" if missing_count else "neg",
+    ),
+    kpi_card("Kanban Oranı", f"%{kanban_rate:.1f}", sub="Kanban / dolu"),
+    kpi_card(
+        "Tonaj Sapması",
+        tonaj_value,
+        sub=(
+            f"Gerçekleşen {total_actual:.1f} t / hedef {total_target:.1f} t"
+            if total_target > 0 else
+            f"Gerçekleşen {total_actual:.1f} t"
+        ),
         delta=tonaj_delta,
         delta_kind=tonaj_kind,
     ),
-    kpi_card(
-        "Bölüm Sayımı",
-        f"{submitted_dept_count} / {total_dept_count}",
-        sub=f"%{(submitted_dept_count/total_dept_count*100):.0f} tamamlandı" if total_dept_count else "—",
-    ),
 ]
-render_kpis(cards)
+st.markdown("<div style='height:0.75rem'></div>", unsafe_allow_html=True)
+render_kpis(secondary_cards)
 st.markdown("<br>", unsafe_allow_html=True)
+
+site_signal = (
+    df_week.groupby("site")
+    .agg(
+        Dolu=("full_count", "sum"),
+        Boş=("empty_count", "sum"),
+        Kanban=("kanban_count", "sum"),
+        Giren_Bölüm=("department_id", "nunique"),
+    )
+    .reset_index()
+)
+if not site_signal.empty:
+    site_signal["Toplam"] = site_signal["Boş"] + site_signal["Dolu"]
+    site_signal["Kanban Oranı (%)"] = (
+        site_signal["Kanban"] / site_signal["Dolu"].replace(0, pd.NA) * 100
+    ).fillna(0)
+    st.markdown("#### Öne Çıkan Üretim Yerleri")
+    st.dataframe(
+        site_signal.sort_values(["Dolu", "Toplam"], ascending=False)
+        .head(8)
+        .rename(columns={
+            "site": "Üretim Yeri",
+            "Giren_Bölüm": "Giren Bölüm",
+        })[[
+            "Üretim Yeri", "Toplam", "Dolu", "Boş", "Kanban",
+            "Kanban Oranı (%)", "Giren Bölüm",
+        ]]
+        .style.format({"Kanban Oranı (%)": "{:.1f}"}),
+        use_container_width=True,
+        hide_index=True,
+    )
 
 
 # ---------------------------------------------------------------------------
 # Section 2 — Genel Trend (filtre: üretim yeri + bölüm breakdown)
 # ---------------------------------------------------------------------------
 st.divider()
-st.subheader(f"📊 Genel Trend (son {range_n} hafta)")
+st.subheader(f"Genel Trend (son {range_n} hafta)")
 
 trend_c1, trend_c2 = st.columns([2, 1])
 with trend_c1:
@@ -294,10 +346,10 @@ else:
 # Section 3 — Genel Tablo
 # ---------------------------------------------------------------------------
 st.divider()
-st.subheader("📋 Bölüm Özeti (seçili hafta)")
+st.subheader("Bölüm Özeti (seçili hafta)")
 
 dept_summary = (
-    df_week.groupby(["site", "department", "weekly_tonnage_target"], dropna=False)
+    df_week.groupby(["site", "department", "department_id", "weekly_tonnage_target"], dropna=False)
     .agg(
         boş=("empty_count", "sum"),
         dolu=("full_count", "sum"),
@@ -307,12 +359,9 @@ dept_summary = (
 )
 # Tonajı submission'dan al
 dept_tonnage = sub_unique[["department_id", "actual_tonnage"]].set_index("department_id")
-dept_summary["actual"] = dept_summary.apply(
-    lambda r: float(dept_tonnage.loc[
-        df_week[df_week["department"] == r["department"]]["department_id"].iloc[0]
-    ]["actual_tonnage"]) if not df_week[df_week["department"] == r["department"]].empty else None,
-    axis=1,
-)
+dept_summary["actual"] = dept_summary["department_id"].map(
+    dept_tonnage["actual_tonnage"]
+).astype(float)
 dept_summary["target"] = dept_summary["weekly_tonnage_target"]
 dept_summary["sapma"] = dept_summary["actual"] - dept_summary["target"]
 
@@ -337,13 +386,13 @@ st.dataframe(
     use_container_width=True,
     hide_index=True,
 )
-st.caption("🟥 Kırmızı satır: gerçekleşen tonaj hedefi aşmış (fazla üretim).")
+st.caption("Kırmızı satır: gerçekleşen tonaj hedefi aşmış (fazla üretim).")
 
 
 # ---------------------------------------------------------------------------
 # Section 3 — Üretim yeri kırılımı
 # ---------------------------------------------------------------------------
-with st.expander("🏭 Üretim Yeri Kırılımı", expanded=False):
+with st.expander("Üretim Yeri Kırılımı", expanded=False):
     site_summary = (
         df_week.groupby("site")
         .agg(
@@ -381,7 +430,7 @@ with st.expander("🏭 Üretim Yeri Kırılımı", expanded=False):
 # ---------------------------------------------------------------------------
 # Section 4 — Renk kırılımı
 # ---------------------------------------------------------------------------
-with st.expander("🎨 Renk Kırılımı", expanded=False):
+with st.expander("Renk Kırılımı", expanded=False):
     color_summary = (
         df_week.groupby("color")
         .agg(
@@ -433,13 +482,13 @@ with st.expander("🎨 Renk Kırılımı", expanded=False):
     )
     chart = (bars + kanban_overlay).properties(height=350)
     st.altair_chart(chart, use_container_width=True)
-    st.caption("🟩 Dolu içindeki koyu yeşil bölge = Kanban (Dolu'nun alt kümesi).")
+    st.caption("Dolu içindeki koyu yeşil bölge = Kanban (Dolu'nun alt kümesi).")
 
 
 # ---------------------------------------------------------------------------
 # Section 5 — Eksik bölümler + kullanıcılar
 # ---------------------------------------------------------------------------
-with st.expander(f"⚠️ Eksik Bölümler ({missing_count})", expanded=False):
+with st.expander(f"Eksik Bölümler ({missing_count})", expanded=False):
     submitted_dept_ids = set(sub_unique["department_id"].tolist())
 
     with get_session() as s:
@@ -461,7 +510,7 @@ with st.expander(f"⚠️ Eksik Bölümler ({missing_count})", expanded=False):
             dept_users.setdefault(dept_id, []).append(full_name)
 
     if not missing_depts:
-        st.success("🎉 Bu hafta için tüm bölümler sayım girdi!")
+        st.success("Bu hafta için tüm bölümler sayım girdi!")
     else:
         miss_rows = []
         for d, site in missing_depts:
@@ -483,7 +532,7 @@ with st.expander(f"⚠️ Eksik Bölümler ({missing_count})", expanded=False):
 # ---------------------------------------------------------------------------
 # Section 7 — Üretim yeri trend sapma
 # ---------------------------------------------------------------------------
-with st.expander("🔍 Üretim Yeri Trend Sapma", expanded=False):
+with st.expander("Üretim Yeri Trend Sapma", expanded=False):
     sites = sorted(df["site"].unique())
     selected_site = st.selectbox("Üretim yeri seç", sites)
     site_df = df[df["site"] == selected_site]
@@ -510,6 +559,11 @@ with st.expander("🔍 Üretim Yeri Trend Sapma", expanded=False):
         site_tonnage_weekly["Gerçekleşen"] - site_tonnage_weekly["Hedef"]
     )
 
+    site_weekly["Toplam"] = site_weekly["Boş"] + site_weekly["Dolu"]
+    site_weekly["Kanban Oranı (%)"] = (
+        site_weekly["Kanban"] / site_weekly["Dolu"].replace(0, pd.NA) * 100
+    ).fillna(0)
+
     cl, cr = st.columns(2)
     with cl:
         st.markdown(f"**{selected_site} — konteynerler**")
@@ -517,6 +571,42 @@ with st.expander("🔍 Üretim Yeri Trend Sapma", expanded=False):
     with cr:
         st.markdown(f"**{selected_site} — tonaj**")
         st.line_chart(site_tonnage_weekly.set_index("week_iso")[["Gerçekleşen", "Hedef"]])
+
+    st.markdown("**Kanban oranı ve toplam konteyner trendi**")
+    c_ratio, c_total = st.columns(2)
+    c_ratio.line_chart(site_weekly.set_index("week_iso")[["Kanban Oranı (%)"]])
+    c_total.line_chart(site_weekly.set_index("week_iso")[["Toplam"]])
+
+    site_change = site_weekly.merge(
+        site_tonnage_weekly[["week_iso", "Gerçekleşen", "Hedef", "Fazla"]],
+        on="week_iso",
+        how="left",
+    ).sort_values("week_iso")
+    for col in ["Boş", "Dolu", "Kanban", "Toplam", "Gerçekleşen", "Hedef", "Fazla"]:
+        site_change[f"{col} Δ"] = site_change[col].diff()
+
+    st.markdown("**Haftalık değişim tablosu**")
+    st.dataframe(
+        site_change[[
+            "week_iso", "Boş", "Boş Δ", "Dolu", "Dolu Δ",
+            "Kanban", "Kanban Δ", "Kanban Oranı (%)",
+            "Toplam", "Toplam Δ", "Gerçekleşen", "Hedef", "Fazla",
+        ]].rename(columns={
+            "week_iso": "Hafta",
+            "Boş Δ": "Boş Değişim",
+            "Dolu Δ": "Dolu Değişim",
+            "Kanban Δ": "Kanban Değişim",
+            "Toplam Δ": "Toplam Değişim",
+            "Gerçekleşen": "Gerçekleşen Tonaj",
+        }).style.format({
+            "Kanban Oranı (%)": "{:.1f}",
+            "Gerçekleşen Tonaj": "{:.2f}",
+            "Hedef": "{:.2f}",
+            "Fazla": "{:.2f}",
+        }, na_rep="-"),
+        use_container_width=True,
+        hide_index=True,
+    )
 
     # Anormal artış uyarısı: son haftanın "Fazla" değeri,
     # önceki haftaların ortalamasının %20+ üstünde mi?
@@ -527,11 +617,11 @@ with st.expander("🔍 Üretim Yeri Trend Sapma", expanded=False):
             jump_pct = (last - prev_mean) / prev_mean * 100
             if last > 0 and jump_pct > 20:
                 st.error(
-                    f"🚨 Son haftada **{selected_site}**'de fazla tonaj "
+                    f"Son haftada **{selected_site}**'de fazla tonaj "
                     f"%{jump_pct:.0f} arttı "
                     f"(geçmiş ortalama: {prev_mean:.1f} t, son: {last:.1f} t)."
                 )
             elif last <= 0:
-                st.success(f"✅ Son hafta hedef altında — sorun yok.")
+                st.success(f"Son hafta hedef altında — sorun yok.")
             else:
-                st.info(f"ℹ️ Son haftadaki fazla: {last:.1f} t (geçmiş ortalama: {prev_mean:.1f} t).")
+                st.info(f"Son haftadaki fazla: {last:.1f} t (geçmiş ortalama: {prev_mean:.1f} t).")

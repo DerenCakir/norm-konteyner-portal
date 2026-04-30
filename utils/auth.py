@@ -23,6 +23,12 @@ Audit log conventions:
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+import time
+from base64 import urlsafe_b64decode, urlsafe_b64encode
+from datetime import datetime, timedelta
 from typing import Optional
 
 import bcrypt
@@ -30,8 +36,142 @@ import streamlit as st
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from config.settings import get_settings
+from db.connection import get_session
 from db.models import AuditLog, Department, User, UserDepartment
 from utils.week import now_tr
+
+
+# ---------------------------------------------------------------------------
+# Cookie-based persistent auth
+# ---------------------------------------------------------------------------
+_COOKIE_NAME = "norm_auth"
+_COOKIE_TTL_DAYS = 7
+
+
+def _sign(payload: str, secret: str) -> str:
+    return hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+
+
+def _make_token(user_id: int) -> str:
+    """Süresi sınırlı, imzalı bir auth token üret."""
+    settings = get_settings()
+    payload = {"uid": user_id, "exp": int(time.time()) + _COOKIE_TTL_DAYS * 86400}
+    payload_json = json.dumps(payload, separators=(",", ":"))
+    payload_b64 = urlsafe_b64encode(payload_json.encode()).decode().rstrip("=")
+    sig = _sign(payload_b64, settings.secret_key)
+    return f"{payload_b64}.{sig}"
+
+
+def _verify_token(token: str) -> Optional[int]:
+    """Token geçerliyse user_id döndür, değilse None."""
+    if not token or "." not in token:
+        return None
+    try:
+        payload_b64, sig = token.split(".", 1)
+        settings = get_settings()
+        expected_sig = _sign(payload_b64, settings.secret_key)
+        if not hmac.compare_digest(sig, expected_sig):
+            return None
+        # Restore base64 padding
+        padded = payload_b64 + "=" * (-len(payload_b64) % 4)
+        payload = json.loads(urlsafe_b64decode(padded).decode())
+        if int(payload.get("exp", 0)) < int(time.time()):
+            return None
+        return int(payload["uid"])
+    except Exception:
+        return None
+
+
+def _get_cookie_controller():
+    """Cookie controller'ı tek seferlik üret (lazy import — test'lerde import edilmesin)."""
+    from streamlit_cookies_controller import CookieController
+    if "_cookie_controller" not in st.session_state:
+        st.session_state["_cookie_controller"] = CookieController()
+    return st.session_state["_cookie_controller"]
+
+
+def restore_session_from_cookie() -> None:
+    """Sayfa yüklendiğinde cookie'den session'ı tazele.
+
+    Eğer cookie geçerli bir token içeriyorsa ve session_state'te user_id
+    yoksa (örn. F5 sonrası), kullanıcıyı DB'den çekip session_state'i doldur.
+
+    ``app.py`` ve her sayfanın en başında (require_auth'tan önce) çağrılmalı.
+    """
+    if st.session_state.get("user_id") is not None:
+        return  # zaten login'iz
+
+    try:
+        controller = _get_cookie_controller()
+        token = controller.get(_COOKIE_NAME)
+    except Exception:
+        return
+
+    if not token and not st.session_state.get("_cookie_restore_ready"):
+        st.session_state["_cookie_restore_ready"] = True
+        try:
+            controller.refresh()
+            token = controller.get(_COOKIE_NAME)
+        except Exception:
+            pass
+        if token:
+            st.session_state["_cookie_restore_ready"] = False
+        if not token:
+            st.info("Oturum kontrol ediliyor...")
+            st.stop()
+
+    if not token:
+        return
+
+    user_id = _verify_token(token)
+    if user_id is None:
+        # geçersiz / süresi dolmuş — temizle
+        try:
+            controller.remove(_COOKIE_NAME)
+        except Exception:
+            pass
+        return
+
+    # DB'den user'ı tazele
+    try:
+        with get_session() as s:
+            user = s.get(User, user_id)
+            if user is None or not user.is_active:
+                return
+            st.session_state["user_id"] = user.id
+            st.session_state["username"] = user.username
+            st.session_state["role"] = user.role
+            st.session_state["full_name"] = user.full_name
+            st.session_state["department_ids"] = [
+                link.department_id for link in user.department_links
+            ]
+    except Exception:
+        return
+
+
+def _set_auth_cookie(user_id: int) -> None:
+    try:
+        controller = _get_cookie_controller()
+        token = _make_token(user_id)
+        controller.set(
+            _COOKIE_NAME,
+            token,
+            max_age=_COOKIE_TTL_DAYS * 86400,
+            expires=datetime.now() + timedelta(days=_COOKIE_TTL_DAYS),
+            same_site="lax",
+        )
+        time.sleep(0.25)
+    except Exception:
+        pass
+
+
+def _clear_auth_cookie() -> None:
+    try:
+        controller = _get_cookie_controller()
+        controller.remove(_COOKIE_NAME)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -137,11 +277,8 @@ _SESSION_KEYS = ("user_id", "username", "role", "full_name", "department_ids")
 
 
 def login_user(user: User) -> None:
-    """Store the authenticated user's identity in ``st.session_state``.
-
-    ``department_ids`` is a list of ints — the departments this user is
-    authorized to submit for. Read once at login; pages can re-fetch
-    if they need fresh data.
+    """Store the authenticated user's identity in ``st.session_state``
+    and persist a signed cookie so login survives page refreshes.
     """
     st.session_state["user_id"] = user.id
     st.session_state["username"] = user.username
@@ -150,10 +287,11 @@ def login_user(user: User) -> None:
     st.session_state["department_ids"] = [
         link.department_id for link in user.department_links
     ]
+    _set_auth_cookie(user.id)
 
 
 def logout_user(session: Session) -> None:
-    """Write a ``logout`` audit entry and clear the session state."""
+    """Write a ``logout`` audit entry, clear session state and cookie."""
     user_id = st.session_state.get("user_id")
     username = st.session_state.get("username")
     if user_id is not None:
@@ -162,6 +300,7 @@ def logout_user(session: Session) -> None:
         session.commit()
     for key in _SESSION_KEYS:
         st.session_state.pop(key, None)
+    _clear_auth_cookie()
 
 
 def is_authenticated() -> bool:

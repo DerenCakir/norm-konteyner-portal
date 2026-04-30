@@ -58,9 +58,11 @@ Kayıt sistemi yoktur; kullanıcıları admin oluşturur.
 
 | Pencere (Europe/Istanbul) | Durum |
 |---|---|
-| Pazartesi 00:00 → Cuma 12:00 | Form açık |
-| Cuma 12:00 → Cumartesi 00:00 | Geç giriş (uyarılı) |
-| Cumartesi 00:00 sonrası | Kilitli (admin override) |
+| Cuma 09:00 → 12:00 | Form açık |
+| Admin manuel geç giriş penceresi açarsa | `closes_at` zamanına kadar geç giriş |
+| Diğer tüm zamanlar | Kilitli (sadece admin override) |
+
+Geç giriş otomatik açılmaz; yönetici hafta bazında admin panelinden manuel açar.
 
 ## Geliştirme Notları
 

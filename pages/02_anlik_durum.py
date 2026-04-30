@@ -19,13 +19,13 @@ from db.models import (
     Department,
     ProductionSite,
 )
-from utils.auth import require_auth
+from utils.auth import require_auth, restore_session_from_cookie
 from utils.ui import inject_css, page_header, render_sidebar_user
 from utils.week import current_week_iso, format_week_human, week_iso_from_date
 
 
-st.set_page_config(page_title="Anlık Durum", page_icon="📊", layout="wide")
 inject_css()
+restore_session_from_cookie()
 
 with get_session() as _s:
     me = require_auth(_s)
@@ -34,8 +34,7 @@ render_sidebar_user(me.full_name, me.role)
 page_header(
     title="Anlık Durum",
     subtitle="Bölüm × renk matrisi — boş / dolu / kanban değerleri",
-    icon="📊",
-)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -108,8 +107,8 @@ for site, dept in sites_depts:
         "Bölüm": dept.name,
         "Durum": (
             "—" if sub is None else
-            ("✅ Gönderildi" if sub.status == "submitted" else
-             ("⏰ Geç" if sub.status == "late_submitted" else "📝 Taslak"))
+            ("Gönderildi" if sub.status == "submitted" else
+             ("Geç" if sub.status == "late_submitted" else "Taslak"))
         ),
     }
     for color in active_colors:

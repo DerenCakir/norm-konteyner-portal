@@ -30,9 +30,15 @@ from db.models import (
     CountDetail,
     CountSubmission,
     Department,
+    LateWindowOverride,
     ProductionSite,
 )
-from utils.auth import require_auth, user_can_submit_for, get_user_departments
+from utils.auth import (
+    get_user_departments,
+    require_auth,
+    restore_session_from_cookie,
+    user_can_submit_for,
+)
 from utils.ui import inject_css, page_header, render_sidebar_user, status_pill
 from utils.week import (
     current_week_iso,
@@ -42,8 +48,8 @@ from utils.week import (
 )
 
 
-st.set_page_config(page_title="Sayım Girişi", page_icon="📝", layout="wide")
 inject_css()
+restore_session_from_cookie()
 
 
 # ---------------------------------------------------------------------------
@@ -54,15 +60,34 @@ with get_session() as _s:
 me_id = me.id
 render_sidebar_user(me.full_name, me.role)
 
-week_iso = current_week_iso()
+current_week = current_week_iso()
+
+with get_session() as s:
+    active_late_weeks = list(s.execute(
+        select(LateWindowOverride.week_iso)
+        .where(LateWindowOverride.closes_at > now_tr())
+        .order_by(LateWindowOverride.week_iso.desc())
+    ).scalars())
+
+week_options = [current_week]
+for late_week in active_late_weeks:
+    if late_week not in week_options:
+        week_options.append(late_week)
 page_header(
     title="Sayım Girişi",
-    subtitle=f"Hafta: {format_week_human(week_iso)} ({week_iso})",
-    icon="📝",
-)
+    subtitle="Yetkili bölüm için haftalık sayım",
+    )
 
 
 # ---------------------------------------------------------------------------
+week_iso = st.selectbox(
+    "Hafta",
+    week_options,
+    index=0,
+    format_func=lambda w: f"{w} — {format_week_human(w)}",
+)
+
+
 # Yetkili bölümleri çek (üretim yeri adıyla birlikte)
 # ---------------------------------------------------------------------------
 with get_session() as s:
@@ -109,13 +134,13 @@ with get_session() as s:
     status = get_submission_status(week_iso, s)
 
 if status == "open":
-    st.success("📝 Sayım girişi açık (Cuma 09:00–12:00)")
+    st.success("Sayım girişi açık (Cuma 09:00–12:00)")
 elif status == "late":
-    st.warning("⏰ Geç giriş penceresi açık")
+    st.warning("Geç giriş penceresi açık")
 else:
     st.error(
-        "🔒 Sayım girişi şu an kapalı. "
-        "Bir sonraki pencere: **Cuma 09:00–12:00** (TR saati). "
+        "Sayım girişi şu an kapalı. "
+        "Bir sonraki pencere: **Cuma 09.00 – 12.00** (Türkiye saati). "
         "Geç giriş için yöneticinizle iletişime geçin."
     )
 
@@ -292,5 +317,5 @@ if submit_clicked and can_submit:
                 },
             ))
 
-        st.success(f"✅ Sayım gönderildi. Durum: **{new_status}**")
+        st.success(f"Sayım gönderildi. Durum: **{new_status}**")
         st.rerun()

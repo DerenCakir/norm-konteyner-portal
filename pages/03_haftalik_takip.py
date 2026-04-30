@@ -18,14 +18,15 @@ from db.models import (
     Department,
     ProductionSite,
     User,
+    UserDepartment,
 )
-from utils.auth import require_auth
+from utils.auth import require_auth, restore_session_from_cookie
 from utils.ui import inject_css, page_header, render_sidebar_user
 from utils.week import current_week_iso, format_week_human
 
 
-st.set_page_config(page_title="Haftalık Takip", page_icon="📋", layout="wide")
 inject_css()
+restore_session_from_cookie()
 
 with get_session() as _s:
     me = require_auth(_s)
@@ -34,8 +35,7 @@ render_sidebar_user(me.full_name, me.role)
 page_header(
     title="Haftalık Takip",
     subtitle="Bu hafta sayım giren ve girmeyen bölümler",
-    icon="📋",
-)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -82,6 +82,15 @@ with get_session() as s:
         sub.department_id: (sub, user) for sub, user in submissions_with_user
     }
 
+    dept_users: dict[int, list[str]] = {}
+    for dept_id, full_name in s.execute(
+        select(UserDepartment.department_id, User.full_name)
+        .join(User, User.id == UserDepartment.user_id)
+        .where(User.is_active.is_(True))
+        .order_by(User.full_name)
+    ).all():
+        dept_users.setdefault(dept_id, []).append(full_name)
+
 
 # ---------------------------------------------------------------------------
 # Özet kartları
@@ -103,7 +112,7 @@ st.divider()
 # ---------------------------------------------------------------------------
 # Sekmeler
 # ---------------------------------------------------------------------------
-tab_in, tab_out = st.tabs([f"✅ Giren ({submitted})", f"⚠️ Eksik ({missing})"])
+tab_in, tab_out = st.tabs([f"Giren ({submitted})", f"Eksik ({missing})"])
 
 with tab_in:
     if submitted == 0:
@@ -116,9 +125,9 @@ with tab_in:
                 continue
             sub, user = entry
             status_label = {
-                "submitted": "✅ Zamanında",
-                "late_submitted": "⏰ Geç giriş",
-                "draft": "📝 Taslak",
+                "submitted": "Zamanında",
+                "late_submitted": "Geç giriş",
+                "draft": "Taslak",
             }.get(sub.status, sub.status)
             in_rows.append({
                 "Üretim Yeri": site.name,
@@ -135,7 +144,7 @@ with tab_in:
 
 with tab_out:
     if missing == 0:
-        st.success("🎉 Tüm bölümler sayımını girdi!")
+        st.success("Tüm bölümler sayımını girdi!")
     else:
         out_rows: list[dict] = []
         for site, dept in sites_depts:
@@ -144,6 +153,9 @@ with tab_out:
             out_rows.append({
                 "Üretim Yeri": site.name,
                 "Bölüm": dept.name,
+                "Sorumlu Kullanıcı(lar)": (
+                    ", ".join(dept_users.get(dept.id, [])) or "Atanmamış"
+                ),
                 "Tonaj Hedefi": (
                     float(dept.weekly_tonnage_target)
                     if dept.weekly_tonnage_target else "-"
