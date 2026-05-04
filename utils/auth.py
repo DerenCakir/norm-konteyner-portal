@@ -100,7 +100,22 @@ def restore_session_from_cookie() -> None:
     ``app.py`` ve her sayfanın en başında (require_auth'tan önce) çağrılmalı.
     """
     if st.session_state.get("user_id") is not None:
-        return  # zaten login'iz
+        try:
+            with get_session() as s:
+                user = s.get(User, st.session_state["user_id"])
+                if user is None or not user.is_active:
+                    st.session_state.clear()
+                    _clear_auth_cookie()
+                    return
+                st.session_state["username"] = user.username
+                st.session_state["role"] = user.role
+                st.session_state["full_name"] = user.full_name
+                st.session_state["department_ids"] = [
+                    link.department_id for link in user.department_links
+                ]
+        except Exception:
+            pass
+        return
 
     try:
         controller = _get_cookie_controller()

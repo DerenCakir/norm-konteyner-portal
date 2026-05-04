@@ -148,23 +148,42 @@ with tab_users:
         )
         selected_user = next(u for u in editable_users if u.id == selected_user_id)
 
-        with st.form("edit_user_form"):
+        user_form_key = f"edit_user_{selected_user_id}"
+        with st.form(f"edit_user_form_{selected_user_id}"):
             col1, col2 = st.columns(2)
             with col1:
-                edit_username = st.text_input("Kullanıcı adı", value=selected_user.username)
-                edit_full_name = st.text_input("Ad Soyad", value=selected_user.full_name)
-                edit_email = st.text_input("E-posta (opsiyonel)", value=selected_user.email or "")
+                edit_username = st.text_input(
+                    "Kullanıcı adı",
+                    value=selected_user.username,
+                    key=f"{user_form_key}_username",
+                )
+                edit_full_name = st.text_input(
+                    "Ad Soyad",
+                    value=selected_user.full_name,
+                    key=f"{user_form_key}_full_name",
+                )
+                edit_email = st.text_input(
+                    "E-posta (opsiyonel)",
+                    value=selected_user.email or "",
+                    key=f"{user_form_key}_email",
+                )
             with col2:
                 edit_role = st.selectbox(
                     "Rol",
                     ["user", "admin"],
                     index=0 if selected_user.role == "user" else 1,
                     format_func=_role_label,
+                    key=f"{user_form_key}_role",
                 )
-                edit_is_active = st.checkbox("Aktif", value=selected_user.is_active)
+                edit_is_active = st.checkbox(
+                    "Aktif",
+                    value=selected_user.is_active,
+                    key=f"{user_form_key}_active",
+                )
                 edit_password = st.text_input(
                     "Yeni şifre (boş bırakırsan değişmez)",
                     type="password",
+                    key=f"{user_form_key}_password",
                 )
 
             update_clicked = st.form_submit_button("Kullanıcıyı Güncelle", use_container_width=True)
@@ -237,6 +256,10 @@ with tab_users:
                                 ))
 
                             clear_cached_queries()
+                            if selected_user_id == admin_id:
+                                st.session_state["username"] = target.username
+                                st.session_state["role"] = target.role
+                                st.session_state["full_name"] = target.full_name
                             st.success(f"'{target.username}' güncellendi.")
                             st.rerun()
                 except Exception as exc:
@@ -513,9 +536,12 @@ with tab_perms:
     elif not all_depts:
         st.info("Aktif bölüm yok.")
     else:
-        user_options = {f"{u.username} — {u.full_name}": u.id for u in all_users}
-        selected_label = st.selectbox("Kullanıcı seç", list(user_options.keys()))
-        selected_user_id = user_options[selected_label]
+        selected_user_id = st.selectbox(
+            "Kullanıcı seç",
+            [u.id for u in all_users],
+            format_func=lambda user_id: _user_label(next(u for u in all_users if u.id == user_id)),
+            key="permission_user_select",
+        )
 
         # Kullanıcının mevcut bölüm yetkilerini çek
         with get_session() as s:
