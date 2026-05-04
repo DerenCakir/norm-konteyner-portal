@@ -30,6 +30,7 @@ from db.models import (
     UserDepartment,
 )
 from utils.auth import hash_password, require_admin, restore_session_from_cookie
+from utils.cached_queries import clear_cached_queries
 from utils.ui import inject_css, page_header, render_sidebar_user
 from utils.week import current_week_iso, format_week_human, now_tr
 
@@ -60,11 +61,12 @@ page_header(
     subtitle=f"Giriş yapan yönetici: {admin_username}",
     )
 
-tab_users, tab_perms, tab_late, tab_override = st.tabs([
+tab_users, tab_perms, tab_late, tab_override, tab_departments = st.tabs([
     "Kullanıcılar",
     "Yetkilendirme",
     "Geç Giriş",
     "Sayım Override",
+    "Bölümler",
 ])
 
 
@@ -121,6 +123,7 @@ with tab_users:
                                 "role": u.role,
                             },
                         ))
+                        clear_cached_queries()
                         st.success(f"'{new_username}' oluşturuldu.")
             except Exception as exc:
                 st.error(f"Hata: {exc}")
@@ -233,11 +236,217 @@ with tab_users:
                                     new_value={"username": target.username},
                                 ))
 
+                            clear_cached_queries()
                             st.success(f"'{target.username}' güncellendi.")
                             st.rerun()
                 except Exception as exc:
                     st.error(f"Hata: {exc}")
 
+        if selected_user_id != admin_id:
+            if st.button(
+                "Kullanıcıyı Sil (Pasifleştir)",
+                key=f"soft_delete_user_{selected_user_id}",
+                use_container_width=True,
+            ):
+                try:
+                    with get_session() as s:
+                        target = s.get(User, selected_user_id)
+                        old_state = target.is_active
+                        target.is_active = False
+                        s.add(AuditLog(
+                            user_id=admin_id,
+                            action="user_delete",
+                            entity_type="user",
+                            entity_id=target.id,
+                            old_value={"is_active": old_state},
+                            new_value={"is_active": False, "delete_mode": "soft"},
+                        ))
+                    clear_cached_queries()
+                    st.success(f"'{selected_user.username}' pasifleştirildi.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Hata: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# TAB 5 — BÖLÜMLER
+# ---------------------------------------------------------------------------
+with tab_departments:
+    st.subheader("Bölüm Yönetimi")
+    st.caption("Üretim yerleri sabittir; buradan mevcut üretim yerlerinin altındaki bölümler eklenir, düzenlenir veya pasifleştirilir.")
+
+    with get_session() as s:
+        sites = list(s.execute(
+            select(ProductionSite)
+            .where(ProductionSite.is_active.is_(True))
+            .order_by(ProductionSite.name)
+        ).scalars())
+        departments = list(s.execute(
+            select(Department, ProductionSite)
+            .join(ProductionSite, Department.production_site_id == ProductionSite.id)
+            .order_by(ProductionSite.name, Department.name)
+        ).all())
+
+    if not sites:
+        st.info("Aktif üretim yeri bulunamadı.")
+    else:
+        st.markdown("#### Yeni Bölüm Ekle")
+        with st.form("create_department_form", clear_on_submit=True):
+            site_options = {site.name: site.id for site in sites}
+            create_site_name = st.selectbox("Üretim Yeri", list(site_options.keys()))
+            create_department_name = st.text_input("Bölüm / Müşteri Adı")
+            create_tonnage = st.number_input(
+                "Haftalık Tonaj Hedefi",
+                min_value=0.0,
+                value=0.0,
+                step=0.1,
+                format="%.2f",
+            )
+            create_department_clicked = st.form_submit_button("Bölüm Ekle", use_container_width=True)
+
+        if create_department_clicked:
+            clean_name = create_department_name.strip()
+            site_id = site_options[create_site_name]
+            if not clean_name:
+                st.error("Bölüm adı zorunlu.")
+            else:
+                try:
+                    with get_session() as s:
+                        existing = s.execute(
+                            select(Department).where(
+                                Department.production_site_id == site_id,
+                                Department.name == clean_name,
+                            )
+                        ).scalar_one_or_none()
+                        if existing is not None:
+                            st.error("Bu üretim yeri altında aynı bölüm adı zaten var.")
+                        else:
+                            dept = Department(
+                                production_site_id=site_id,
+                                name=clean_name,
+                                weekly_tonnage_target=Decimal(str(create_tonnage)),
+                                is_active=True,
+                            )
+                            s.add(dept)
+                            s.flush()
+                            s.add(AuditLog(
+                                user_id=admin_id,
+                                action="department_create",
+                                entity_type="department",
+                                entity_id=dept.id,
+                                new_value={
+                                    "production_site_id": site_id,
+                                    "name": dept.name,
+                                    "weekly_tonnage_target": float(create_tonnage),
+                                },
+                            ))
+                    clear_cached_queries()
+                    st.success(f"'{clean_name}' bölümü eklendi.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Hata: {exc}")
+
+        st.divider()
+        st.markdown("#### Bölüm Düzenle / Sil")
+
+        if not departments:
+            st.info("Düzenlenecek bölüm yok.")
+        else:
+            dept_options = {
+                f"{site.name} — {dept.name} ({'Aktif' if dept.is_active else 'Pasif'})": dept.id
+                for dept, site in departments
+            }
+            selected_dept_label = st.selectbox("Düzenlenecek bölüm", list(dept_options.keys()))
+            selected_dept_id = dept_options[selected_dept_label]
+            selected_dept, selected_site = next(
+                (dept, site) for dept, site in departments if dept.id == selected_dept_id
+            )
+
+            with st.form("edit_department_form"):
+                edit_site_options = {site.name: site.id for site in sites}
+                site_names = list(edit_site_options.keys())
+                current_site_index = site_names.index(selected_site.name)
+                edit_site_name = st.selectbox("Üretim Yeri", site_names, index=current_site_index)
+                edit_department_name = st.text_input("Bölüm / Müşteri Adı", value=selected_dept.name)
+                edit_tonnage = st.number_input(
+                    "Haftalık Tonaj Hedefi",
+                    min_value=0.0,
+                    value=float(selected_dept.weekly_tonnage_target or 0),
+                    step=0.1,
+                    format="%.2f",
+                )
+                edit_department_active = st.checkbox("Aktif", value=selected_dept.is_active)
+                edit_department_clicked = st.form_submit_button("Bölümü Güncelle", use_container_width=True)
+
+            if edit_department_clicked:
+                clean_name = edit_department_name.strip()
+                new_site_id = edit_site_options[edit_site_name]
+                if not clean_name:
+                    st.error("Bölüm adı zorunlu.")
+                else:
+                    try:
+                        with get_session() as s:
+                            duplicate = s.execute(
+                                select(Department).where(
+                                    Department.production_site_id == new_site_id,
+                                    Department.name == clean_name,
+                                    Department.id != selected_dept_id,
+                                )
+                            ).scalar_one_or_none()
+                            if duplicate is not None:
+                                st.error("Bu üretim yeri altında aynı bölüm adı zaten var.")
+                            else:
+                                dept = s.get(Department, selected_dept_id)
+                                old_value = {
+                                    "production_site_id": dept.production_site_id,
+                                    "name": dept.name,
+                                    "weekly_tonnage_target": float(dept.weekly_tonnage_target or 0),
+                                    "is_active": dept.is_active,
+                                }
+                                dept.production_site_id = new_site_id
+                                dept.name = clean_name
+                                dept.weekly_tonnage_target = Decimal(str(edit_tonnage))
+                                dept.is_active = edit_department_active
+                                s.add(AuditLog(
+                                    user_id=admin_id,
+                                    action="department_update",
+                                    entity_type="department",
+                                    entity_id=dept.id,
+                                    old_value=old_value,
+                                    new_value={
+                                        "production_site_id": dept.production_site_id,
+                                        "name": dept.name,
+                                        "weekly_tonnage_target": float(edit_tonnage),
+                                        "is_active": dept.is_active,
+                                    },
+                                ))
+                        clear_cached_queries()
+                        st.success("Bölüm güncellendi.")
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Hata: {exc}")
+
+            if st.button("Bölümü Sil (Pasifleştir)", key="soft_delete_department", use_container_width=True):
+                try:
+                    with get_session() as s:
+                        dept = s.get(Department, selected_dept_id)
+                        old_state = dept.is_active
+                        dept.is_active = False
+                        s.add(AuditLog(
+                            user_id=admin_id,
+                            action="department_delete",
+                            entity_type="department",
+                            entity_id=dept.id,
+                            old_value={"is_active": old_state},
+                            new_value={"is_active": False, "delete_mode": "soft"},
+                        ))
+                    clear_cached_queries()
+                    st.success("Bölüm pasifleştirildi.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Hata: {exc}")
+
+with tab_users:
     st.divider()
     st.subheader("Mevcut Kullanıcılar")
 
@@ -275,6 +484,7 @@ with tab_users:
                                 old_value={"is_active": old_state},
                                 new_value={"is_active": target.is_active},
                             ))
+                        clear_cached_queries()
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Hata: {exc}")
@@ -371,6 +581,7 @@ with tab_perms:
                             old_value={"department_ids": sorted(current_links)},
                             new_value={"department_ids": sorted(new_selection)},
                         ))
+                    clear_cached_queries()
                     st.success(
                         f"Güncellendi: +{len(to_add)} eklendi, -{len(to_remove)} kaldırıldı."
                     )
@@ -449,6 +660,7 @@ with tab_late:
                             "reason": reason.strip() or None,
                         },
                     ))
+                clear_cached_queries()
                 st.success(f"{selected_week} için geç giriş penceresi açıldı.")
                 st.rerun()
             except Exception as exc:
@@ -546,6 +758,52 @@ with tab_override:
             st.warning("Bu bölüm/hafta için kayıt yok. Kaydederseniz yeni admin override kaydı oluşur.")
         else:
             st.info(f"Mevcut kayıt durumu: {existing_sub.status}. Kaydetmek eski değerlerin üstüne yazar.")
+            if st.button("Bu Sayım Kaydını Sil", key="delete_submission", use_container_width=True):
+                try:
+                    with get_session() as s:
+                        sub = s.execute(
+                            select(CountSubmission)
+                            .options(selectinload(CountSubmission.details))
+                            .where(
+                                CountSubmission.department_id == override_dept_id,
+                                CountSubmission.week_iso == override_week,
+                            )
+                        ).scalar_one_or_none()
+                        if sub is None:
+                            st.info("Silinecek sayım kaydı bulunamadı.")
+                        else:
+                            old_value = {
+                                "week_iso": sub.week_iso,
+                                "department_id": sub.department_id,
+                                "status": sub.status,
+                                "actual_tonnage": float(sub.actual_tonnage) if sub.actual_tonnage else None,
+                                "details": {
+                                    str(detail.color_id): {
+                                        "empty": detail.empty_count,
+                                        "full": detail.full_count,
+                                        "kanban": detail.kanban_count,
+                                    }
+                                    for detail in sub.details
+                                },
+                            }
+                            s.delete(sub)
+                            s.add(AuditLog(
+                                user_id=admin_id,
+                                action="admin_submission_delete",
+                                entity_type="count_submission",
+                                entity_id=sub.id,
+                                old_value=old_value,
+                                new_value={
+                                    "reason": "admin_deleted_from_override_panel",
+                                    "week_iso": override_week,
+                                    "department_id": override_dept_id,
+                                },
+                            ))
+                    clear_cached_queries()
+                    st.success("Sayım kaydı silindi.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Hata: {exc}")
 
         with st.form("admin_override_form"):
             override_tonnage = st.number_input(
@@ -691,6 +949,7 @@ with tab_override:
                                 },
                             },
                         ))
+                    clear_cached_queries()
                     st.success("Admin override kaydedildi.")
                     st.rerun()
                 except Exception as exc:

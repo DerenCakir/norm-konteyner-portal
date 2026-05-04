@@ -27,6 +27,16 @@ from db.models import (
 CACHE_TTL_SECONDS = 60
 
 
+def clear_cached_queries() -> None:
+    """Clear cached read models after admin mutations."""
+    get_available_weeks.clear()
+    get_active_sites_departments.clear()
+    get_active_colors.clear()
+    get_week_submissions_with_users.clear()
+    get_week_count_details.clear()
+    get_department_users.clear()
+
+
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def get_available_weeks(default_week: str) -> list[str]:
     with get_session() as s:

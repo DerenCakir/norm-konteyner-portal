@@ -59,7 +59,7 @@ c1, c2, c3, c4 = st.columns(4)
 c1.metric("Toplam Bölüm", total_depts)
 c2.metric("Sayım Giren", submitted_count)
 c3.metric("Eksik", missing_count)
-c4.metric("Sorumlusuz Bölüm", unassigned_count)
+c4.metric("Yetkilisi Olmayan", unassigned_count)
 
 st.divider()
 
@@ -81,6 +81,15 @@ def _format_users(users: list[dict]) -> str:
     ]
     names = active_names + inactive_names
     return ", ".join(names) if names else "Atanmamış"
+
+
+def _assignment_status(users: list[dict]) -> str:
+    active_count = sum(1 for user in users if user["is_active"])
+    if active_count == 0:
+        return "Yetkilisi Yok"
+    if active_count == 1:
+        return "Tek Yetkili"
+    return "Mükerrer Yetki"
 
 
 rows: list[dict[str, object]] = []
@@ -109,6 +118,7 @@ for dept in sites_depts:
         "Bölüm": dept["department_name"],
         "Yetkili Kullanıcı(lar)": _format_users(users),
         "Aktif Yetkili Sayısı": sum(1 for user in users if user["is_active"]),
+        "Yetki Durumu": _assignment_status(users),
         "Sayım Durumu": count_status,
         "Giren Kullanıcı": entered_by,
         "Gönderim Zamanı": submitted_at,
@@ -120,18 +130,18 @@ df = pd.DataFrame(rows)
 
 status_filter = st.segmented_control(
     "Durum filtresi",
-    ["Tümü", "Eksik", "Girdi", "Geç Girdi", "Sorumlusuz"],
+    ["Tümü", "Eksik Girilen", "Tamamlanan", "Geç Girilen", "Yetkilisi Olmayan"],
     default="Tümü",
 )
 
 filtered = df
-if status_filter == "Eksik":
+if status_filter == "Eksik Girilen":
     filtered = df[df["Sayım Durumu"] == "Eksik"]
-elif status_filter == "Girdi":
+elif status_filter == "Tamamlanan":
     filtered = df[df["Sayım Durumu"] == "Girdi"]
-elif status_filter == "Geç Girdi":
+elif status_filter == "Geç Girilen":
     filtered = df[df["Sayım Durumu"] == "Geç Girdi"]
-elif status_filter == "Sorumlusuz":
+elif status_filter == "Yetkilisi Olmayan":
     filtered = df[df["Aktif Yetkili Sayısı"] == 0]
 
 st.dataframe(

@@ -851,7 +851,7 @@ def render_kpis(cards: list[str]) -> None:
 def quick_action_card(icon: str, title: str, desc: str, href: str = "") -> str:
     """Dashboard'da hızlı eylem kartı."""
     tag = "a" if href else "div"
-    href_attr = f' href="{_esc(href)}"' if href else ""
+    href_attr = f' href="{_esc(href)}" target="_self"' if href else ""
     return (
         f'<{tag} class="qa-card"{href_attr}>'
         f'  <div class="qa-icon">{_esc(icon)}</div>'

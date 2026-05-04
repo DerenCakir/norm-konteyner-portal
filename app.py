@@ -8,6 +8,7 @@ formu veya dashboard gösterilir.
 from __future__ import annotations
 
 import base64
+import time
 from pathlib import Path
 
 import streamlit as st
@@ -126,7 +127,8 @@ def render_login_form() -> None:
         return
 
     st.success("Giriş yapıldı. Oturum hazırlanıyor...")
-    st.stop()
+    time.sleep(0.8)
+    st.rerun()
 
 
 # ---------------------------------------------------------------------------

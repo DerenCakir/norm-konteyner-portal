@@ -104,28 +104,19 @@ def restore_session_from_cookie() -> None:
 
     try:
         controller = _get_cookie_controller()
+        controller.refresh()
         token = controller.get(_COOKIE_NAME)
         if not token:
             token = controller.getAll().get(_COOKIE_NAME)
     except Exception:
         return
 
-    if not token and not st.session_state.get("_cookie_restore_ready"):
-        st.session_state["_cookie_restore_ready"] = True
-        try:
-            controller.refresh()
-            token = controller.get(_COOKIE_NAME)
-            if not token:
-                token = controller.getAll().get(_COOKIE_NAME)
-        except Exception:
-            pass
-        if token:
-            st.session_state["_cookie_restore_ready"] = False
-        if not token:
-            st.info("Oturum kontrol ediliyor...")
-            st.stop()
-
     if not token:
+        if not st.session_state.get("_cookie_restore_checked"):
+            st.session_state["_cookie_restore_checked"] = True
+            time.sleep(0.3)
+            st.rerun()
+        st.session_state["_cookie_restore_checked"] = False
         return
 
     user_id = _verify_token(token)
@@ -150,6 +141,7 @@ def restore_session_from_cookie() -> None:
             st.session_state["department_ids"] = [
                 link.department_id for link in user.department_links
             ]
+            st.session_state["_cookie_restore_checked"] = False
     except Exception:
         return
 
