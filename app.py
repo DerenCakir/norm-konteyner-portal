@@ -52,7 +52,7 @@ st.set_page_config(
     page_title="Norm Fasteners — Konteyner Portalı",
     page_icon=str(_LOGO_PATH) if _LOGO_PATH.exists() else "📦",
     layout="wide",
-    initial_sidebar_state="auto",
+    initial_sidebar_state="expanded",
 )
 inject_css()
 

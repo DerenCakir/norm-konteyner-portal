@@ -341,6 +341,11 @@ hr {
     background: #060b14;
     border-right: 1px solid #111827;
 }
+[data-testid="stSidebarCollapseButton"],
+[data-testid="collapsedControl"] {
+    display: none !important;
+    pointer-events: none !important;
+}
 [data-testid="stSidebar"] .block-container {
     padding-top: 5.85rem !important;
 }
