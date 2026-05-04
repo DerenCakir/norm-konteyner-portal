@@ -265,6 +265,7 @@ if is_authenticated():
         st.Page("pages/02_anlik_durum.py", title="Anlık Durum"),
         st.Page("pages/03_haftalik_takip.py", title="Haftalık Takip"),
         st.Page("pages/04_analiz.py", title="Analiz"),
+        st.Page("pages/05_yetkililer.py", title="Yetkililer"),
     ]
     if st.session_state.get("role") == "admin":
         pages.append(st.Page("pages/99_admin.py", title="Admin Paneli"))

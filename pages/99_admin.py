@@ -46,6 +46,15 @@ admin_id = current_admin.id
 admin_username = current_admin.username
 render_sidebar_user(current_admin.full_name, current_admin.role)
 
+
+def _role_label(role: str) -> str:
+    return "Yönetici" if role == "admin" else "Kullanıcı"
+
+
+def _user_label(user: User) -> str:
+    status = "Aktif" if user.is_active else "Pasif"
+    return f"{user.username} — {user.full_name} ({_role_label(user.role)}, {status})"
+
 page_header(
     title="Admin Paneli",
     subtitle=f"Giriş yapan yönetici: {admin_username}",
@@ -115,6 +124,119 @@ with tab_users:
                         st.success(f"'{new_username}' oluşturuldu.")
             except Exception as exc:
                 st.error(f"Hata: {exc}")
+
+    st.divider()
+    st.subheader("Kullanıcı Düzenle / Şifre Sıfırla")
+    st.caption("Kullanıcılar fiziksel olarak silinmez; geçmiş sayım kayıtları bozulmasın diye pasif hale getirilir.")
+
+    with get_session() as s:
+        editable_users = list(s.execute(
+            select(User).order_by(User.username)
+        ).scalars())
+
+    if not editable_users:
+        st.info("Düzenlenecek kullanıcı yok.")
+    else:
+        selected_user_id = st.selectbox(
+            "Düzenlenecek kullanıcı",
+            [u.id for u in editable_users],
+            format_func=lambda user_id: _user_label(next(u for u in editable_users if u.id == user_id)),
+            key="edit_user_select",
+        )
+        selected_user = next(u for u in editable_users if u.id == selected_user_id)
+
+        with st.form("edit_user_form"):
+            col1, col2 = st.columns(2)
+            with col1:
+                edit_username = st.text_input("Kullanıcı adı", value=selected_user.username)
+                edit_full_name = st.text_input("Ad Soyad", value=selected_user.full_name)
+                edit_email = st.text_input("E-posta (opsiyonel)", value=selected_user.email or "")
+            with col2:
+                edit_role = st.selectbox(
+                    "Rol",
+                    ["user", "admin"],
+                    index=0 if selected_user.role == "user" else 1,
+                    format_func=_role_label,
+                )
+                edit_is_active = st.checkbox("Aktif", value=selected_user.is_active)
+                edit_password = st.text_input(
+                    "Yeni şifre (boş bırakırsan değişmez)",
+                    type="password",
+                )
+
+            update_clicked = st.form_submit_button("Kullanıcıyı Güncelle", use_container_width=True)
+
+        if update_clicked:
+            clean_username = edit_username.strip()
+            clean_full_name = edit_full_name.strip()
+            clean_email = edit_email.strip() or None
+
+            if not clean_username or not clean_full_name:
+                st.error("Kullanıcı adı ve ad soyad zorunlu.")
+            elif edit_password and len(edit_password) < 6:
+                st.error("Yeni şifre en az 6 karakter olmalı.")
+            elif selected_user_id == admin_id and (not edit_is_active or edit_role != "admin"):
+                st.error("Kendi yönetici hesabınızı pasifleştiremez veya kullanıcı rolüne düşüremezsiniz.")
+            else:
+                try:
+                    with get_session() as s:
+                        target = s.get(User, selected_user_id)
+                        username_taken = s.execute(
+                            select(User).where(
+                                User.username == clean_username,
+                                User.id != selected_user_id,
+                            )
+                        ).scalar_one_or_none()
+
+                        if username_taken is not None:
+                            st.error(f"'{clean_username}' kullanıcı adı zaten alınmış.")
+                        else:
+                            old_value = {
+                                "username": target.username,
+                                "full_name": target.full_name,
+                                "email": target.email,
+                                "role": target.role,
+                                "is_active": target.is_active,
+                            }
+
+                            target.username = clean_username
+                            target.full_name = clean_full_name
+                            target.email = clean_email
+                            target.role = edit_role
+                            target.is_active = edit_is_active
+
+                            new_value = {
+                                "username": target.username,
+                                "full_name": target.full_name,
+                                "email": target.email,
+                                "role": target.role,
+                                "is_active": target.is_active,
+                            }
+
+                            s.add(AuditLog(
+                                user_id=admin_id,
+                                action="user_update",
+                                entity_type="user",
+                                entity_id=target.id,
+                                old_value=old_value,
+                                new_value=new_value,
+                            ))
+
+                            if edit_password:
+                                target.password_hash = hash_password(edit_password)
+                                s.add(AuditLog(
+                                    user_id=admin_id,
+                                    action="user_password_reset",
+                                    entity_type="user",
+                                    entity_id=target.id,
+                                    old_value=None,
+                                    new_value={"username": target.username},
+                                ))
+
+                            st.success(f"'{target.username}' güncellendi.")
+                            st.rerun()
+                except Exception as exc:
+                    st.error(f"Hata: {exc}")
 
     st.divider()
     st.subheader("Mevcut Kullanıcılar")
