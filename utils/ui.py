@@ -341,10 +341,12 @@ hr {
     background: #060b14;
     border-right: 1px solid #111827;
 }
-[data-testid="stSidebarCollapseButton"],
-[data-testid="collapsedControl"] {
+[data-testid="stSidebarCollapseButton"] {
     display: none !important;
     pointer-events: none !important;
+}
+[data-testid="collapsedControl"] {
+    display: flex !important;
 }
 [data-testid="stSidebar"] .block-container {
     padding-top: 5.85rem !important;
@@ -880,3 +882,16 @@ def render_sidebar_user(full_name: str, role: str) -> None:
         f'</div>',
         unsafe_allow_html=True,
     )
+    if st.sidebar.button("Çıkış Yap", use_container_width=True, key="sidebar_logout"):
+        from sqlalchemy.exc import SQLAlchemyError
+
+        from db.connection import get_session
+        from utils.auth import logout_user
+
+        try:
+            with get_session() as session:
+                logout_user(session)
+        except SQLAlchemyError:
+            for key in ("user_id", "username", "role", "full_name", "department_ids"):
+                st.session_state.pop(key, None)
+        st.rerun()

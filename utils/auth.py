@@ -105,6 +105,8 @@ def restore_session_from_cookie() -> None:
     try:
         controller = _get_cookie_controller()
         token = controller.get(_COOKIE_NAME)
+        if not token:
+            token = controller.getAll().get(_COOKIE_NAME)
     except Exception:
         return
 
@@ -113,6 +115,8 @@ def restore_session_from_cookie() -> None:
         try:
             controller.refresh()
             token = controller.get(_COOKIE_NAME)
+            if not token:
+                token = controller.getAll().get(_COOKIE_NAME)
         except Exception:
             pass
         if token:

@@ -18,7 +18,6 @@ from utils.auth import (
     authenticate,
     is_authenticated,
     login_user,
-    logout_user,
     restore_session_from_cookie,
 )
 from utils.ui import (
@@ -126,7 +125,8 @@ def render_login_form() -> None:
         st.error("Beklenmeyen bir hata oluştu.")
         return
 
-    st.rerun()
+    st.success("Giriş yapıldı. Oturum hazırlanıyor...")
+    st.stop()
 
 
 # ---------------------------------------------------------------------------
@@ -137,15 +137,6 @@ def render_sidebar() -> None:
     role = st.session_state.get("role", "user")
 
     render_sidebar_user(full_name, role)
-
-    if st.sidebar.button("🚪 Çıkış Yap", use_container_width=True):
-        try:
-            with get_session() as session:
-                logout_user(session)
-        except SQLAlchemyError:
-            for key in ("user_id", "username", "role", "full_name", "department_ids"):
-                st.session_state.pop(key, None)
-        st.rerun()
 
 
 # ---------------------------------------------------------------------------
