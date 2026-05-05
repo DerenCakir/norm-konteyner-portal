@@ -21,28 +21,27 @@ import streamlit as st
 _GLOBAL_CSS = """
 <style>
 :root {
-    --bg:            #0F172A;
-    --surface:       #1E293B;
-    --surface-2:     #243044;
-    --surface-3:     #2C3A52;
-    --border:        #334155;
-    --border-soft:   #2A3447;
-    --text:          #F1F5F9;
-    --text-muted:    #94A3B8;
-    --text-faint:    #64748B;
-    --primary:       #38BDF8;
-    --primary-soft:  rgba(56, 189, 248, 0.15);
-    --primary-line:  rgba(56, 189, 248, 0.4);
-    --success:       #34D399;
-    --success-soft:  rgba(52, 211, 153, 0.15);
+    --bg:            #1A1E29;
+    --surface:       #222734;
+    --surface-2:     #2A2F3D;
+    --surface-3:     #313644;
+    --border:        #2F3543;
+    --border-soft:   #262B38;
+    --text:          #E5E7EB;
+    --text-muted:    #9CA3AF;
+    --text-faint:    #6B7280;
+    --primary:       #60A5FA;
+    --primary-soft:  rgba(96, 165, 250, 0.12);
+    --primary-line:  rgba(96, 165, 250, 0.35);
+    --success:       #4ADE80;
+    --success-soft:  rgba(74, 222, 128, 0.12);
     --warning:       #FBBF24;
-    --warning-soft:  rgba(251, 191, 36, 0.15);
+    --warning-soft:  rgba(251, 191, 36, 0.12);
     --danger:        #F87171;
-    --danger-soft:   rgba(248, 113, 113, 0.15);
-    --radius:        12px;
-    --radius-sm:     8px;
-    --shadow:        0 8px 24px rgba(0, 0, 0, 0.25);
-    --font:          'Inter', 'Plus Jakarta Sans', system-ui, -apple-system, "Segoe UI", sans-serif;
+    --danger-soft:   rgba(248, 113, 113, 0.12);
+    --radius:        10px;
+    --radius-sm:     6px;
+    --font:          'Inter', system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
@@ -74,7 +73,18 @@ a:hover { color: var(--text); }
     border-right: 1px solid var(--border-soft) !important;
 }
 [data-testid="stSidebar"] * { color: var(--text); }
-[data-testid="stSidebar"] [data-testid="stSidebarNav"] { display: none; }
+
+/* The collapse / expand arrow needs to be visible against the dark sidebar */
+[data-testid="stSidebarCollapseButton"] svg,
+[data-testid="collapsedControl"] svg {
+    color: var(--text) !important;
+    fill: var(--text) !important;
+}
+[data-testid="collapsedControl"] {
+    background: var(--surface) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-sm) !important;
+}
 
 .sidebar-brand-card {
     display: flex; align-items: center; gap: 0.75rem;
@@ -283,74 +293,53 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 
 .section-gap { height: 0.5rem; }
 
-/* Hero (dashboard) */
+/* Hero (dashboard) — simple flat card, no gradient */
 .dashboard-hero {
-    background: linear-gradient(135deg, #1E293B 0%, #243044 100%);
-    border: 1px solid var(--border-soft);
-    border-radius: var(--radius);
-    padding: 1.75rem 2rem;
-    display: flex; flex-direction: column; gap: 1rem;
+    border-bottom: 1px solid var(--border-soft);
+    padding: 0.5rem 0 1.5rem;
+    display: flex; flex-direction: column; gap: 0.6rem;
     margin-bottom: 1rem;
 }
 .dashboard-eyebrow {
-    color: var(--primary);
+    color: var(--text-muted);
     font-size: 0.7rem;
-    letter-spacing: 0.18em;
-    font-weight: 700;
+    letter-spacing: 0.14em;
+    font-weight: 600;
     text-transform: uppercase;
 }
 .dashboard-hero h1 {
-    font-size: 1.75rem; font-weight: 700; margin: 0.4rem 0 0.5rem; color: var(--text);
-    letter-spacing: -0.02em;
+    font-size: 1.6rem; font-weight: 600; margin: 0; color: var(--text);
+    letter-spacing: -0.015em;
 }
-.dashboard-hero p { color: var(--text-muted); font-size: 0.95rem; max-width: 720px; margin: 0; }
+.dashboard-hero p { color: var(--text-muted); font-size: 0.92rem; max-width: 720px; margin: 0; line-height: 1.5; }
 .dashboard-hero-badges {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 0.6rem; margin-top: 0.5rem;
+    display: flex; gap: 1.5rem; margin-top: 0.6rem; flex-wrap: wrap;
 }
 .hero-badge {
-    background: rgba(15, 23, 42, 0.5);
-    border: 1px solid var(--border-soft);
-    border-radius: var(--radius-sm);
-    padding: 0.65rem 0.85rem;
     display: flex; flex-direction: column; gap: 0.15rem;
 }
-.hero-badge span { color: var(--text-muted); font-size: 0.7rem; letter-spacing: 0.05em; text-transform: uppercase; }
-.hero-badge strong { color: var(--text); font-size: 1rem; font-weight: 600; }
+.hero-badge span { color: var(--text-muted); font-size: 0.72rem; }
+.hero-badge strong { color: var(--text); font-size: 0.95rem; font-weight: 600; }
 
-/* KPI cards */
+/* KPI cards — minimal: label + value, no icons */
 .kpi-card {
     background: var(--surface);
     border: 1px solid var(--border-soft);
     border-radius: var(--radius);
-    padding: 1rem 1.1rem 1.05rem;
-    display: flex; flex-direction: column; gap: 0.5rem;
+    padding: 0.95rem 1.1rem;
+    display: flex; flex-direction: column; gap: 0.35rem;
     height: 100%;
-    transition: border-color 0.15s ease;
 }
-.kpi-card:hover { border-color: var(--primary-line); }
-.kpi-card-top { display: flex; justify-content: space-between; align-items: center; }
-.kpi-label { color: var(--text-muted); font-size: 0.75rem; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; }
-.kpi-icon {
-    width: 28px; height: 28px;
-    border-radius: 7px;
-    background: var(--primary-soft);
-    color: var(--primary);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 0.7rem; font-weight: 700;
-}
-.kpi-value { color: var(--text); font-size: 1.55rem; font-weight: 700; line-height: 1.2; letter-spacing: -0.02em; }
+.kpi-card-top { display: flex; align-items: center; }
+.kpi-label { color: var(--text-muted); font-size: 0.78rem; font-weight: 500; }
+.kpi-icon { display: none; }
+.kpi-value { color: var(--text); font-size: 1.4rem; font-weight: 600; line-height: 1.2; }
 .kpi-card-bottom { display: flex; justify-content: space-between; align-items: end; gap: 0.5rem; }
-.kpi-sub { color: var(--text-muted); font-size: 0.78rem; line-height: 1.35; }
-.kpi-delta { font-size: 0.78rem; font-weight: 600; }
+.kpi-sub { color: var(--text-faint); font-size: 0.76rem; line-height: 1.35; }
+.kpi-delta { font-size: 0.76rem; font-weight: 600; }
 .kpi-delta.positive { color: var(--success); }
 .kpi-delta.negative { color: var(--danger); }
 .kpi-delta.neutral  { color: var(--text-muted); }
-.kpi-tone-blue   .kpi-icon { background: var(--primary-soft); color: var(--primary); }
-.kpi-tone-green  .kpi-icon { background: var(--success-soft); color: var(--success); }
-.kpi-tone-amber  .kpi-icon { background: var(--warning-soft); color: var(--warning); }
-.kpi-tone-red    .kpi-icon { background: var(--danger-soft);  color: var(--danger); }
-.kpi-tone-slate  .kpi-icon { background: var(--surface-3);    color: var(--text-muted); }
 
 /* Status panel */
 .status-panel {
@@ -412,29 +401,21 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 .flow-step strong { display: block; color: var(--text); font-size: 0.88rem; font-weight: 600; }
 .flow-step small { color: var(--text-muted); font-size: 0.78rem; line-height: 1.4; }
 
-/* Quick action cards */
+/* Quick action cards — flat, no transforms */
 .qa-card {
-    display: flex; flex-direction: column; gap: 0.5rem;
+    display: flex; flex-direction: column; gap: 0.35rem;
     background: var(--surface);
     border: 1px solid var(--border-soft);
     border-radius: var(--radius);
-    padding: 1.1rem 1.15rem;
+    padding: 1rem 1.1rem;
     text-decoration: none !important;
-    transition: all 0.15s ease;
     height: 100%;
 }
-.qa-card:hover { border-color: var(--primary-line); background: var(--surface-2); transform: translateY(-1px); }
-.qa-icon {
-    width: 32px; height: 32px;
-    border-radius: 8px;
-    background: var(--primary-soft);
-    color: var(--primary);
-    display: flex; align-items: center; justify-content: center;
-    font-weight: 700; font-size: 0.78rem;
-}
+.qa-card:hover { border-color: var(--primary-line); background: var(--surface-2); }
+.qa-icon { display: none; }
 .qa-title { color: var(--text); font-weight: 600; font-size: 0.95rem; }
 .qa-desc  { color: var(--text-muted); font-size: 0.8rem; line-height: 1.4; }
-.qa-cta   { color: var(--primary); font-size: 0.78rem; font-weight: 600; margin-top: 0.4rem; }
+.qa-cta   { color: var(--primary); font-size: 0.78rem; font-weight: 500; margin-top: 0.5rem; }
 
 /* Status badges & pills */
 .status-badge, .status-pill {
