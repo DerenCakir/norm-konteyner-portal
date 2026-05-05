@@ -13,6 +13,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from decimal import Decimal
 
+import pandas as pd
 import streamlit as st
 from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
@@ -30,7 +31,7 @@ from db.models import (
     UserDepartment,
 )
 from utils.auth import hash_password, require_admin, restore_session_from_cookie
-from utils.cached_queries import clear_cached_queries
+from utils.cached_queries import clear_cached_queries, get_active_department_count, get_week_export_rows
 from utils.performance import page_timer
 from utils.ui import inject_css, page_header, render_sidebar_user
 from utils.week import current_week_iso, format_week_human, now_tr, week_iso_from_date
@@ -1032,6 +1033,39 @@ with tab_override:
                     CountSubmission.week_iso == override_week
                 )
             ).scalar_one()
+            late_submission_count = s.execute(
+                select(func.count(CountSubmission.id)).where(
+                    CountSubmission.week_iso == override_week,
+                    CountSubmission.status == "late_submitted",
+                )
+            ).scalar_one()
+
+        active_department_count = get_active_department_count()
+        missing_department_count = max(active_department_count - week_submission_count, 0)
+        completion_pct = (
+            week_submission_count / active_department_count * 100
+            if active_department_count else 0
+        )
+        export_rows = get_week_export_rows(override_week)
+
+        st.markdown("#### Seçili Hafta Özeti")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Giren Bölüm", f"{week_submission_count} / {active_department_count}")
+        m2.metric("Eksik Bölüm", missing_department_count)
+        m3.metric("Tamamlanma", f"%{completion_pct:.0f}")
+        m4.metric("Geç Girilen", late_submission_count)
+
+        if export_rows:
+            export_df = pd.DataFrame(export_rows)
+            st.download_button(
+                "Seçili Haftayı CSV İndir",
+                data=export_df.to_csv(index=False).encode("utf-8-sig"),
+                file_name=f"sayim_export_{override_week}.csv",
+                mime="text/csv",
+                use_container_width=True,
+            )
+        else:
+            st.info("Seçili hafta için indirilecek sayım kaydı yok.")
 
         with st.expander("Seçili Haftanın Tüm Sayımlarını Sil", expanded=False):
             st.warning(

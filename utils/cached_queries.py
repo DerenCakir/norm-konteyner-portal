@@ -37,6 +37,7 @@ def clear_cached_queries() -> None:
     get_department_users.clear()
     get_analysis_rows.clear()
     get_active_department_count.clear()
+    get_week_export_rows.clear()
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
@@ -227,6 +228,60 @@ def get_analysis_rows(week_isos: tuple[str, ...]) -> list[dict[str, Any]]:
             "site_id": row.site_id,
             "site": row.site,
             "color": row.color,
+        }
+        for row in rows
+    ]
+
+
+@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
+def get_week_export_rows(week_iso: str) -> list[dict[str, Any]]:
+    with get_session() as s:
+        rows = s.execute(
+            select(
+                CountSubmission.id.label("submission_id"),
+                CountSubmission.week_iso,
+                CountSubmission.status,
+                CountSubmission.count_date,
+                CountSubmission.count_time,
+                CountSubmission.actual_tonnage,
+                CountSubmission.submitted_at,
+                ProductionSite.name.label("site"),
+                Department.name.label("department"),
+                User.username,
+                User.full_name,
+                Color.name.label("color"),
+                CountDetail.empty_count,
+                CountDetail.full_count,
+                CountDetail.kanban_count,
+            )
+            .join(Department, Department.id == CountSubmission.department_id)
+            .join(ProductionSite, ProductionSite.id == Department.production_site_id)
+            .join(User, User.id == CountSubmission.user_id)
+            .join(CountDetail, CountDetail.submission_id == CountSubmission.id)
+            .join(Color, Color.id == CountDetail.color_id)
+            .where(CountSubmission.week_iso == week_iso)
+            .order_by(ProductionSite.name, Department.name, Color.sort_order, Color.id)
+        ).all()
+
+    return [
+        {
+            "Hafta": row.week_iso,
+            "Üretim Yeri": row.site,
+            "Bölüm": row.department,
+            "Renk": row.color,
+            "Boş": row.empty_count,
+            "Dolu": row.full_count,
+            "Kanban": row.kanban_count,
+            "Gerçekleşen Tonaj": (
+                float(row.actual_tonnage) if row.actual_tonnage is not None else None
+            ),
+            "Durum": row.status,
+            "Giren Kullanıcı": row.full_name,
+            "Kullanıcı Adı": row.username,
+            "Sayım Tarihi": str(row.count_date) if row.count_date else None,
+            "Sayım Saati": str(row.count_time) if row.count_time else None,
+            "Gönderim Zamanı": row.submitted_at.isoformat() if row.submitted_at else None,
+            "Submission ID": row.submission_id,
         }
         for row in rows
     ]

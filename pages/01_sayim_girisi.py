@@ -31,6 +31,8 @@ from db.models import (
     Department,
     LateWindowOverride,
     ProductionSite,
+    User,
+    UserDepartment,
 )
 from utils.auth import (
     get_user_departments,
@@ -163,6 +165,16 @@ with get_session() as s:
             CountSubmission.week_iso == week_iso,
         )
     ).scalar_one_or_none()
+    existing_user = s.get(User, existing.user_id) if existing is not None else None
+    authorized_users = list(s.execute(
+        select(User)
+        .join(UserDepartment, UserDepartment.user_id == User.id)
+        .where(
+            UserDepartment.department_id == selected_dept_id,
+            User.is_active.is_(True),
+        )
+        .order_by(User.full_name)
+    ).scalars())
 
     existing_details: dict[int, CountDetail] = {}
     if existing is not None:
@@ -182,18 +194,28 @@ st.divider()
 st.subheader("Konteyner Sayımı")
 
 if existing is not None:
+    updater_name = existing_user.full_name if existing_user else "-"
     if can_submit:
         st.warning(
             f"Bu bölüm ve hafta için daha önce kayıt gönderilmiş. "
+            f"Son giren/güncelleyen: **{updater_name}**. "
             f"Son güncelleme: **{existing.updated_at:%Y-%m-%d %H:%M}**. "
             "Formu kaydedersen mevcut kayıt güncellenecek."
         )
     else:
         st.info(
             f"Bu bölüm ve hafta için kayıt var ama giriş penceresi kapalı. "
+            f"Son giren/güncelleyen: **{updater_name}**. "
             f"Son güncelleme: **{existing.updated_at:%Y-%m-%d %H:%M}**. "
             "Düzeltme gerekiyorsa yöneticinizden destek isteyin."
         )
+
+if len(authorized_users) > 1:
+    names = ", ".join(user.full_name for user in authorized_users)
+    st.warning(
+        "Bu bölümde birden fazla aktif yetkili var. Aynı hafta içinde son kaydeden kişi "
+        f"mevcut sayımın üzerine yazabilir. Yetkililer: {names}"
+    )
 
 with st.form("submission_form", clear_on_submit=False):
     cdate = st.date_input("Sayım tarihi", value=default_count_date, disabled=not can_submit)
