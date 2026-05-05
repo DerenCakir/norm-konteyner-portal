@@ -46,6 +46,7 @@ from utils.week import now_tr
 # Cookie-based persistent auth
 # ---------------------------------------------------------------------------
 _COOKIE_NAME = "norm_auth"
+_QUERY_TOKEN_NAME = "auth"
 _COOKIE_TTL_DAYS = 7
 _SESSION_REFRESH_SECONDS = 30
 
@@ -82,6 +83,42 @@ def _verify_token(token: str) -> Optional[int]:
         return int(payload["uid"])
     except Exception:
         return None
+
+
+def _get_query_token() -> Optional[str]:
+    try:
+        value = st.query_params.get(_QUERY_TOKEN_NAME)
+        if isinstance(value, list):
+            return value[0] if value else None
+        return value
+    except Exception:
+        return None
+
+
+def _set_query_token(token: str) -> None:
+    try:
+        st.query_params[_QUERY_TOKEN_NAME] = token
+    except Exception:
+        pass
+
+
+def _clear_query_token() -> None:
+    try:
+        if _QUERY_TOKEN_NAME in st.query_params:
+            del st.query_params[_QUERY_TOKEN_NAME]
+    except Exception:
+        pass
+
+
+def _set_session_from_user(user: User) -> None:
+    st.session_state["user_id"] = user.id
+    st.session_state["username"] = user.username
+    st.session_state["role"] = user.role
+    st.session_state["full_name"] = user.full_name
+    st.session_state["department_ids"] = [
+        link.department_id for link in user.department_links
+    ]
+    st.session_state["_session_refreshed_at"] = time.time()
 
 
 def _get_cookie_controller():
@@ -125,7 +162,9 @@ def restore_session_from_cookie() -> None:
     try:
         controller = _get_cookie_controller()
         controller.refresh()
-        token = controller.get(_COOKIE_NAME)
+        token = _get_query_token()
+        if not token:
+            token = controller.get(_COOKIE_NAME)
         if not token:
             token = controller.getAll().get(_COOKIE_NAME)
     except Exception:
@@ -154,13 +193,7 @@ def restore_session_from_cookie() -> None:
             user = s.get(User, user_id)
             if user is None or not user.is_active:
                 return
-            st.session_state["user_id"] = user.id
-            st.session_state["username"] = user.username
-            st.session_state["role"] = user.role
-            st.session_state["full_name"] = user.full_name
-            st.session_state["department_ids"] = [
-                link.department_id for link in user.department_links
-            ]
+            _set_session_from_user(user)
             st.session_state["_cookie_restore_checked"] = False
     except Exception:
         return
@@ -170,6 +203,8 @@ def _set_auth_cookie(user_id: int) -> None:
     try:
         controller = _get_cookie_controller()
         token = _make_token(user_id)
+        st.session_state["_auth_token"] = token
+        _set_query_token(token)
         controller.set(
             _COOKIE_NAME,
             token,
@@ -188,6 +223,8 @@ def _clear_auth_cookie() -> None:
         controller.remove(_COOKIE_NAME)
     except Exception:
         pass
+    _clear_query_token()
+    st.session_state.pop("_auth_token", None)
 
 
 # ---------------------------------------------------------------------------
@@ -296,13 +333,7 @@ def login_user(user: User) -> None:
     """Store the authenticated user's identity in ``st.session_state``
     and persist a signed cookie so login survives page refreshes.
     """
-    st.session_state["user_id"] = user.id
-    st.session_state["username"] = user.username
-    st.session_state["role"] = user.role
-    st.session_state["full_name"] = user.full_name
-    st.session_state["department_ids"] = [
-        link.department_id for link in user.department_links
-    ]
+    _set_session_from_user(user)
     _set_auth_cookie(user.id)
 
 
