@@ -152,14 +152,14 @@ class TestGetSubmissionStatus:
     def stub_late_closed(self, monkeypatch):
         monkeypatch.setattr(
             week_mod, "is_late_window_open",
-            lambda week_iso, session, now=None: False,
+            lambda week_iso, session, now=None, user_id=None, department_id=None: False,
         )
 
     @pytest.fixture
     def stub_late_open(self, monkeypatch):
         monkeypatch.setattr(
             week_mod, "is_late_window_open",
-            lambda week_iso, session, now=None: True,
+            lambda week_iso, session, now=None, user_id=None, department_id=None: True,
         )
 
     # ----- late closed -----

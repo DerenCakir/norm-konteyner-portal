@@ -21,6 +21,7 @@ from decimal import Decimal
 
 import streamlit as st
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 from db.connection import get_session
 from db.models import (
@@ -29,6 +30,7 @@ from db.models import (
     CountDetail,
     CountSubmission,
     Department,
+    LateUserWindowOverride,
     LateWindowOverride,
     ProductionSite,
     User,
@@ -81,9 +83,23 @@ with get_session() as s:
         .where(LateWindowOverride.closes_at > now_tr())
         .order_by(LateWindowOverride.week_iso.desc())
     ).scalars())
+    try:
+        active_user_late_weeks = list(s.execute(
+            select(LateUserWindowOverride.week_iso)
+            .where(
+                LateUserWindowOverride.user_id == me_id,
+                LateUserWindowOverride.closes_at > now_tr(),
+            )
+            .order_by(LateUserWindowOverride.week_iso.desc())
+        ).scalars())
+    except SQLAlchemyError:
+        active_user_late_weeks = []
 
 week_options = [current_week]
 for late_week in active_late_weeks:
+    if late_week not in week_options:
+        week_options.append(late_week)
+for late_week in active_user_late_weeks:
     if late_week not in week_options:
         week_options.append(late_week)
 page_header(
@@ -141,7 +157,12 @@ with get_session() as s:
 # Status kontrolü
 # ---------------------------------------------------------------------------
 with get_session() as s:
-    status = get_submission_status(week_iso, s)
+    status = get_submission_status(
+        week_iso,
+        s,
+        user_id=me_id,
+        department_id=selected_dept_id,
+    )
 
 status_meta = {
     "open": ("success", "Açık", "Sayım girişi açık", "Cuma 09.00-12.00 penceresinde kayıt gönderebilirsiniz."),

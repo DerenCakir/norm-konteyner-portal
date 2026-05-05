@@ -148,6 +148,14 @@ class User(Base):
     late_overrides_opened: Mapped[list["LateWindowOverride"]] = relationship(
         back_populates="opened_by_user"
     )
+    late_user_overrides: Mapped[list["LateUserWindowOverride"]] = relationship(
+        foreign_keys="LateUserWindowOverride.user_id",
+        back_populates="user",
+    )
+    late_user_overrides_opened: Mapped[list["LateUserWindowOverride"]] = relationship(
+        foreign_keys="LateUserWindowOverride.opened_by",
+        back_populates="opened_by_user",
+    )
 
     def __repr__(self) -> str:
         return f"<User id={self.id} username={self.username!r} role={self.role!r}>"
@@ -286,6 +294,45 @@ class LateWindowOverride(Base):
         return (
             f"<LateWindowOverride week={self.week_iso!r} "
             f"opened_by={self.opened_by} closes_at={self.closes_at}>"
+        )
+
+
+class LateUserWindowOverride(Base):
+    """Admin-opened late submission window scoped to one user.
+
+    If ``department_id`` is NULL, the user may submit for any department they
+    are already authorized for in the selected week. If ``department_id`` is
+    set, the late window applies only to that department.
+    """
+
+    __tablename__ = "late_user_window_overrides"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    week_iso: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    department_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("departments.id"), index=True
+    )
+    opened_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    opened_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    closes_at: Mapped[datetime] = mapped_column(nullable=False, index=True)
+    reason: Mapped[Optional[str]] = mapped_column(String(500))
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+
+    user: Mapped["User"] = relationship(
+        foreign_keys=[user_id],
+        back_populates="late_user_overrides",
+    )
+    opened_by_user: Mapped["User"] = relationship(
+        foreign_keys=[opened_by],
+        back_populates="late_user_overrides_opened",
+    )
+    department: Mapped[Optional["Department"]] = relationship()
+
+    def __repr__(self) -> str:
+        return (
+            f"<LateUserWindowOverride week={self.week_iso!r} user_id={self.user_id} "
+            f"department_id={self.department_id} closes_at={self.closes_at}>"
         )
 
 

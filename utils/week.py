@@ -24,10 +24,11 @@ from typing import Literal, Optional
 
 import pytz
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 # Imported lazily-friendly: db.models pulls in db.base only.
-from db.models import LateWindowOverride
+from db.models import LateUserWindowOverride, LateWindowOverride
 
 TR_TZ = pytz.timezone("Europe/Istanbul")
 
@@ -109,6 +110,8 @@ def is_late_window_open(
     week_iso: str,
     session: Session,
     now: Optional[datetime] = None,
+    user_id: Optional[int] = None,
+    department_id: Optional[int] = None,
 ) -> bool:
     """True if an admin has opened a late window for *week_iso* and it
     has not yet expired.
@@ -120,14 +123,41 @@ def is_late_window_open(
         select(LateWindowOverride).where(LateWindowOverride.week_iso == week_iso)
     ).scalar_one_or_none()
     if override is None:
+        global_open = False
+    else:
+        global_open = now_tr(now) < now_tr(override.closes_at)
+
+    if global_open:
+        return True
+
+    if user_id is None:
         return False
-    return now_tr(now) < now_tr(override.closes_at)
+
+    query = select(LateUserWindowOverride).where(
+        LateUserWindowOverride.week_iso == week_iso,
+        LateUserWindowOverride.user_id == user_id,
+        LateUserWindowOverride.closes_at > now_tr(now),
+    )
+    if department_id is not None:
+        query = query.where(
+            (LateUserWindowOverride.department_id.is_(None))
+            | (LateUserWindowOverride.department_id == department_id)
+        )
+    try:
+        override_user = session.execute(
+            query.order_by(LateUserWindowOverride.closes_at.desc())
+        ).scalars().first()
+    except SQLAlchemyError:
+        return False
+    return override_user is not None
 
 
 def get_submission_status(
     week_iso: str,
     session: Session,
     now: Optional[datetime] = None,
+    user_id: Optional[int] = None,
+    department_id: Optional[int] = None,
 ) -> SubmissionStatus:
     """Resolve the current submission status for a given week.
 
@@ -140,7 +170,7 @@ def get_submission_status(
     """
     if is_submission_open(now) and week_iso == current_week_iso(now):
         return "open"
-    if is_late_window_open(week_iso, session, now):
+    if is_late_window_open(week_iso, session, now, user_id=user_id, department_id=department_id):
         return "late"
     return "locked"
 

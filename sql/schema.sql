@@ -106,6 +106,25 @@ CREATE TABLE late_window_overrides (
 
 CREATE INDEX idx_late_overrides_closes ON late_window_overrides(closes_at);
 
+-- Kullanıcı özel geç giriş izni.
+-- department_id NULL ise kullanıcının yetkili olduğu tüm bölümler için geçerlidir.
+CREATE TABLE late_user_window_overrides (
+    id SERIAL PRIMARY KEY,
+    week_iso VARCHAR(8) NOT NULL,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    department_id INTEGER REFERENCES departments(id),
+    opened_by INTEGER NOT NULL REFERENCES users(id),
+    opened_at TIMESTAMPTZ DEFAULT NOW(),
+    closes_at TIMESTAMPTZ NOT NULL,
+    reason VARCHAR(500),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_late_user_overrides_lookup
+    ON late_user_window_overrides(week_iso, user_id, department_id, closes_at);
+CREATE INDEX idx_late_user_overrides_closes
+    ON late_user_window_overrides(closes_at);
+
 -- 9. AUDIT LOG
 CREATE TABLE audit_log (
     id SERIAL PRIMARY KEY,

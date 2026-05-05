@@ -16,7 +16,7 @@ from decimal import Decimal
 import pandas as pd
 import streamlit as st
 from sqlalchemy import func, select
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import aliased, selectinload
 
 from db.connection import get_session
 from db.models import (
@@ -25,6 +25,7 @@ from db.models import (
     CountDetail,
     CountSubmission,
     Department,
+    LateUserWindowOverride,
     LateWindowOverride,
     ProductionSite,
     User,
@@ -891,7 +892,7 @@ with tab_perms:
 # ---------------------------------------------------------------------------
 with tab_late:
     st.subheader("Geç Giriş Penceresi")
-    st.caption("Kapanmış bir hafta için kullanıcıların sayım girebilmesini sağlar.")
+    st.caption("Kapanmış bir hafta için hafta geneli veya kullanıcı özelinde sayım girişi açar.")
 
     with get_session() as s:
         known_weeks = list(s.execute(
@@ -899,9 +900,64 @@ with tab_late:
             .distinct()
             .order_by(CountSubmission.week_iso.desc())
         ).scalars())
+        late_users = list(s.execute(
+            select(User)
+            .where(User.is_active.is_(True))
+            .order_by(User.full_name)
+        ).scalars())
+        user_departments_for_late = list(s.execute(
+            select(UserDepartment.user_id, Department, ProductionSite)
+            .join(Department, Department.id == UserDepartment.department_id)
+            .join(ProductionSite, ProductionSite.id == Department.production_site_id)
+            .where(Department.is_active.is_(True))
+            .order_by(ProductionSite.name, Department.name)
+        ).all())
 
     current_week = current_week_iso()
     known_weeks = _merge_week_options(_recent_week_options(12), known_weeks)
+
+    default_closes_at = now_tr() + timedelta(hours=1)
+    late_scope = st.radio(
+        "İzin kapsamı",
+        ["Kullanıcı özel", "Hafta geneli"],
+        horizontal=True,
+        help="Kullanıcı özel izin yalnızca seçilen kullanıcıya açılır. Hafta geneli izin o haftadaki yetkili tüm kullanıcıları kapsar.",
+    )
+
+    selected_late_user_id = None
+    selected_late_department_id = None
+    if late_scope == "Kullanıcı özel":
+        if not late_users:
+            st.info("Aktif kullanıcı bulunamadı.")
+            st.stop()
+        selected_late_user_id = st.selectbox(
+            "Kullanıcı",
+            [user.id for user in late_users],
+            format_func=lambda user_id: _user_label(next(user for user in late_users if user.id == user_id)),
+            key="late_user_select",
+        )
+        dept_options_for_user = [
+            (dept, site)
+            for user_id, dept, site in user_departments_for_late
+            if user_id == selected_late_user_id
+        ]
+        dept_scope_options = [0] + [dept.id for dept, _site in dept_options_for_user]
+        selected_late_department_id = st.selectbox(
+            "Bölüm kapsamı",
+            dept_scope_options,
+            format_func=lambda dept_id: (
+                "Yetkili olduğu tüm bölümler"
+                if dept_id == 0 else
+                next(
+                    f"{site.name} — {dept.name}"
+                    for dept, site in dept_options_for_user
+                    if dept.id == dept_id
+                )
+            ),
+            key="late_department_scope",
+        )
+        if selected_late_department_id == 0:
+            selected_late_department_id = None
 
     with st.form("late_window_form"):
         selected_week = st.selectbox(
@@ -911,52 +967,107 @@ with tab_late:
             format_func=lambda w: f"{w} — {format_week_human(w)}",
         )
         col_date, col_time = st.columns(2)
-        closes_date = col_date.date_input("Kapanış tarihi", value=now_tr().date())
-        closes_time = col_time.time_input("Kapanış saati", value=now_tr().time().replace(microsecond=0))
+        closes_date = col_date.date_input("Kapanış tarihi", value=default_closes_at.date())
+        closes_time = col_time.time_input("Kapanış saati", value=default_closes_at.time().replace(microsecond=0))
         reason = st.text_area("Açıklama", placeholder="Örn. bölüm sayımı zamanında tamamlanamadı")
         open_clicked = st.form_submit_button("Pencereyi Aç / Güncelle", use_container_width=True)
 
     if open_clicked:
         closes_at = now_tr(datetime.combine(closes_date, closes_time))
-        if closes_at <= now_tr():
-            st.error("Kapanış zamanı şu andan ileri olmalı.")
+        current_time = now_tr()
+        if closes_at <= current_time:
+            st.error(
+                "Kapanış zamanı şu andan ileri olmalı. "
+                f"Seçilen: {closes_at:%Y-%m-%d %H:%M}, şu an: {current_time:%Y-%m-%d %H:%M}."
+            )
         else:
             try:
                 with get_session() as s:
-                    existing = s.get(LateWindowOverride, selected_week)
                     old_value = None
-                    if existing is None:
-                        override = LateWindowOverride(
-                            week_iso=selected_week,
-                            opened_by=admin_id,
-                            closes_at=closes_at,
-                            reason=(reason.strip() or None),
-                        )
-                        s.add(override)
-                    else:
-                        old_value = {
-                            "closes_at": existing.closes_at.isoformat(),
-                            "reason": existing.reason,
-                        }
-                        existing.opened_by = admin_id
-                        existing.opened_at = now_tr()
-                        existing.closes_at = closes_at
-                        existing.reason = reason.strip() or None
+                    if late_scope == "Hafta geneli":
+                        existing = s.get(LateWindowOverride, selected_week)
+                        if existing is None:
+                            override = LateWindowOverride(
+                                week_iso=selected_week,
+                                opened_by=admin_id,
+                                closes_at=closes_at,
+                                reason=(reason.strip() or None),
+                            )
+                            s.add(override)
+                        else:
+                            old_value = {
+                                "closes_at": existing.closes_at.isoformat(),
+                                "reason": existing.reason,
+                            }
+                            existing.opened_by = admin_id
+                            existing.opened_at = now_tr()
+                            existing.closes_at = closes_at
+                            existing.reason = reason.strip() or None
 
-                    s.add(AuditLog(
-                        user_id=admin_id,
-                        action="late_window_open",
-                        entity_type="late_window_override",
-                        entity_id=None,
-                        old_value=old_value,
-                        new_value={
+                        audit_action = "late_window_open"
+                        audit_entity = "late_window_override"
+                        audit_new_value = {
+                            "scope": "week",
                             "week_iso": selected_week,
                             "closes_at": closes_at.isoformat(),
                             "reason": reason.strip() or None,
-                        },
+                        }
+                    else:
+                        existing = s.execute(
+                            select(LateUserWindowOverride).where(
+                                LateUserWindowOverride.week_iso == selected_week,
+                                LateUserWindowOverride.user_id == selected_late_user_id,
+                                (
+                                    LateUserWindowOverride.department_id.is_(None)
+                                    if selected_late_department_id is None else
+                                    LateUserWindowOverride.department_id == selected_late_department_id
+                                ),
+                            )
+                        ).scalar_one_or_none()
+                        if existing is None:
+                            override = LateUserWindowOverride(
+                                week_iso=selected_week,
+                                user_id=selected_late_user_id,
+                                department_id=selected_late_department_id,
+                                opened_by=admin_id,
+                                closes_at=closes_at,
+                                reason=(reason.strip() or None),
+                            )
+                            s.add(override)
+                        else:
+                            old_value = {
+                                "closes_at": existing.closes_at.isoformat(),
+                                "reason": existing.reason,
+                            }
+                            existing.opened_by = admin_id
+                            existing.opened_at = now_tr()
+                            existing.closes_at = closes_at
+                            existing.reason = reason.strip() or None
+
+                        audit_action = "late_user_window_open"
+                        audit_entity = "late_user_window_override"
+                        audit_new_value = {
+                            "scope": "user",
+                            "week_iso": selected_week,
+                            "user_id": selected_late_user_id,
+                            "department_id": selected_late_department_id,
+                            "closes_at": closes_at.isoformat(),
+                            "reason": reason.strip() or None,
+                        }
+
+                    s.add(AuditLog(
+                        user_id=admin_id,
+                        action=audit_action,
+                        entity_type=audit_entity,
+                        entity_id=None,
+                        old_value=old_value,
+                        new_value=audit_new_value,
                     ))
                 clear_cached_queries()
-                st.success(f"{selected_week} için geç giriş penceresi açıldı.")
+                if late_scope == "Hafta geneli":
+                    st.success(f"{selected_week} için hafta geneli geç giriş penceresi açıldı.")
+                else:
+                    st.success(f"{selected_week} için kullanıcı özel geç giriş izni açıldı.")
                 st.rerun()
             except Exception as exc:
                 st.error(f"Hata: {exc}")
@@ -965,21 +1076,57 @@ with tab_late:
     st.subheader("Açık / Geçmiş Pencereler")
 
     with get_session() as s:
+        target_user_alias = aliased(User)
+        opened_by_alias = aliased(User)
         overrides = list(s.execute(
             select(LateWindowOverride, User)
             .join(User, User.id == LateWindowOverride.opened_by)
             .order_by(LateWindowOverride.closes_at.desc())
         ).all())
+        try:
+            user_overrides = list(s.execute(
+                select(LateUserWindowOverride, target_user_alias, opened_by_alias, Department, ProductionSite)
+                .join(target_user_alias, target_user_alias.id == LateUserWindowOverride.user_id)
+                .join(opened_by_alias, opened_by_alias.id == LateUserWindowOverride.opened_by)
+                .outerjoin(Department, Department.id == LateUserWindowOverride.department_id)
+                .outerjoin(ProductionSite, ProductionSite.id == Department.production_site_id)
+                .order_by(LateUserWindowOverride.closes_at.desc())
+            ).all())
+        except SQLAlchemyError:
+            user_overrides = []
+            st.warning(
+                "Kullanıcı özel geç giriş tablosu henüz veritabanında yok. "
+                "sql/migrations/2026-05-05_late_user_window_overrides.sql dosyasındaki SQL'i Supabase'de çalıştırın."
+            )
 
-    if not overrides:
+    if not overrides and not user_overrides:
         st.info("Henüz geç giriş penceresi yok.")
     else:
         rows = []
         current_time = now_tr()
         for override, opened_by in overrides:
             rows.append({
+                "Kapsam": "Hafta geneli",
                 "Hafta": override.week_iso,
                 "Tarih Aralığı": format_week_human(override.week_iso),
+                "Kullanıcı": "Tüm yetkili kullanıcılar",
+                "Bölüm": "Tüm yetkili bölümler",
+                "Durum": "Açık" if now_tr(override.closes_at) > current_time else "Kapandı",
+                "Kapanış": now_tr(override.closes_at).strftime("%Y-%m-%d %H:%M"),
+                "Açan": opened_by.full_name,
+                "Açıklama": override.reason or "-",
+            })
+        for override, target_user, opened_by, dept, site in user_overrides:
+            rows.append({
+                "Kapsam": "Kullanıcı özel",
+                "Hafta": override.week_iso,
+                "Tarih Aralığı": format_week_human(override.week_iso),
+                "Kullanıcı": target_user.full_name,
+                "Bölüm": (
+                    "Tüm yetkili bölümler"
+                    if dept is None else
+                    f"{site.name if site else '-'} — {dept.name}"
+                ),
                 "Durum": "Açık" if now_tr(override.closes_at) > current_time else "Kapandı",
                 "Kapanış": now_tr(override.closes_at).strftime("%Y-%m-%d %H:%M"),
                 "Açan": opened_by.full_name,
