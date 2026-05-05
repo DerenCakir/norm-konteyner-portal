@@ -28,7 +28,7 @@ from utils.cached_queries import (
     get_analysis_rows,
     get_available_weeks,
 )
-from utils.auth import require_auth
+from utils.auth import require_auth, restore_session_from_query
 from utils.performance import page_timer
 from utils.ui import (
     data_panel,
@@ -45,6 +45,7 @@ from utils.week import current_week_iso, format_week_human, week_iso_from_date
 
 
 inject_css()
+restore_session_from_query()
 timer = page_timer("analiz")
 
 with get_session() as _s:

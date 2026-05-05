@@ -23,6 +23,11 @@ Audit log conventions:
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
+import time
+from base64 import urlsafe_b64decode, urlsafe_b64encode
 from typing import Optional
 
 import bcrypt
@@ -30,9 +35,87 @@ import streamlit as st
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from config.settings import get_settings
 from db.connection import get_session
 from db.models import AuditLog, Department, User, UserDepartment
 from utils.week import now_tr
+
+
+# ---------------------------------------------------------------------------
+# Signed-token session restore (via URL query param)
+# ---------------------------------------------------------------------------
+# When Streamlit's WebSocket reconnects (proxy hiccup, mobile network blip,
+# Railway brief restart) it can hand the browser a fresh server-side session
+# with empty session_state. That used to bounce the user back to the login
+# screen mid-task. We avoid that by writing a short-lived signed token to a
+# URL query parameter on login and reading it back on every page entry.
+# Token format: base64url(json({uid, exp})) + "." + hex(hmac-sha256)
+_QUERY_KEY = "s"
+_TOKEN_TTL = 4 * 3600  # 4 hours — long enough for a Friday submission session
+
+
+def _sign(payload: str, secret: str) -> str:
+    return hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+
+
+def _make_token(user_id: int) -> str:
+    settings = get_settings()
+    payload = {"uid": user_id, "exp": int(time.time()) + _TOKEN_TTL}
+    payload_b64 = urlsafe_b64encode(
+        json.dumps(payload, separators=(",", ":")).encode()
+    ).decode().rstrip("=")
+    return f"{payload_b64}.{_sign(payload_b64, settings.secret_key)}"
+
+
+def _verify_token(token: str) -> Optional[int]:
+    if not token or "." not in token:
+        return None
+    try:
+        payload_b64, sig = token.split(".", 1)
+        secret = get_settings().secret_key
+        if not hmac.compare_digest(sig, _sign(payload_b64, secret)):
+            return None
+        padded = payload_b64 + "=" * (-len(payload_b64) % 4)
+        payload = json.loads(urlsafe_b64decode(padded).decode())
+        if int(payload.get("exp", 0)) < int(time.time()):
+            return None
+        return int(payload["uid"])
+    except Exception:
+        return None
+
+
+def _drop_query_token() -> None:
+    try:
+        if _QUERY_KEY in st.query_params:
+            del st.query_params[_QUERY_KEY]
+    except Exception:
+        pass
+
+
+def restore_session_from_query() -> None:
+    """Rehydrate session_state from the signed query-param token.
+
+    No-op if session_state already has a user, the URL has no token, or the
+    token is invalid/expired. Must run before ``require_auth`` on each page.
+    """
+    if st.session_state.get("user_id") is not None:
+        return
+    token = st.query_params.get(_QUERY_KEY)
+    if not token:
+        return
+    user_id = _verify_token(token)
+    if user_id is None:
+        _drop_query_token()
+        return
+    try:
+        with get_session() as s:
+            user = s.get(User, user_id)
+            if user is None or not user.is_active:
+                _drop_query_token()
+                return
+            _set_session_from_user(user)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -148,14 +231,22 @@ def _set_session_from_user(user: User) -> None:
 
 
 def clear_auth_state() -> None:
-    """Clear local Streamlit auth state."""
+    """Clear local Streamlit auth state and the URL session token."""
     for key in _SESSION_KEYS:
         st.session_state.pop(key, None)
+    _drop_query_token()
 
 
 def login_user(user: User) -> None:
-    """Store the authenticated user's identity in ``st.session_state``."""
+    """Store the user's identity in session_state and drop a signed token in
+    the URL so a WebSocket reconnect mid-session can rehydrate without
+    bouncing to login.
+    """
     _set_session_from_user(user)
+    try:
+        st.query_params[_QUERY_KEY] = _make_token(user.id)
+    except Exception:
+        pass
 
 
 def logout_user(session: Session) -> None:

@@ -17,6 +17,7 @@ from utils.auth import (
     authenticate,
     is_authenticated,
     login_user,
+    restore_session_from_query,
 )
 from utils.performance import page_timer
 from utils.ui import (
@@ -300,6 +301,8 @@ def render_dashboard() -> None:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
+restore_session_from_query()
+
 if is_authenticated():
     render_sidebar_brand(_LOGO_PATH)
 
