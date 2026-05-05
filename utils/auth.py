@@ -122,11 +122,11 @@ def restore_session_from_cookie() -> None:
 
     ``app.py`` ve her sayfanın en başında (require_auth'tan önce) çağrılmalı.
     """
-    if st.session_state.get(_LOGOUT_REQUESTED_KEY):
-        if not st.session_state.get(_LOGOUT_COOKIE_CLEARED_KEY):
-            _clear_auth_cookie()
-            st.session_state[_LOGOUT_COOKIE_CLEARED_KEY] = True
-        return
+    # Temporarily keep persistent cookie restore disabled. The cookie component
+    # can replay an old admin token after logout on hosted Streamlit, which is
+    # worse than asking users to log in again after a full refresh.
+    _clear_query_token()
+    return
 
     if st.session_state.get("user_id") is not None:
         last_refresh = float(st.session_state.get("_session_refreshed_at", 0))
@@ -329,26 +329,25 @@ _AUTH_INTERNAL_KEYS = (
 def clear_auth_state() -> None:
     """Clear local Streamlit auth state and persistent auth tokens.
 
-    Logout must block the cookie restore path on the next rerun; otherwise a
-    still-visible browser cookie or query token can immediately sign the user
-    back in before the frontend cookie component finishes removing it.
+    Persistent cookie restore is disabled, but we still make a best-effort
+    attempt to remove old cookies so stale browser state cannot reappear when
+    the mechanism is re-enabled later.
     """
-    for key in (*_SESSION_KEYS, *_AUTH_INTERNAL_KEYS):
+    for key in (*_SESSION_KEYS, *_AUTH_INTERNAL_KEYS, _LOGOUT_REQUESTED_KEY):
         st.session_state.pop(key, None)
-    st.session_state[_LOGOUT_REQUESTED_KEY] = True
-    st.session_state[_LOGOUT_COOKIE_CLEARED_KEY] = False
     _clear_auth_cookie()
 
 
 def login_user(user: User) -> None:
     """Store the authenticated user's identity in ``st.session_state``
-    and persist a signed cookie so login survives page refreshes.
+    and clear stale persistent-auth markers.
     """
     st.session_state.pop(_LOGOUT_REQUESTED_KEY, None)
     st.session_state.pop(_LOGOUT_COOKIE_CLEARED_KEY, None)
     st.session_state.pop("_cookie_restore_checked", None)
+    st.session_state.pop("_auth_token", None)
+    _clear_query_token()
     _set_session_from_user(user)
-    _set_auth_cookie(user.id)
 
 
 def logout_user(session: Session) -> None:
