@@ -363,6 +363,14 @@ def get_current_user(session: Session) -> Optional[User]:
     return session.get(User, user_id)
 
 
+def _redirect_to_login(message: str) -> None:
+    st.warning(message)
+    try:
+        st.switch_page("app.py")
+    except Exception:
+        st.stop()
+
+
 def require_auth(session: Session) -> User:
     """Block the page unless an active user is logged in.
 
@@ -370,16 +378,15 @@ def require_auth(session: Session) -> User:
     the session state, shows an error, and stops Streamlit rendering.
     """
     if not is_authenticated():
-        st.error("Bu sayfayı görüntülemek için giriş yapmanız gerekiyor.")
-        st.stop()
+        _redirect_to_login("Bu sayfayı görüntülemek için giriş yapmanız gerekiyor.")
 
     user = get_current_user(session)
     if user is None or not user.is_active:
         # Stale session — wipe it.
         for key in _SESSION_KEYS:
             st.session_state.pop(key, None)
-        st.error("Oturumunuz geçersiz, lütfen tekrar giriş yapın.")
-        st.stop()
+        _clear_auth_cookie()
+        _redirect_to_login("Oturumunuz geçersiz, lütfen tekrar giriş yapın.")
 
     return user
 
