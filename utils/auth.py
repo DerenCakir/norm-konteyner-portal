@@ -50,6 +50,7 @@ _QUERY_TOKEN_NAME = "auth"
 _COOKIE_TTL_DAYS = 7
 _SESSION_REFRESH_SECONDS = 30
 _LOGOUT_REQUESTED_KEY = "_logout_requested"
+_LOGOUT_COOKIE_CLEARED_KEY = "_logout_cookie_cleared"
 
 
 def _sign(payload: str, secret: str) -> str:
@@ -122,7 +123,9 @@ def restore_session_from_cookie() -> None:
     ``app.py`` ve her sayfanın en başında (require_auth'tan önce) çağrılmalı.
     """
     if st.session_state.get(_LOGOUT_REQUESTED_KEY):
-        _clear_auth_cookie()
+        if not st.session_state.get(_LOGOUT_COOKIE_CLEARED_KEY):
+            _clear_auth_cookie()
+            st.session_state[_LOGOUT_COOKIE_CLEARED_KEY] = True
         return
 
     if st.session_state.get("user_id") is not None:
@@ -319,6 +322,7 @@ _AUTH_INTERNAL_KEYS = (
     "_auth_token",
     "_session_refreshed_at",
     "_cookie_restore_checked",
+    _LOGOUT_COOKIE_CLEARED_KEY,
 )
 
 
@@ -329,9 +333,10 @@ def clear_auth_state() -> None:
     still-visible browser cookie or query token can immediately sign the user
     back in before the frontend cookie component finishes removing it.
     """
-    st.session_state[_LOGOUT_REQUESTED_KEY] = True
     for key in (*_SESSION_KEYS, *_AUTH_INTERNAL_KEYS):
         st.session_state.pop(key, None)
+    st.session_state[_LOGOUT_REQUESTED_KEY] = True
+    st.session_state[_LOGOUT_COOKIE_CLEARED_KEY] = False
     _clear_auth_cookie()
 
 
@@ -340,6 +345,7 @@ def login_user(user: User) -> None:
     and persist a signed cookie so login survives page refreshes.
     """
     st.session_state.pop(_LOGOUT_REQUESTED_KEY, None)
+    st.session_state.pop(_LOGOUT_COOKIE_CLEARED_KEY, None)
     st.session_state.pop("_cookie_restore_checked", None)
     _set_session_from_user(user)
     _set_auth_cookie(user.id)
