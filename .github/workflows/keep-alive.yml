@@ -1,0 +1,33 @@
+name: Supabase keep-alive
+
+# Free-tier Supabase auto-pauses a project after ~7 days with no
+# database traffic. The portal sits idle from Friday afternoon until
+# the following Friday morning, which is squarely inside that window.
+# Run a tiny SELECT every day to keep the project warm so the next
+# Friday submission window doesn't open onto a paused database.
+
+on:
+  schedule:
+    # Every day at 06:00 UTC (= 09:00 Europe/Istanbul). Runs at GitHub's
+    # discretion; cron is best-effort but in practice fires within minutes.
+    - cron: "0 6 * * *"
+  workflow_dispatch: {}  # also runnable manually from the Actions tab
+
+jobs:
+  ping-db:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install postgresql client
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Run keep-alive query
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret is not set. Add it under Settings → Secrets → Actions."
+            exit 1
+          fi
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT now() AS keep_alive_at, count(*) AS active_users FROM users WHERE is_active = true;"
