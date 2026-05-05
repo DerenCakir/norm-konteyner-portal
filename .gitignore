@@ -48,3 +48,7 @@ seed_test_data.py
 # Şifre içeren dosyalar
 şifreler.docx
 ~$freler.docx
+
+# Geçici arşivler ve UI yedek paketleri
+*.zip
+portal-ui-*.zip
