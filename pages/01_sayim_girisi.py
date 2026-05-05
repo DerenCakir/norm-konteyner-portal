@@ -41,7 +41,17 @@ from utils.auth import (
     user_can_submit_for,
 )
 from utils.performance import page_timer
-from utils.ui import inject_css, page_header, render_sidebar_user
+from utils.ui import (
+    empty_state,
+    filter_bar,
+    form_panel,
+    inject_css,
+    kpi_card,
+    render_kpis,
+    page_header,
+    render_sidebar_user,
+    status_panel,
+)
 from utils.week import (
     current_week_iso,
     format_week_human,
@@ -92,9 +102,15 @@ with get_session() as s:
         dept_with_site.append((d, site.name if site else "-"))
 
 if not dept_with_site:
-    st.warning(
-        "Henüz yetkili olduğun bir bölüm yok. "
-        "Lütfen yöneticinden bölüm yetkisi atamasını iste."
+    st.markdown(
+        empty_state(
+            "Yetkili bölüm bulunamadı",
+            "Sayım girişi yapabilmek için yöneticinizin size en az bir bölüm yetkisi ataması gerekir.",
+            action_text="Bölüm yetkisi için sistem yöneticinizle iletişime geçin.",
+            badge="Yetki gerekli",
+            tone="warning",
+        ),
+        unsafe_allow_html=True,
     )
     timer.finish()
     st.stop()
@@ -127,31 +143,30 @@ with get_session() as s:
 with get_session() as s:
     status = get_submission_status(week_iso, s)
 
-if status == "open":
-    st.success("Sayım girişi açık (Cuma 09:00–12:00)")
-elif status == "late":
-    st.warning("Geç giriş penceresi açık")
-else:
-    st.error(
-        "Sayım girişi şu an kapalı. "
-        "Formu görüntüleyebilirsin ancak kayıt gönderemezsin. "
-        "Bir sonraki normal pencere: **Cuma 09.00 – 12.00**. "
-        "Acil düzeltme gerekiyorsa yöneticiniz geç giriş açabilir."
-    )
+status_meta = {
+    "open": ("success", "Açık", "Sayım girişi açık", "Cuma 09.00-12.00 penceresinde kayıt gönderebilirsiniz."),
+    "late": ("warning", "Geç giriş", "Geç giriş penceresi açık", "Yönetici tarafından açılan ek süre içinde kayıt gönderebilirsiniz."),
+    "locked": ("danger", "Kapalı", "Sayım girişi kapalı", "Formu görüntüleyebilirsiniz ancak kayıt gönderemezsiniz. Gerekirse yöneticiniz geç giriş açabilir."),
+}
+status_tone, status_badge_text, status_title, status_body = status_meta.get(status, status_meta["locked"])
+st.markdown(
+    status_panel(
+        title=status_title,
+        description=status_body,
+        tone=status_tone,
+        badge=status_badge_text,
+    ),
+    unsafe_allow_html=True,
+)
 
 can_submit = status in ("open", "late")
 
-col_a, col_b, col_c, col_d = st.columns(4)
-col_a.metric("Üretim Yeri", selected_site.name)
-col_b.metric("Bölüm", selected_dept.name)
-col_c.metric(
-    "Haftalık Tonaj Hedefi",
-    f"{target_tonnage:.2f} t" if target_tonnage is not None else "-"
-)
-col_d.metric(
-    "Form Durumu",
-    "Açık" if can_submit else "Kapalı",
-)
+render_kpis([
+    kpi_card("Üretim Yeri", selected_site.name, sub="Seçili bölümün bağlı olduğu üretim yeri"),
+    kpi_card("Bölüm", selected_dept.name, sub="Sayım yapılacak sorumluluk alanı"),
+    kpi_card("Haftalık Tonaj Hedefi", f"{target_tonnage:.2f} t" if target_tonnage is not None else "-", sub="Bölüm hedefi"),
+    kpi_card("Form Durumu", "Açık" if can_submit else "Kapalı", sub="Kayıt gönderme durumu", tone="green" if can_submit else "red"),
+])
 
 
 # ---------------------------------------------------------------------------
@@ -193,8 +208,7 @@ default_tonnage = float(existing.actual_tonnage) if existing and existing.actual
 # ---------------------------------------------------------------------------
 # Form
 # ---------------------------------------------------------------------------
-st.divider()
-st.subheader("Sayım Bilgisi")
+form_panel("Sayım Bilgisi", "Tarih, saat, tonaj ve renk bazlı konteyner sayılarını tek formda girin.")
 
 if existing is not None:
     updater_name = existing_user.full_name if existing_user else "-"

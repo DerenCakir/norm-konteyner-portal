@@ -30,7 +30,17 @@ from utils.cached_queries import (
 )
 from utils.auth import require_auth, restore_session_from_cookie
 from utils.performance import page_timer
-from utils.ui import inject_css, kpi_card, page_header, render_kpis, render_sidebar_user
+from utils.ui import (
+    data_panel,
+    empty_state,
+    filter_bar,
+    inject_css,
+    kpi_card,
+    page_header,
+    render_kpis,
+    render_sidebar_user,
+    table_note,
+)
 from utils.week import current_week_iso, format_week_human, week_iso_from_date
 
 
@@ -54,6 +64,7 @@ page_header(
 default_week = current_week_iso()
 all_weeks = get_available_weeks(default_week)
 
+filter_bar("Analiz filtreleri", "Hafta ve trend aralığını seçerek özetleri güncelleyin.")
 ctop1, ctop2 = st.columns([2, 1])
 selected_week = ctop1.selectbox(
     "Hafta",
@@ -85,7 +96,15 @@ trend_weeks = weeks_back_from(selected_week, range_n)
 rows = get_analysis_rows(tuple(trend_weeks))
 
 if not rows:
-    st.warning("Seçili aralıkta hiç sayım verisi yok.")
+    st.markdown(
+        empty_state(
+            "Analiz için veri yok",
+            "Seçili aralıkta henüz sayım kaydı bulunmuyor. Sayım kayıtları oluştuğunda analiz ekranı dolacaktır.",
+            badge="Veri bekleniyor",
+            tone="info",
+        ),
+        unsafe_allow_html=True,
+    )
     timer.finish()
     st.stop()
 
@@ -185,7 +204,7 @@ if not site_signal.empty:
     site_signal["Kanban Oranı (%)"] = (
         site_signal["Kanban"] / site_signal["Dolu"].replace(0, pd.NA) * 100
     ).fillna(0)
-    st.markdown("#### Öne Çıkan Üretim Yerleri")
+    data_panel("Öne Çıkan Üretim Yerleri", "Dolu konteyner ve toplam yoğunluğa göre ilk üretim yerleri.")
     st.dataframe(
         site_signal.sort_values(["Dolu", "Toplam"], ascending=False)
         .head(8)
@@ -254,7 +273,15 @@ if breakdown and selected_trend_site != "Tümü":
         )
 
     if per_dept.empty or per_dept["week_iso"].nunique() < 2:
-        st.info("Bu site için trend gösterimi için yeterli veri yok.")
+        st.markdown(
+            empty_state(
+                "Trend için yeterli veri yok",
+                "Bölüm bazlı trend analizi için seçili üretim yerinde en az 2 hafta veri gerekir.",
+                badge="En az 2 hafta",
+                tone="info",
+            ),
+            unsafe_allow_html=True,
+        )
     else:
         chart = alt.Chart(per_dept).mark_line(point=True).encode(
             x=alt.X("week_iso:N", title="Hafta"),
@@ -283,7 +310,15 @@ else:
     )
 
     if len(weekly) < 2:
-        st.info(f"Trend için en az 2 hafta veri gerekir — şu an {len(weekly)} hafta var.")
+        st.markdown(
+            empty_state(
+                "Trend için yeterli veri yok",
+                f"Trend analizi için en az 2 hafta veri gerekir. Şu an {len(weekly)} hafta var.",
+                badge="En az 2 hafta",
+                tone="info",
+            ),
+            unsafe_allow_html=True,
+        )
     else:
         cl, cr = st.columns(2)
         with cl:
@@ -305,6 +340,7 @@ else:
 # ---------------------------------------------------------------------------
 st.divider()
 st.subheader("Bölüm Özeti (seçili hafta)")
+data_panel("Bölüm Özeti", "Seçili haftada bölüm bazında konteyner, kanban ve tonaj sapması.")
 
 dept_summary = (
     df_week.groupby(["site", "department", "department_id", "weekly_tonnage_target"], dropna=False)
@@ -414,33 +450,44 @@ with st.expander("Renk Kırılımı", expanded=False):
         long_rows.append({"Renk": r["color"], "Tip": "Dolu", "Sayı": int(r["dolu"]), "Kanban": int(r["kanban"])})
     long_df = pd.DataFrame(long_rows)
 
-    base = alt.Chart(long_df).encode(
-        x=alt.X("Renk:N", title="Renk"),
-        xOffset=alt.XOffset("Tip:N"),
-    )
-    bars = base.mark_bar().encode(
-        y=alt.Y("Sayı:Q", title="Konteyner sayısı"),
-        color=alt.Color(
-            "Tip:N",
-            scale=alt.Scale(domain=["Boş", "Dolu"], range=["#9aa5b1", "#3aa56b"]),
-            legend=alt.Legend(title="Tip"),
-        ),
-        tooltip=["Renk", "Tip", "Sayı", "Kanban"],
-    )
-    # Sadece Dolu sütunlarının üstüne kanban'ı koyu renkle bindir
-    kanban_overlay = (
-        alt.Chart(long_df[long_df["Tip"] == "Dolu"])
-        .mark_bar(color="#1a5934")  # daha koyu yeşil
-        .encode(
-            x=alt.X("Renk:N"),
-            xOffset=alt.XOffset("Tip:N"),
-            y=alt.Y("Kanban:Q"),
-            tooltip=["Renk", alt.Tooltip("Kanban:Q", title="Kanban")],
+    required_chart_columns = {"Renk", "Tip", "Sayı", "Kanban"}
+    if long_df.empty or not required_chart_columns.issubset(long_df.columns):
+        st.markdown(
+            empty_state(
+                "Renk kırılımı için veri yok",
+                "Seçili hafta için renk bazlı grafik oluşturacak yeterli veri bulunmuyor.",
+                badge="Grafik bekliyor",
+                tone="info",
+            ),
+            unsafe_allow_html=True,
         )
-    )
-    chart = (bars + kanban_overlay).properties(height=350)
-    st.altair_chart(chart, use_container_width=True)
-    st.caption("Dolu içindeki koyu yeşil bölge = Kanban (Dolu'nun alt kümesi).")
+    else:
+        base = alt.Chart(long_df).encode(
+            x=alt.X("Renk:N", title="Renk"),
+            xOffset=alt.XOffset("Tip:N"),
+        )
+        bars = base.mark_bar().encode(
+            y=alt.Y("Sayı:Q", title="Konteyner sayısı"),
+            color=alt.Color(
+                "Tip:N",
+                scale=alt.Scale(domain=["Boş", "Dolu"], range=["#9aa5b1", "#3aa56b"]),
+                legend=alt.Legend(title="Tip"),
+            ),
+            tooltip=["Renk", "Tip", "Sayı", "Kanban"],
+        )
+        kanban_overlay = (
+            alt.Chart(long_df[long_df["Tip"] == "Dolu"])
+            .mark_bar(color="#1a5934")
+            .encode(
+                x=alt.X("Renk:N"),
+                xOffset=alt.XOffset("Tip:N"),
+                y=alt.Y("Kanban:Q"),
+                tooltip=["Renk", alt.Tooltip("Kanban:Q", title="Kanban")],
+            )
+        )
+        chart = (bars + kanban_overlay).properties(height=350)
+        st.altair_chart(chart, use_container_width=True)
+        table_note("Dolu içindeki koyu yeşil bölge = Kanban (Dolu'nun alt kümesi).")
 
 
 # ---------------------------------------------------------------------------

@@ -23,13 +23,16 @@ from utils.auth import (
 )
 from utils.performance import page_timer
 from utils.ui import (
+    dashboard_hero,
     inject_css,
     kpi_card,
-    page_header,
     quick_action_card,
     render_kpis,
     render_sidebar_brand,
     render_sidebar_user,
+    section_header,
+    status_panel,
+    timeline_panel,
 )
 from utils.week import (
     current_week_iso,
@@ -160,11 +163,6 @@ def render_dashboard() -> None:
     full_name = st.session_state.get("full_name", "")
     role = st.session_state.get("role", "user")
 
-    page_header(
-        title="Konteyner Takip Portalı",
-        subtitle=f"Hoş geldin, {full_name}. Haftalık sayım ve konteyner durumunu buradan takip edebilirsin.",
-            )
-
     week_iso = current_week_iso()
     week_human = format_week_human(week_iso)
 
@@ -179,43 +177,74 @@ def render_dashboard() -> None:
     # ----- KPI kartları -----
     role_text = "Yönetici" if role == "admin" else "Kullanıcı"
     status_label = {"open": "Açık", "late": "Geç giriş", "locked": "Kapalı"}[status]
+    status_kind = {"open": "success", "late": "warning", "locked": "info"}[status]
+    dashboard_hero(
+        "Konteyner Takip Portalı",
+        f"Hoş geldin, {full_name}. Haftalık sayım, konteyner durumu ve operasyon takibini tek ekrandan yönetebilirsin.",
+        [
+            ("Aktif Hafta", week_iso),
+            ("Sayım Durumu", status_label),
+            ("Rol", role_text),
+        ],
+    )
+
     cards = [
-        kpi_card("Aktif Hafta", week_iso, sub=week_human),
-        kpi_card("Sayım Penceresi", status_label, sub="Cuma 09.00 – 12.00"),
-        kpi_card("Kullanıcı Rolü", role_text, sub="Yetkiler admin panelinden yönetilir"),
+        kpi_card("Aktif Hafta", week_iso, sub=week_human, icon="HW", tone="blue"),
+        kpi_card("Sayım Penceresi", status_label, sub="Cuma 09.00 – 12.00", icon="SP", tone="amber" if status == "locked" else "green"),
+        kpi_card("Kullanıcı Rolü", role_text, sub="Yetkiler admin panelinden yönetilir", icon="RL", tone="slate"),
     ]
+    st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
     render_kpis(cards)
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
 
-    st.markdown("### Bu Haftanın Durumu")
-
-    # ----- Status açıklaması -----
+    status_col, flow_col = st.columns([1.65, 1])
     if status == "open":
-        st.success(
-            f"**Sayım girişi açık.** Şu an {week_human} haftası için bölümünüzün "
-            "sayımını girebilirsiniz."
-        )
+        status_title = "Sayım girişi açık"
+        status_text = f"{week_human} haftası için yetkili olduğunuz bölümlerde sayım girişi yapabilirsiniz."
+        status_meta = "Aktif pencere"
     elif status == "late":
-        st.warning(
-            f"**Geç giriş penceresi açık.** Yönetici {week_human} haftası için "
-            "sayım girişini manuel olarak açtı."
-        )
+        status_title = "Geç giriş penceresi açık"
+        status_text = f"Yönetici {week_human} haftası için manuel geç giriş penceresi açtı."
+        status_meta = "Admin onaylı"
     else:
-        st.info(
-            "**Sayım girişi şu an kapalı.** Bir sonraki pencere: "
-            "**Cuma 09.00 – 12.00** (Türkiye saati). "
-            "Geç giriş gerekiyorsa yönetici manuel olarak açabilir."
+        status_title = "Sayım girişi şu an kapalı"
+        status_text = "Bir sonraki normal giriş penceresi Cuma 09.00 – 12.00. Gerekirse yönetici geç giriş açabilir."
+        status_meta = "Takip modu"
+
+    with status_col:
+        section_header("Bu Haftanın Durumu", "Sayım penceresi ve operasyon mesajı")
+        st.markdown(
+            status_panel(
+                status=status_kind,
+                title=status_title,
+                body=status_text,
+                meta=status_meta,
+                cta_label="Sayım ekranına git",
+                cta_href="sayim_girisi",
+            ),
+            unsafe_allow_html=True,
         )
 
-    st.markdown("<br>", unsafe_allow_html=True)
+    with flow_col:
+        section_header("Haftalık Akış", "Standart sayım döngüsü")
+        st.markdown(
+            timeline_panel([
+                ("1", "Cuma 09.00", "Sayım formları açılır"),
+                ("2", "Cuma 12.00", "Normal giriş kapanır"),
+                ("3", "Gerekirse", "Admin düzeltme veya geç giriş açar"),
+            ]),
+            unsafe_allow_html=True,
+        )
+
+    st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
 
     # ----- Hızlı eylemler -----
-    st.markdown("### Hızlı Erişim")
+    section_header("Hızlı Erişim", "Operasyonda en sık kullanılan ekranlar")
     qa1, qa2, qa3, qa4 = st.columns(4)
     qa1.markdown(
         quick_action_card(
-            "📝",
+            "01",
             "Sayım Girişi",
             "Bölümünüzün haftalık sayımını girin",
             "sayim_girisi",
@@ -224,7 +253,7 @@ def render_dashboard() -> None:
     )
     qa2.markdown(
         quick_action_card(
-            "📊",
+            "02",
             "Anlık Durum",
             "Tüm bölümlerin son hafta verisi",
             "anlik_durum",
@@ -233,7 +262,7 @@ def render_dashboard() -> None:
     )
     qa3.markdown(
         quick_action_card(
-            "📈",
+            "03",
             "Analiz",
             "Trend, sapma ve detaylı analiz",
             "analiz",
@@ -242,7 +271,7 @@ def render_dashboard() -> None:
     )
     qa4.markdown(
         quick_action_card(
-            "📋",
+            "04",
             "Haftalık Takip",
             "Giren ve eksik bölümler",
             "haftalik_takip",

@@ -1,5 +1,5 @@
 """
-Haftalık Takip — seçilen hafta için giren/girmeyen bölümler.
+Haftalık Takip - seçilen hafta için giren/girmeyen bölümler.
 """
 
 from __future__ import annotations
@@ -16,7 +16,18 @@ from utils.cached_queries import (
     get_week_submissions_with_users,
 )
 from utils.performance import page_timer
-from utils.ui import inject_css, page_header, render_sidebar_user
+from utils.ui import (
+    data_panel,
+    empty_state,
+    filter_bar,
+    inject_css,
+    kpi_card,
+    page_header,
+    progress_summary,
+    render_kpis,
+    render_sidebar_user,
+    table_note,
+)
 from utils.week import current_week_iso, format_week_human
 
 
@@ -37,11 +48,12 @@ page_header(
 default_week = current_week_iso()
 weeks = get_available_weeks(default_week)
 
+filter_bar("Hafta filtresi", "Giren ve eksik bölümleri görmek istediğiniz haftayı seçin.")
 selected_week = st.selectbox(
     "Hafta",
     weeks,
     index=0,
-    format_func=lambda w: f"{w} — {format_week_human(w)}",
+    format_func=lambda w: f"{w} - {format_week_human(w)}",
 )
 
 
@@ -56,20 +68,32 @@ submitted = sum(1 for dept in sites_depts if dept["department_id"] in sub_by_dep
 missing = total_depts - submitted
 pct = (submitted / total_depts * 100) if total_depts else 0
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Toplam Bölüm", total_depts)
-c2.metric("Giren", submitted)
-c3.metric("Eksik", missing)
-c4.metric("Tamamlanma", f"%{pct:.0f}")
-
-st.divider()
+render_kpis([
+    kpi_card("Toplam Bölüm", f"{total_depts}", sub="Takip kapsamındaki aktif bölüm"),
+    kpi_card("Giren", f"{submitted}", sub="Sayım kaydı tamamlanan", tone="green"),
+    kpi_card("Eksik", f"{missing}", sub="Takip edilmesi gereken", tone="amber" if missing else "green"),
+    kpi_card("Tamamlanma", f"%{pct:.0f}", sub="Seçili hafta ilerlemesi"),
+])
+progress_summary(
+    "Haftalık sayım tamamlanma oranı",
+    pct,
+    f"{submitted} bölüm girdi, {missing} bölüm bekliyor.",
+)
 
 
 tab_in, tab_out = st.tabs([f"Giren ({submitted})", f"Eksik ({missing})"])
 
 with tab_in:
     if submitted == 0:
-        st.info("Bu hafta için henüz sayım girilmemiş.")
+        st.markdown(
+            empty_state(
+                "Henüz sayım girilmedi",
+                "Seçili hafta için kayıt oluştuğunda giren bölümler burada listelenecek.",
+                badge="Veri bekleniyor",
+                tone="info",
+            ),
+            unsafe_allow_html=True,
+        )
     else:
         in_rows: list[dict[str, object]] = []
         for dept in sites_depts:
@@ -96,11 +120,20 @@ with tab_in:
                 "Tonaj (t)": sub["actual_tonnage"],
             })
 
+        data_panel("Sayım Giren Bölümler", "Zamanında veya geç girişle tamamlanan kayıtlar.")
         st.dataframe(pd.DataFrame(in_rows), use_container_width=True, hide_index=True)
 
 with tab_out:
     if missing == 0:
-        st.success("Tüm bölümler sayımını girdi!")
+        st.markdown(
+            empty_state(
+                "Tüm bölümler tamamlandı",
+                "Seçili haftada eksik bölüm bulunmuyor.",
+                badge="Tamamlandı",
+                tone="success",
+            ),
+            unsafe_allow_html=True,
+        )
     else:
         out_rows: list[dict[str, object]] = []
         for dept in sites_depts:
@@ -117,6 +150,8 @@ with tab_out:
                 "Tonaj Hedefi": dept["weekly_tonnage_target"] or "-",
             })
 
+        data_panel("Eksik Bölümler", "Henüz sayım kaydı oluşmayan ve takip edilmesi gereken bölümler.")
         st.dataframe(pd.DataFrame(out_rows), use_container_width=True, hide_index=True)
+        table_note("Sorumlu kullanıcı alanı boşsa bölüm yetkilendirmesi admin panelinden kontrol edilmelidir.")
 
 timer.finish()

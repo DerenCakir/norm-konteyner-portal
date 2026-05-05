@@ -16,7 +16,16 @@ from utils.cached_queries import (
     get_week_submissions_with_users,
 )
 from utils.performance import page_timer
-from utils.ui import inject_css, page_header, render_sidebar_user
+from utils.ui import (
+    data_panel,
+    filter_bar,
+    inject_css,
+    kpi_card,
+    page_header,
+    render_kpis,
+    render_sidebar_user,
+    table_note,
+)
 from utils.week import current_week_iso, format_week_human
 
 
@@ -37,6 +46,7 @@ page_header(
 default_week = current_week_iso()
 weeks = get_available_weeks(default_week)
 
+filter_bar("Hafta filtresi", "Yetki ve sayım durumunu kontrol etmek istediğiniz haftayı seçin.")
 selected_week = st.selectbox(
     "Hafta",
     weeks,
@@ -57,13 +67,15 @@ missing_count = total_depts - submitted_count
 assigned_count = sum(1 for dept in sites_depts if dept_users.get(dept["department_id"]))
 unassigned_count = total_depts - assigned_count
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("Toplam Bölüm", total_depts)
-c2.metric("Sayım Giren", submitted_count)
-c3.metric("Eksik", missing_count)
-c4.metric("Yetkilisi Olmayan", unassigned_count)
+kpi_cards = [
+    kpi_card("Toplam Bölüm", f"{total_depts}", sub="Aktif takip kapsamı"),
+    kpi_card("Sayım Giren", f"{submitted_count}", sub="Seçili haftada tamamlanan", tone="green"),
+    kpi_card("Eksik", f"{missing_count}", sub="Henüz sayım bekleyen", tone="amber" if missing_count else "green"),
+    kpi_card("Yetkilisi Olmayan", f"{unassigned_count}", sub="Atama kontrolü gerekli", tone="red" if unassigned_count else "green"),
+]
+render_kpis(kpi_cards)
 
-st.divider()
+
 
 
 def _status_label(status: str) -> str:
@@ -130,6 +142,7 @@ for dept in sites_depts:
 
 df = pd.DataFrame(rows)
 
+filter_bar("Durum filtresi", "Tümü, eksik girilen, tamamlanan, geç girilen ve yetkilisi olmayan bölümleri ayrı izleyin.")
 status_filter = st.segmented_control(
     "Durum filtresi",
     ["Tümü", "Eksik Girilen", "Tamamlanan", "Geç Girilen", "Yetkilisi Olmayan"],
@@ -146,6 +159,10 @@ elif status_filter == "Geç Girilen":
 elif status_filter == "Yetkilisi Olmayan":
     filtered = df[df["Aktif Yetkili Sayısı"] == 0]
 
+data_panel(
+    "Yetki ve Sayım Durumu",
+    "Bölüm sorumluları, mükerrer yetki ve haftalık giriş durumları birlikte izlenir.",
+)
 st.dataframe(
     filtered,
     use_container_width=True,
@@ -155,7 +172,7 @@ st.dataframe(
     },
 )
 
-st.caption(
+table_note(
     "Bu tablo, her bölüm için kimin yetkili olduğunu ve seçilen haftada sayımın girilip girilmediğini gösterir."
 )
 timer.finish()
