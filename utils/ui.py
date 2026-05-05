@@ -995,12 +995,11 @@ def render_sidebar_user(full_name: str, role: str) -> None:
         from sqlalchemy.exc import SQLAlchemyError
 
         from db.connection import get_session
-        from utils.auth import logout_user
+        from utils.auth import clear_auth_state, logout_user
 
         try:
             with get_session() as session:
                 logout_user(session)
         except SQLAlchemyError:
-            for key in ("user_id", "username", "role", "full_name", "department_ids"):
-                st.session_state.pop(key, None)
+            clear_auth_state()
         st.rerun()
