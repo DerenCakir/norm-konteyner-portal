@@ -26,16 +26,22 @@ def _build_engine() -> Engine:
       - pool_pre_ping: detect dropped connections before use
       - pool_recycle=300: recycle connections every 5 minutes (pooler
         may close idle connections)
-      - pool_size / max_overflow: small footprint suitable for
-        Streamlit's per-session usage
+      - pool_size=10 / max_overflow=20: ~30 simultaneous users on Friday
+        09:00–12:00 should not queue. Supabase Transaction Pooler
+        multiplexes these onto fewer Postgres connections, so this
+        does not actually consume 30 Postgres backends.
+      - connect_timeout=5: a hung Postgres handshake fails fast instead
+        of freezing the user's request.
     """
     settings = get_settings()
     return create_engine(
         settings.database_url,
         pool_pre_ping=True,
         pool_recycle=300,
-        pool_size=5,
-        max_overflow=10,
+        pool_size=10,
+        max_overflow=20,
+        pool_timeout=10,
+        connect_args={"connect_timeout": 5},
         future=True,
     )
 

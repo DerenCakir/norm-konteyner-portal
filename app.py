@@ -7,8 +7,6 @@ formu veya dashboard gösterilir.
 
 from __future__ import annotations
 
-import base64
-import time
 from pathlib import Path
 
 import streamlit as st
@@ -19,10 +17,10 @@ from utils.auth import (
     authenticate,
     is_authenticated,
     login_user,
-    restore_session_from_cookie,
 )
 from utils.performance import page_timer
 from utils.ui import (
+    _logo_data_uri,
     dashboard_hero,
     inject_css,
     kpi_card,
@@ -42,14 +40,6 @@ from utils.week import (
 
 
 _LOGO_PATH = Path(__file__).parent / "assets" / "logo.png"
-
-
-def _logo_base64() -> str:
-    """Logo dosyasını base64 olarak oku — HTML'e inline embed için."""
-    try:
-        return base64.b64encode(_LOGO_PATH.read_bytes()).decode()
-    except Exception:
-        return ""
 
 
 st.set_page_config(
@@ -95,10 +85,10 @@ def render_login_form() -> None:
         unsafe_allow_html=True,
     )
 
-    logo_b64 = _logo_base64()
+    data_uri = _logo_data_uri(str(_LOGO_PATH))
     logo_html = (
-        f'<img src="data:image/png;base64,{logo_b64}" alt="Norm Fasteners" class="login-img"/>'
-        if logo_b64
+        f'<img src="{data_uri}" alt="Norm Fasteners" class="login-img"/>'
+        if data_uri
         else '<div class="icon">📦</div>'
     )
 
@@ -159,9 +149,7 @@ def render_login_form() -> None:
         timer.finish()
         return
 
-    st.success("Giriş yapıldı. Oturum hazırlanıyor...")
     timer.finish()
-    time.sleep(0.8)
     st.rerun()
 
 
@@ -312,8 +300,6 @@ def render_dashboard() -> None:
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
-restore_session_from_cookie()
-
 if is_authenticated():
     render_sidebar_brand(_LOGO_PATH)
 

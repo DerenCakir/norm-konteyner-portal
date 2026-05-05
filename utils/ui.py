@@ -710,16 +710,23 @@ def inject_css() -> None:
     st.markdown(_GLOBAL_CSS, unsafe_allow_html=True)
 
 
+@st.cache_data(show_spinner=False)
+def _logo_data_uri(logo_path_str: str) -> str:
+    """Read logo from disk once per session and return a data: URI (or empty)."""
+    logo = Path(logo_path_str)
+    if not logo.exists():
+        return ""
+    return f"data:image/png;base64,{base64.b64encode(logo.read_bytes()).decode()}"
+
+
 def render_sidebar_brand(logo_path: str | Path) -> None:
     """Render the Norm Fasteners brand card in the sidebar."""
-    logo = Path(logo_path)
-    logo_html = ""
-    if logo.exists():
-        logo_b64 = base64.b64encode(logo.read_bytes()).decode()
-        logo_html = (
-            f'<img src="data:image/png;base64,{logo_b64}" '
-            f'alt="Norm Fasteners" class="sidebar-brand-logo">'
-        )
+    data_uri = _logo_data_uri(str(logo_path))
+    logo_html = (
+        f'<img src="{data_uri}" alt="Norm Fasteners" class="sidebar-brand-logo">'
+        if data_uri
+        else ""
+    )
 
     st.sidebar.markdown(
         f'<div class="sidebar-brand-card">'

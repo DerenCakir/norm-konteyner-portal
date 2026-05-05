@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from db.connection import get_session
-from utils.auth import require_auth, restore_session_from_cookie
+from utils.auth import require_auth
 from utils.cached_queries import (
     get_active_sites_departments,
     get_available_weeks,
@@ -32,7 +32,6 @@ from utils.week import current_week_iso, format_week_human
 
 
 inject_css()
-restore_session_from_cookie()
 timer = page_timer("haftalik_takip")
 
 with get_session() as _s:

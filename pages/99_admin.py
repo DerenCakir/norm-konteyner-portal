@@ -31,7 +31,7 @@ from db.models import (
     User,
     UserDepartment,
 )
-from utils.auth import hash_password, require_admin, restore_session_from_cookie
+from utils.auth import hash_password, require_admin
 from utils.cached_queries import clear_cached_queries, get_active_department_count, get_week_export_rows
 from utils.performance import page_timer
 from utils.ui import inject_css, page_header, render_sidebar_user
@@ -39,7 +39,6 @@ from utils.week import current_week_iso, format_week_human, now_tr, week_iso_fro
 
 
 inject_css()
-restore_session_from_cookie()
 timer = page_timer("admin")
 
 # ---------------------------------------------------------------------------

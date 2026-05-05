@@ -39,7 +39,6 @@ from db.models import (
 from utils.auth import (
     get_user_departments,
     require_auth,
-    restore_session_from_cookie,
     user_can_submit_for,
 )
 from utils.performance import page_timer
@@ -63,7 +62,6 @@ from utils.week import (
 
 
 inject_css()
-restore_session_from_cookie()
 timer = page_timer("sayim_girisi")
 
 
