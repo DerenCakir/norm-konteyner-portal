@@ -86,23 +86,6 @@ def _verify_token(token: str) -> Optional[int]:
         return None
 
 
-def _get_query_token() -> Optional[str]:
-    try:
-        value = st.query_params.get(_QUERY_TOKEN_NAME)
-        if isinstance(value, list):
-            return value[0] if value else None
-        return value
-    except Exception:
-        return None
-
-
-def _set_query_token(token: str) -> None:
-    try:
-        st.query_params[_QUERY_TOKEN_NAME] = token
-    except Exception:
-        pass
-
-
 def _clear_query_token() -> None:
     try:
         if _QUERY_TOKEN_NAME in st.query_params:
@@ -167,9 +150,7 @@ def restore_session_from_cookie() -> None:
     try:
         controller = _get_cookie_controller()
         controller.refresh()
-        token = _get_query_token()
-        if not token:
-            token = controller.get(_COOKIE_NAME)
+        token = controller.get(_COOKIE_NAME)
         if not token:
             token = controller.getAll().get(_COOKIE_NAME)
     except Exception:
@@ -209,7 +190,7 @@ def _set_auth_cookie(user_id: int) -> None:
         controller = _get_cookie_controller()
         token = _make_token(user_id)
         st.session_state["_auth_token"] = token
-        _set_query_token(token)
+        _clear_query_token()
         controller.set(
             _COOKIE_NAME,
             token,

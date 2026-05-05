@@ -69,7 +69,29 @@ def render_login_form() -> None:
     timer = page_timer("login")
     # Sidebar'ı login ekranında gizle
     st.markdown(
-        "<style>[data-testid='stSidebar'] {display: none;}</style>",
+        """
+        <style>
+        [data-testid="stSidebar"],
+        [data-testid="stSidebar"][aria-expanded="false"],
+        [data-testid="stSidebarNav"],
+        [data-testid="stSidebarCollapseButton"],
+        [data-testid="collapsedControl"] {
+            display: none !important;
+            visibility: hidden !important;
+            min-width: 0 !important;
+            max-width: 0 !important;
+            width: 0 !important;
+            transform: translateX(-100%) !important;
+            pointer-events: none !important;
+        }
+        [data-testid="stAppViewContainer"] {
+            margin-left: 0 !important;
+        }
+        .block-container {
+            max-width: 100% !important;
+        }
+        </style>
+        """,
         unsafe_allow_html=True,
     )
 
