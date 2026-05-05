@@ -93,13 +93,25 @@ def _drop_query_token() -> None:
 
 
 def restore_session_from_query() -> None:
-    """Rehydrate session_state from the signed query-param token.
+    """Keep auth state and the URL token in sync.
 
-    No-op if session_state already has a user, the URL has no token, or the
-    token is invalid/expired. Must run before ``require_auth`` on each page.
+    - If session_state has a user but the URL token is missing or stale
+      (Streamlit's navigation can drop query params on page change), write
+      a fresh token so the next F5 / WebSocket reconnect can restore.
+    - If session_state is empty but the URL has a valid token, rehydrate
+      session_state from the token.
+    Must run before ``require_auth`` on each page.
     """
-    if st.session_state.get("user_id") is not None:
+    current_uid = st.session_state.get("user_id")
+    if current_uid is not None:
+        try:
+            existing = st.query_params.get(_QUERY_KEY)
+            if not existing or _verify_token(existing) != current_uid:
+                st.query_params[_QUERY_KEY] = _make_token(int(current_uid))
+        except Exception:
+            pass
         return
+
     token = st.query_params.get(_QUERY_KEY)
     if not token:
         return
