@@ -765,7 +765,137 @@ hr {
     color: #475569;
     font-size: 0.78rem;
     margin-top: 1.25rem;
-    letter-spacing: 0.03em;
+    letter-spacing: 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Operational refinements                                            */
+/* ------------------------------------------------------------------ */
+html, body, [class*="css"], button, input, textarea, select,
+h1, h2, h3, h4, p, span, div, label {
+    letter-spacing: 0 !important;
+}
+
+.block-container {
+    padding-top: 1.35rem !important;
+    max-width: 1540px;
+}
+
+[data-testid="stAppViewContainer"]:not(:has(.login-wrap)) {
+    background: #070b13 !important;
+}
+
+.norm-header {
+    background: #101827;
+    border: 1px solid #273244;
+    border-radius: 10px;
+    box-shadow: none;
+    padding: 1.15rem 1.35rem;
+    margin-bottom: 1.15rem;
+}
+.norm-header::before,
+.norm-header::after {
+    display: none;
+}
+.norm-header h1 {
+    background: none;
+    -webkit-text-fill-color: #f8fafc;
+    font-size: 1.55rem !important;
+    font-weight: 750 !important;
+}
+.norm-header p {
+    color: #9aa8bb !important;
+    font-size: 0.94rem !important;
+    margin-top: 0.35rem !important;
+}
+
+.kpi-card {
+    background: #101827;
+    border: 1px solid #263246;
+    border-radius: 8px;
+    box-shadow: none;
+    padding: 0.95rem 1rem;
+}
+.kpi-card::before,
+.kpi-card::after {
+    display: none;
+}
+.kpi-card:hover {
+    transform: none;
+    background: #121c2d;
+    border-color: #334155;
+    box-shadow: none;
+}
+.kpi-label {
+    color: #9aa8bb;
+    font-size: 0.76rem;
+    text-transform: none;
+    margin-bottom: 0.4rem;
+}
+.kpi-value {
+    color: #f8fafc;
+    font-size: 1.55rem;
+    font-weight: 750;
+}
+.kpi-sub {
+    color: #9aa8bb;
+    font-size: 0.8rem;
+}
+
+.qa-card {
+    background: #101827;
+    border: 1px solid #273244;
+    border-radius: 8px;
+    box-shadow: none;
+    padding: 1rem 1rem 0.95rem;
+    min-height: 118px;
+    text-align: left;
+}
+.qa-card::before {
+    display: none;
+}
+.qa-card:hover {
+    transform: none;
+    background: #121c2d;
+    border-color: #3b82f6;
+    box-shadow: none;
+}
+.qa-card:hover .qa-icon {
+    transform: none;
+}
+.qa-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2rem;
+    height: 1.45rem;
+    padding: 0 0.55rem;
+    border-radius: 999px;
+    margin-bottom: 0.85rem;
+    background: rgba(59, 130, 246, 0.12);
+    border: 1px solid rgba(59, 130, 246, 0.25);
+    color: #bfdbfe;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+.qa-title {
+    font-size: 1rem;
+}
+.qa-desc {
+    font-size: 0.84rem;
+}
+
+[data-testid="stSidebar"] {
+    background: #070b13;
+}
+[data-testid="stSidebar"] .block-container {
+    padding-top: 5.45rem !important;
+}
+
+.sidebar-user-card,
+.sidebar-brand-card {
+    border-radius: 8px;
+    box-shadow: none;
 }
 
 /* ------------------------------------------------------------------ */
@@ -814,7 +944,8 @@ def render_sidebar_brand(logo_path: str | Path) -> None:
 
 def page_header(title: str, subtitle: str = "", icon: str = "") -> None:
     """Banner-style sayfa başlığı."""
-    icon_html = f'<span style="margin-right:0.7rem;">{_esc(icon)}</span>' if icon else ""
+    display_icon = icon if str(icon).isascii() else ""
+    icon_html = f'<span style="margin-right:0.7rem;">{_esc(display_icon)}</span>' if display_icon else ""
     sub_html = f'<p>{_esc(subtitle)}</p>' if subtitle else ""
     st.markdown(
         f'<div class="norm-header"><h1>{icon_html}{_esc(title)}</h1>{sub_html}</div>',
@@ -852,9 +983,16 @@ def quick_action_card(icon: str, title: str, desc: str, href: str = "") -> str:
     """Dashboard'da hızlı eylem kartı."""
     tag = "a" if href else "div"
     href_attr = f' href="{_esc(href)}" target="_self"' if href else ""
+    fallback_icons = {
+        "sayim_girisi": "01",
+        "anlik_durum": "02",
+        "analiz": "03",
+        "haftalik_takip": "04",
+    }
+    display_icon = icon if str(icon).isascii() else fallback_icons.get(href, "")
     return (
         f'<{tag} class="qa-card"{href_attr}>'
-        f'  <div class="qa-icon">{_esc(icon)}</div>'
+        f'  <div class="qa-icon">{_esc(display_icon)}</div>'
         f'  <div class="qa-title">{_esc(title)}</div>'
         f'  <div class="qa-desc">{_esc(desc)}</div>'
         f'</{tag}>'
@@ -868,6 +1006,7 @@ def status_pill(status: str) -> str:
         "late":   "⏰ Geç giriş",
         "locked": "🔒 Kapalı",
     }
+    labels = {"open": "Açık", "late": "Geç giriş", "locked": "Kapalı"}
     label = labels.get(status, status)
     return f'<span class="status-pill status-{_esc(status)}">{_esc(label)}</span>'
 
@@ -877,7 +1016,7 @@ def render_sidebar_user(full_name: str, role: str) -> None:
     role_label = "Yönetici" if role == "admin" else "Kullanıcı"
     st.sidebar.markdown(
         f'<div class="sidebar-user-card">'
-        f'  <div class="sidebar-user-name">👤 {_esc(full_name)}</div>'
+        f'  <div class="sidebar-user-name">{_esc(full_name)}</div>'
         f'  <span class="sidebar-user-role">{_esc(role_label)}</span>'
         f'</div>',
         unsafe_allow_html=True,
