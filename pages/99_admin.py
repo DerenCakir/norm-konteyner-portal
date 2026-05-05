@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 from decimal import Decimal
 
 import streamlit as st
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 
 from db.connection import get_session
@@ -1025,6 +1025,65 @@ with tab_override:
             format_func=lambda w: f"{w} — {format_week_human(w)}",
             key="override_week",
         )
+
+        with get_session() as s:
+            week_submission_count = s.execute(
+                select(func.count(CountSubmission.id)).where(
+                    CountSubmission.week_iso == override_week
+                )
+            ).scalar_one()
+
+        with st.expander("Seçili Haftanın Tüm Sayımlarını Sil", expanded=False):
+            st.warning(
+                f"Bu işlem **{override_week} — {format_week_human(override_week)}** haftasına ait "
+                f"tüm sayım kayıtlarını siler. Silinecek kayıt sayısı: **{week_submission_count}**."
+            )
+            bulk_confirm = st.text_input(
+                "Silmek için ONAYLIYORUM yaz",
+                key=f"bulk_delete_confirm_{override_week}",
+            )
+            bulk_delete_clicked = st.button(
+                "Bu Haftadaki Tüm Sayımları Sil",
+                key=f"bulk_delete_week_{override_week}",
+                use_container_width=True,
+                disabled=(week_submission_count == 0 or bulk_confirm != "ONAYLIYORUM"),
+            )
+
+            if bulk_delete_clicked:
+                try:
+                    with get_session() as s:
+                        submissions = list(s.execute(
+                            select(CountSubmission)
+                            .options(selectinload(CountSubmission.details))
+                            .where(CountSubmission.week_iso == override_week)
+                        ).scalars())
+
+                        old_value = {
+                            "week_iso": override_week,
+                            "deleted_count": len(submissions),
+                            "submission_ids": [sub.id for sub in submissions],
+                            "department_ids": [sub.department_id for sub in submissions],
+                        }
+                        for sub in submissions:
+                            s.delete(sub)
+
+                        s.add(AuditLog(
+                            user_id=admin_id,
+                            action="bulk_submission_delete",
+                            entity_type="count_submission",
+                            entity_id=None,
+                            old_value=old_value,
+                            new_value={
+                                "week_iso": override_week,
+                                "reason": "admin_deleted_entire_week_from_correction_panel",
+                            },
+                        ))
+                    clear_cached_queries()
+                    st.success(f"{override_week} haftasındaki {len(submissions)} sayım kaydı silindi.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Hata: {exc}")
+
         dept_options = {
             f"{site.name} — {dept.name}": dept.id for dept, site in override_depts
         }
