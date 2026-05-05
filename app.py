@@ -21,6 +21,7 @@ from utils.auth import (
     login_user,
     restore_session_from_cookie,
 )
+from utils.performance import page_timer
 from utils.ui import (
     inject_css,
     kpi_card,
@@ -62,6 +63,7 @@ inject_css()
 # ---------------------------------------------------------------------------
 def render_login_form() -> None:
     """Stilize login formu — ortalanmış kart."""
+    timer = page_timer("login")
     # Sidebar'ı login ekranında gizle
     st.markdown(
         "<style>[data-testid='stSidebar'] {display: none;}</style>",
@@ -103,10 +105,12 @@ def render_login_form() -> None:
         )
 
     if not submitted:
+        timer.finish()
         return
 
     if not username or not password:
         st.error("Kullanıcı adı ve şifre boş olamaz.")
+        timer.finish()
         return
 
     try:
@@ -114,19 +118,24 @@ def render_login_form() -> None:
             user = authenticate(username.strip(), password, session)
             if user is None:
                 st.error("Kullanıcı adı veya şifre hatalı.")
+                timer.finish()
                 return
             login_user(user)
     except OperationalError:
         st.error("Veritabanına bağlanılamıyor. Lütfen yöneticiye bildirin.")
+        timer.finish()
         return
     except SQLAlchemyError:
         st.error("Veritabanı hatası oluştu. Lütfen tekrar deneyin.")
+        timer.finish()
         return
     except Exception:
         st.error("Beklenmeyen bir hata oluştu.")
+        timer.finish()
         return
 
     st.success("Giriş yapıldı. Oturum hazırlanıyor...")
+    timer.finish()
     time.sleep(0.8)
     st.rerun()
 
@@ -145,14 +154,15 @@ def render_sidebar() -> None:
 # Dashboard
 # ---------------------------------------------------------------------------
 def render_dashboard() -> None:
+    timer = page_timer("ana_sayfa")
     render_sidebar()
 
     full_name = st.session_state.get("full_name", "")
     role = st.session_state.get("role", "user")
 
     page_header(
-        title=f"Hoş geldin, {full_name}",
-        subtitle="Konteyner sayım portalına genel bakış",
+        title="Konteyner Takip Portalı",
+        subtitle=f"Hoş geldin, {full_name}. Haftalık sayım ve konteyner durumunu buradan takip edebilirsin.",
             )
 
     week_iso = current_week_iso()
@@ -163,6 +173,7 @@ def render_dashboard() -> None:
             status = get_submission_status(week_iso, session)
     except SQLAlchemyError:
         st.error("Sayım durumu okunamadı (veritabanı hatası).")
+        timer.finish()
         return
 
     # ----- KPI kartları -----
@@ -170,12 +181,14 @@ def render_dashboard() -> None:
     status_label = {"open": "Açık", "late": "Geç giriş", "locked": "Kapalı"}[status]
     cards = [
         kpi_card("Aktif Hafta", week_iso, sub=week_human),
-        kpi_card("Sayım Durumu", status_label, sub="Cuma 09.00 – 12.00"),
-        kpi_card("Rolünüz", role_text),
+        kpi_card("Sayım Penceresi", status_label, sub="Cuma 09.00 – 12.00"),
+        kpi_card("Kullanıcı Rolü", role_text, sub="Yetkiler admin panelinden yönetilir"),
     ]
     render_kpis(cards)
 
     st.markdown("<br>", unsafe_allow_html=True)
+
+    st.markdown("### Bu Haftanın Durumu")
 
     # ----- Status açıklaması -----
     if status == "open":
@@ -238,10 +251,11 @@ def render_dashboard() -> None:
     )
 
     st.markdown(
-        '<p style="margin-top:1.5rem; color:#64748b; font-size:0.9rem;">'
-        'Soldaki menüden ilgili sayfaya geçebilirsiniz.</p>',
+        '<p style="margin-top:1.25rem; color:#64748b; font-size:0.9rem;">'
+        'Sık kullanılan işlemler yukarıda; tüm sayfalara soldaki menüden de ulaşabilirsiniz.</p>',
         unsafe_allow_html=True,
     )
+    timer.finish()
 
 
 # ---------------------------------------------------------------------------

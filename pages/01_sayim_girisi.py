@@ -17,7 +17,6 @@ Akış:
 
 from __future__ import annotations
 
-from datetime import date, time as dt_time
 from decimal import Decimal
 
 import streamlit as st
@@ -39,7 +38,8 @@ from utils.auth import (
     restore_session_from_cookie,
     user_can_submit_for,
 )
-from utils.ui import inject_css, page_header, render_sidebar_user, status_pill
+from utils.performance import page_timer
+from utils.ui import inject_css, page_header, render_sidebar_user
 from utils.week import (
     current_week_iso,
     format_week_human,
@@ -50,6 +50,7 @@ from utils.week import (
 
 inject_css()
 restore_session_from_cookie()
+timer = page_timer("sayim_girisi")
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +103,7 @@ if not dept_with_site:
         "Henüz yetkili olduğun bir bölüm yok. "
         "Lütfen yöneticinden bölüm yetkisi atamasını iste."
     )
+    timer.finish()
     st.stop()
 
 
@@ -180,11 +182,18 @@ st.divider()
 st.subheader("Konteyner Sayımı")
 
 if existing is not None:
-    st.info(
-        f"Bu hafta için zaten bir kayıt var (durum: **{existing.status}**, "
-        f"son güncelleme: {existing.updated_at:%Y-%m-%d %H:%M}). "
-        "Yeni gönderim eskisinin üzerine yazar."
-    )
+    if can_submit:
+        st.warning(
+            f"Bu bölüm ve hafta için daha önce kayıt gönderilmiş. "
+            f"Son güncelleme: **{existing.updated_at:%Y-%m-%d %H:%M}**. "
+            "Formu kaydedersen mevcut kayıt güncellenecek."
+        )
+    else:
+        st.info(
+            f"Bu bölüm ve hafta için kayıt var ama giriş penceresi kapalı. "
+            f"Son güncelleme: **{existing.updated_at:%Y-%m-%d %H:%M}**. "
+            "Düzeltme gerekiyorsa yöneticinizden destek isteyin."
+        )
 
 with st.form("submission_form", clear_on_submit=False):
     cdate = st.date_input("Sayım tarihi", value=default_count_date, disabled=not can_submit)
@@ -229,8 +238,9 @@ with st.form("submission_form", clear_on_submit=False):
             "empty": int(empty_v), "full": int(full_v), "kanban": int(kanban_v)
         }
 
+    submit_label = "Sayımı Güncelle" if existing is not None else "Gönder"
     submit_clicked = st.form_submit_button(
-        "Gönder", use_container_width=True, disabled=not can_submit, type="primary",
+        submit_label, use_container_width=True, disabled=not can_submit, type="primary",
     )
 
 
@@ -253,6 +263,7 @@ if submit_clicked and can_submit:
         with get_session() as s:
             if not user_can_submit_for(me_id, selected_dept_id, s):
                 st.error("Bu bölüme sayım girme yetkiniz yok.")
+                timer.finish()
                 st.stop()
 
             # UPSERT
@@ -264,6 +275,8 @@ if submit_clicked and can_submit:
             ).scalar_one_or_none()
 
             new_status = "submitted" if status == "open" else "late_submitted"
+            old_value = None
+            audit_action = "count_submit"
 
             if sub is None:
                 sub = CountSubmission(
@@ -279,6 +292,21 @@ if submit_clicked and can_submit:
                 s.add(sub)
                 s.flush()  # sub.id
             else:
+                audit_action = "count_update"
+                old_value = {
+                    "week_iso": sub.week_iso,
+                    "department_id": sub.department_id,
+                    "status": sub.status,
+                    "actual_tonnage": float(sub.actual_tonnage) if sub.actual_tonnage else None,
+                    "details": {
+                        str(detail.color_id): {
+                            "empty": detail.empty_count,
+                            "full": detail.full_count,
+                            "kanban": detail.kanban_count,
+                        }
+                        for detail in sub.details
+                    },
+                }
                 sub.user_id = me_id
                 sub.count_date = cdate
                 sub.count_time = ctime
@@ -303,9 +331,10 @@ if submit_clicked and can_submit:
             # Audit
             s.add(AuditLog(
                 user_id=me_id,
-                action="count_submit",
+                action=audit_action,
                 entity_type="count_submission",
                 entity_id=sub.id,
+                old_value=old_value,
                 new_value={
                     "week_iso": week_iso,
                     "department_id": selected_dept_id,
@@ -317,5 +346,9 @@ if submit_clicked and can_submit:
                 },
             ))
 
-        st.success(f"Sayım gönderildi. Durum: **{new_status}**")
+        success_text = "Sayım güncellendi." if audit_action == "count_update" else "Sayım gönderildi."
+        st.success(f"{success_text} Durum: **{new_status}**")
+        timer.finish()
         st.rerun()
+
+timer.finish()

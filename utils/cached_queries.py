@@ -24,7 +24,7 @@ from db.models import (
 )
 
 
-CACHE_TTL_SECONDS = 60
+CACHE_TTL_SECONDS = 300
 
 
 def clear_cached_queries() -> None:
@@ -35,6 +35,8 @@ def clear_cached_queries() -> None:
     get_week_submissions_with_users.clear()
     get_week_count_details.clear()
     get_department_users.clear()
+    get_analysis_rows.clear()
+    get_active_department_count.clear()
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
@@ -164,3 +166,67 @@ def get_department_users(include_inactive: bool = False) -> dict[int, list[dict[
             "is_active": user.is_active,
         })
     return dept_users
+
+
+@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
+def get_active_department_count() -> int:
+    with get_session() as s:
+        rows = s.execute(
+            select(Department.id).where(Department.is_active.is_(True))
+        ).all()
+    return len(rows)
+
+
+@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
+def get_analysis_rows(week_isos: tuple[str, ...]) -> list[dict[str, Any]]:
+    with get_session() as s:
+        rows = s.execute(
+            select(
+                CountSubmission.id.label("submission_id"),
+                CountSubmission.week_iso,
+                CountSubmission.department_id,
+                CountSubmission.user_id,
+                CountSubmission.status,
+                CountSubmission.actual_tonnage,
+                CountSubmission.submitted_at,
+                CountDetail.color_id,
+                CountDetail.empty_count,
+                CountDetail.full_count,
+                CountDetail.kanban_count,
+                Department.name.label("department"),
+                Department.weekly_tonnage_target,
+                ProductionSite.id.label("site_id"),
+                ProductionSite.name.label("site"),
+                Color.name.label("color"),
+            )
+            .join(CountDetail, CountDetail.submission_id == CountSubmission.id)
+            .join(Department, Department.id == CountSubmission.department_id)
+            .join(ProductionSite, ProductionSite.id == Department.production_site_id)
+            .join(Color, Color.id == CountDetail.color_id)
+            .where(CountSubmission.week_iso.in_(week_isos))
+        ).all()
+
+    return [
+        {
+            "submission_id": row.submission_id,
+            "week_iso": row.week_iso,
+            "department_id": row.department_id,
+            "user_id": row.user_id,
+            "status": row.status,
+            "actual_tonnage": float(row.actual_tonnage) if row.actual_tonnage is not None else None,
+            "submitted_at": row.submitted_at.isoformat() if row.submitted_at else None,
+            "color_id": row.color_id,
+            "empty_count": row.empty_count,
+            "full_count": row.full_count,
+            "kanban_count": row.kanban_count,
+            "department": row.department,
+            "weekly_tonnage_target": (
+                float(row.weekly_tonnage_target)
+                if row.weekly_tonnage_target is not None else None
+            ),
+            "site_id": row.site_id,
+            "site": row.site,
+            "color": row.color,
+        }
+        for row in rows
+    ]

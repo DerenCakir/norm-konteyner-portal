@@ -10,7 +10,7 @@ Tüm değişiklikler audit_log'a yazılır.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 import streamlit as st
@@ -31,12 +31,14 @@ from db.models import (
 )
 from utils.auth import hash_password, require_admin, restore_session_from_cookie
 from utils.cached_queries import clear_cached_queries
+from utils.performance import page_timer
 from utils.ui import inject_css, page_header, render_sidebar_user
-from utils.week import current_week_iso, format_week_human, now_tr
+from utils.week import current_week_iso, format_week_human, now_tr, week_iso_from_date
 
 
 inject_css()
 restore_session_from_cookie()
+timer = page_timer("admin")
 
 # ---------------------------------------------------------------------------
 # Yetki kontrolü — sadece adminler
@@ -61,13 +63,43 @@ page_header(
     subtitle=f"Giriş yapan yönetici: {admin_username}",
     )
 
-tab_users, tab_perms, tab_late, tab_override, tab_departments = st.tabs([
+tab_users, tab_perms, tab_departments, tab_colors, tab_late, tab_override, tab_audit = st.tabs([
     "Kullanıcılar",
     "Yetkilendirme",
-    "Geç Giriş",
-    "Sayım Override",
     "Bölümler",
+    "Renkler",
+    "Geç Giriş",
+    "Sayım Düzeltme",
+    "İşlem Geçmişi",
 ])
+
+
+def _recent_week_options(count: int = 12) -> list[str]:
+    """Return current and previous ISO weeks for admin workflows."""
+    today = now_tr().date()
+    weeks: list[str] = []
+    for offset in range(count):
+        week = week_iso_from_date(today - timedelta(days=offset * 7))
+        if week not in weeks:
+            weeks.append(week)
+    return weeks
+
+
+def _merge_week_options(*groups: list[str]) -> list[str]:
+    weeks: list[str] = []
+    for group in groups:
+        for week in group:
+            if week not in weeks:
+                weeks.append(week)
+    return weeks
+
+
+def _valid_hex_code(value: str) -> bool:
+    if not value:
+        return True
+    if len(value) != 7 or not value.startswith("#"):
+        return False
+    return all(char in "0123456789abcdefABCDEF" for char in value[1:])
 
 
 # ---------------------------------------------------------------------------
@@ -265,7 +297,244 @@ with tab_users:
                 except Exception as exc:
                     st.error(f"Hata: {exc}")
 
-        if selected_user_id != admin_id:
+
+# ---------------------------------------------------------------------------
+# TAB 6 — RENKLER
+# ---------------------------------------------------------------------------
+with tab_colors:
+    st.subheader("Renk Yönetimi")
+    st.caption("Renkler fiziksel olarak silinmez; geçmiş sayımlar bozulmasın diye pasif hale getirilir.")
+
+    with get_session() as s:
+        colors = list(s.execute(
+            select(Color).order_by(Color.sort_order, Color.id)
+        ).scalars())
+
+    st.markdown("#### Yeni Renk Ekle")
+    with st.form("create_color_form", clear_on_submit=True):
+        col_name, col_hex, col_sort = st.columns([2, 1, 1])
+        color_name = col_name.text_input("Renk Adı")
+        color_hex = col_hex.text_input("Hex Kod", placeholder="#1f77b4")
+        color_sort = col_sort.number_input("Sıra", min_value=0, value=0, step=1)
+        create_color_clicked = st.form_submit_button("Renk Ekle", use_container_width=True)
+
+    if create_color_clicked:
+        clean_name = color_name.strip()
+        clean_hex = color_hex.strip() or None
+        if not clean_name:
+            st.error("Renk adı zorunlu.")
+        elif clean_hex and not _valid_hex_code(clean_hex):
+            st.error("Hex kod #RRGGBB formatında olmalı.")
+        else:
+            try:
+                with get_session() as s:
+                    existing = s.execute(
+                        select(Color).where(Color.name == clean_name)
+                    ).scalar_one_or_none()
+                    if existing is not None:
+                        st.error("Bu renk adı zaten var.")
+                    else:
+                        color = Color(
+                            name=clean_name,
+                            hex_code=clean_hex,
+                            sort_order=int(color_sort),
+                            is_active=True,
+                        )
+                        s.add(color)
+                        s.flush()
+                        s.add(AuditLog(
+                            user_id=admin_id,
+                            action="color_create",
+                            entity_type="color",
+                            entity_id=color.id,
+                            new_value={
+                                "name": color.name,
+                                "hex_code": color.hex_code,
+                                "sort_order": color.sort_order,
+                                "is_active": color.is_active,
+                            },
+                        ))
+                clear_cached_queries()
+                st.success(f"'{clean_name}' rengi eklendi.")
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Hata: {exc}")
+
+    st.divider()
+    st.markdown("#### Renk Düzenle / Pasifleştir")
+
+    if not colors:
+        st.info("Düzenlenecek renk yok.")
+    else:
+        color_options = {
+            f"{color.sort_order} — {color.name} ({'Aktif' if color.is_active else 'Pasif'})": color.id
+            for color in colors
+        }
+        selected_color_label = st.selectbox("Düzenlenecek renk", list(color_options.keys()))
+        selected_color_id = color_options[selected_color_label]
+        selected_color = next(color for color in colors if color.id == selected_color_id)
+
+        with st.form(f"edit_color_form_{selected_color_id}"):
+            col_name, col_hex, col_sort, col_active = st.columns([2, 1, 1, 1])
+            edit_color_name = col_name.text_input(
+                "Renk Adı",
+                value=selected_color.name,
+                key=f"color_{selected_color_id}_name",
+            )
+            edit_color_hex = col_hex.text_input(
+                "Hex Kod",
+                value=selected_color.hex_code or "",
+                key=f"color_{selected_color_id}_hex",
+            )
+            edit_color_sort = col_sort.number_input(
+                "Sıra",
+                min_value=0,
+                value=int(selected_color.sort_order or 0),
+                step=1,
+                key=f"color_{selected_color_id}_sort",
+            )
+            edit_color_active = col_active.checkbox(
+                "Aktif",
+                value=selected_color.is_active,
+                key=f"color_{selected_color_id}_active",
+            )
+            update_color_clicked = st.form_submit_button("Rengi Güncelle", use_container_width=True)
+
+        if update_color_clicked:
+            clean_name = edit_color_name.strip()
+            clean_hex = edit_color_hex.strip() or None
+            if not clean_name:
+                st.error("Renk adı zorunlu.")
+            elif clean_hex and not _valid_hex_code(clean_hex):
+                st.error("Hex kod #RRGGBB formatında olmalı.")
+            else:
+                try:
+                    with get_session() as s:
+                        duplicate = s.execute(
+                            select(Color).where(
+                                Color.name == clean_name,
+                                Color.id != selected_color_id,
+                            )
+                        ).scalar_one_or_none()
+                        if duplicate is not None:
+                            st.error("Bu renk adı zaten var.")
+                        else:
+                            color = s.get(Color, selected_color_id)
+                            old_value = {
+                                "name": color.name,
+                                "hex_code": color.hex_code,
+                                "sort_order": color.sort_order,
+                                "is_active": color.is_active,
+                            }
+                            color.name = clean_name
+                            color.hex_code = clean_hex
+                            color.sort_order = int(edit_color_sort)
+                            color.is_active = edit_color_active
+                            s.add(AuditLog(
+                                user_id=admin_id,
+                                action="color_update",
+                                entity_type="color",
+                                entity_id=color.id,
+                                old_value=old_value,
+                                new_value={
+                                    "name": color.name,
+                                    "hex_code": color.hex_code,
+                                    "sort_order": color.sort_order,
+                                    "is_active": color.is_active,
+                                },
+                            ))
+                    clear_cached_queries()
+                    st.success("Renk güncellendi.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Hata: {exc}")
+
+        if selected_color.is_active:
+            if st.button("Rengi Sil (Pasifleştir)", key=f"deactivate_color_{selected_color_id}", use_container_width=True):
+                try:
+                    with get_session() as s:
+                        color = s.get(Color, selected_color_id)
+                        old_state = color.is_active
+                        color.is_active = False
+                        s.add(AuditLog(
+                            user_id=admin_id,
+                            action="color_delete",
+                            entity_type="color",
+                            entity_id=color.id,
+                            old_value={"is_active": old_state},
+                            new_value={"is_active": False, "delete_mode": "soft"},
+                        ))
+                    clear_cached_queries()
+                    st.success("Renk pasifleştirildi.")
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Hata: {exc}")
+
+        rows = [
+            {
+                "Renk": color.name,
+                "Hex": color.hex_code or "-",
+                "Sıra": color.sort_order,
+                "Durum": "Aktif" if color.is_active else "Pasif",
+            }
+            for color in colors
+        ]
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+
+
+# ---------------------------------------------------------------------------
+# TAB 7 — AUDIT LOG
+# ---------------------------------------------------------------------------
+with tab_audit:
+    st.subheader("Audit Log")
+    st.caption("Güvenlik ve operasyon açısından önemli işlemlerin kaydı.")
+
+    with get_session() as s:
+        action_options = list(s.execute(
+            select(AuditLog.action).distinct().order_by(AuditLog.action)
+        ).scalars())
+        user_options = list(s.execute(
+            select(User).order_by(User.full_name)
+        ).scalars())
+
+    col_action, col_user, col_limit = st.columns([2, 2, 1])
+    selected_action = col_action.selectbox("İşlem", ["Tümü"] + action_options)
+    selected_audit_user = col_user.selectbox(
+        "Kullanıcı",
+        [0] + [user.id for user in user_options],
+        format_func=lambda user_id: (
+            "Tümü" if user_id == 0 else _user_label(next(user for user in user_options if user.id == user_id))
+        ),
+    )
+    audit_limit = col_limit.number_input("Kayıt", min_value=50, max_value=1000, value=200, step=50)
+
+    with get_session() as s:
+        query = select(AuditLog, User).outerjoin(User, User.id == AuditLog.user_id)
+        if selected_action != "Tümü":
+            query = query.where(AuditLog.action == selected_action)
+        if selected_audit_user != 0:
+            query = query.where(AuditLog.user_id == selected_audit_user)
+        query = query.order_by(AuditLog.timestamp.desc()).limit(int(audit_limit))
+        audit_rows = list(s.execute(query).all())
+
+    if not audit_rows:
+        st.info("Seçilen filtrelerde audit kaydı yok.")
+    else:
+        rows = []
+        for log, user in audit_rows:
+            rows.append({
+                "Zaman": now_tr(log.timestamp).strftime("%Y-%m-%d %H:%M:%S") if log.timestamp else "-",
+                "Kullanıcı": user.full_name if user else "-",
+                "İşlem": log.action,
+                "Varlık": log.entity_type or "-",
+                "Varlık ID": log.entity_id or "-",
+                "Eski Değer": log.old_value or "-",
+                "Yeni Değer": log.new_value or "-",
+            })
+        st.dataframe(rows, use_container_width=True, hide_index=True)
+
+with tab_users:
+    if editable_users and selected_user_id != admin_id:
             if st.button(
                 "Kullanıcıyı Sil (Pasifleştir)",
                 key=f"soft_delete_user_{selected_user_id}",
@@ -631,8 +900,7 @@ with tab_late:
         ).scalars())
 
     current_week = current_week_iso()
-    if current_week not in known_weeks:
-        known_weeks = [current_week] + known_weeks
+    known_weeks = _merge_week_options(_recent_week_options(12), known_weeks)
 
     with st.form("late_window_form"):
         selected_week = st.selectbox(
@@ -720,11 +988,11 @@ with tab_late:
 
 
 # ---------------------------------------------------------------------------
-# TAB 4 — SAYIM OVERRIDE
+# TAB 6 — SAYIM DÜZELTME
 # ---------------------------------------------------------------------------
 with tab_override:
-    st.subheader("Sayım Override")
-    st.caption("Pencere kapandıktan sonra hatalı sayımı yönetici olarak düzelt.")
+    st.subheader("Sayım Düzeltme")
+    st.caption("Pencere kapandıktan sonra hatalı sayımı yönetici olarak düzenle veya sil.")
 
     with get_session() as s:
         override_weeks = list(s.execute(
@@ -732,8 +1000,7 @@ with tab_override:
             .distinct()
             .order_by(CountSubmission.week_iso.desc())
         ).scalars())
-        if current_week_iso() not in override_weeks:
-            override_weeks = [current_week_iso()] + override_weeks
+        override_weeks = _merge_week_options(_recent_week_options(12), override_weeks)
 
         override_depts = list(s.execute(
             select(Department, ProductionSite)
@@ -752,7 +1019,7 @@ with tab_override:
         st.info("Aktif bölüm veya renk bulunamadı.")
     else:
         override_week = st.selectbox(
-            "Override haftası",
+            "Düzeltilecek hafta",
             override_weeks,
             index=0,
             format_func=lambda w: f"{w} — {format_week_human(w)}",
@@ -883,7 +1150,7 @@ with tab_override:
                 }
 
             override_clicked = st.form_submit_button(
-                "Override Kaydet",
+                "Düzeltmeyi Kaydet",
                 use_container_width=True,
                 type="primary",
             )
@@ -980,3 +1247,5 @@ with tab_override:
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Hata: {exc}")
+
+timer.finish()

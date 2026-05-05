@@ -19,12 +19,14 @@ from utils.cached_queries import (
     get_week_count_details,
     get_week_submissions_with_users,
 )
+from utils.performance import page_timer
 from utils.ui import inject_css, page_header, render_sidebar_user
 from utils.week import current_week_iso, format_week_human
 
 
 inject_css()
 restore_session_from_cookie()
+timer = page_timer("anlik_durum")
 
 with get_session() as _s:
     me = require_auth(_s)
@@ -107,3 +109,4 @@ st.divider()
 st.dataframe(df, use_container_width=True, hide_index=True)
 
 st.caption("Hücreler: **Boş/Dolu/Kanban** sırasıyla.")
+timer.finish()

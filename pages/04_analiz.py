@@ -22,22 +22,21 @@ import streamlit as st
 from sqlalchemy import select
 
 from db.connection import get_session
-from db.models import (
-    Color,
-    CountDetail,
-    CountSubmission,
-    Department,
-    ProductionSite,
-    User,
-    UserDepartment,
+from db.models import Department, ProductionSite, User, UserDepartment
+from utils.cached_queries import (
+    get_active_department_count,
+    get_analysis_rows,
+    get_available_weeks,
 )
 from utils.auth import require_auth, restore_session_from_cookie
+from utils.performance import page_timer
 from utils.ui import inject_css, kpi_card, page_header, render_kpis, render_sidebar_user
 from utils.week import current_week_iso, format_week_human, week_iso_from_date
 
 
 inject_css()
 restore_session_from_cookie()
+timer = page_timer("analiz")
 
 with get_session() as _s:
     me = require_auth(_s)
@@ -53,14 +52,7 @@ page_header(
 # Hafta + zaman aralığı seçici
 # ---------------------------------------------------------------------------
 default_week = current_week_iso()
-
-with get_session() as s:
-    all_weeks = list(s.execute(
-        select(CountSubmission.week_iso).distinct().order_by(CountSubmission.week_iso.desc())
-    ).scalars())
-
-if default_week not in all_weeks:
-    all_weeks = [default_week] + all_weeks
+all_weeks = get_available_weeks(default_week)
 
 ctop1, ctop2 = st.columns([2, 1])
 selected_week = ctop1.selectbox(
@@ -88,46 +80,16 @@ trend_weeks = weeks_back_from(selected_week, range_n)
 
 
 # ---------------------------------------------------------------------------
-# Veriyi tek seferde DataFrame'e oku
+# Veriyi cache'li oku
 # ---------------------------------------------------------------------------
-with get_session() as s:
-    rows = s.execute(
-        select(
-            CountSubmission.id.label("submission_id"),
-            CountSubmission.week_iso,
-            CountSubmission.department_id,
-            CountSubmission.user_id,
-            CountSubmission.status,
-            CountSubmission.actual_tonnage,
-            CountSubmission.submitted_at,
-            CountDetail.color_id,
-            CountDetail.empty_count,
-            CountDetail.full_count,
-            CountDetail.kanban_count,
-            Department.name.label("department"),
-            Department.weekly_tonnage_target,
-            ProductionSite.id.label("site_id"),
-            ProductionSite.name.label("site"),
-            Color.name.label("color"),
-        )
-        .join(CountDetail, CountDetail.submission_id == CountSubmission.id)
-        .join(Department, Department.id == CountSubmission.department_id)
-        .join(ProductionSite, ProductionSite.id == Department.production_site_id)
-        .join(Color, Color.id == CountDetail.color_id)
-        .where(CountSubmission.week_iso.in_(trend_weeks))
-    ).all()
+rows = get_analysis_rows(tuple(trend_weeks))
 
 if not rows:
     st.warning("Seçili aralıkta hiç sayım verisi yok.")
+    timer.finish()
     st.stop()
 
-df = pd.DataFrame(rows, columns=[
-    "submission_id", "week_iso", "department_id", "user_id", "status",
-    "actual_tonnage", "submitted_at",
-    "color_id", "empty_count", "full_count", "kanban_count",
-    "department", "weekly_tonnage_target",
-    "site_id", "site", "color",
-])
+df = pd.DataFrame(rows)
 df["actual_tonnage"] = pd.to_numeric(df["actual_tonnage"], errors="coerce")
 df["weekly_tonnage_target"] = pd.to_numeric(df["weekly_tonnage_target"], errors="coerce")
 
@@ -150,11 +112,7 @@ excess = max(0.0, total_actual - total_target)
 
 submitted_dept_count = sub_unique["department_id"].nunique()
 
-with get_session() as s:
-    total_dept_count = s.execute(
-        select(Department).where(Department.is_active.is_(True))
-    ).all()
-total_dept_count = len(total_dept_count)
+total_dept_count = get_active_department_count()
 missing_count = total_dept_count - submitted_dept_count
 
 st.markdown(f"#### Seçili Hafta: {format_week_human(selected_week)}")
@@ -625,3 +583,5 @@ with st.expander("Üretim Yeri Trend Sapma", expanded=False):
                 st.success(f"Son hafta hedef altında — sorun yok.")
             else:
                 st.info(f"Son haftadaki fazla: {last:.1f} t (geçmiş ortalama: {prev_mean:.1f} t).")
+
+timer.finish()

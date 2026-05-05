@@ -47,6 +47,7 @@ from utils.week import now_tr
 # ---------------------------------------------------------------------------
 _COOKIE_NAME = "norm_auth"
 _COOKIE_TTL_DAYS = 7
+_SESSION_REFRESH_SECONDS = 30
 
 
 def _sign(payload: str, secret: str) -> str:
@@ -100,6 +101,9 @@ def restore_session_from_cookie() -> None:
     ``app.py`` ve her sayfanın en başında (require_auth'tan önce) çağrılmalı.
     """
     if st.session_state.get("user_id") is not None:
+        last_refresh = float(st.session_state.get("_session_refreshed_at", 0))
+        if time.time() - last_refresh < _SESSION_REFRESH_SECONDS:
+            return
         try:
             with get_session() as s:
                 user = s.get(User, st.session_state["user_id"])
@@ -113,6 +117,7 @@ def restore_session_from_cookie() -> None:
                 st.session_state["department_ids"] = [
                     link.department_id for link in user.department_links
                 ]
+                st.session_state["_session_refreshed_at"] = time.time()
         except Exception:
             pass
         return
