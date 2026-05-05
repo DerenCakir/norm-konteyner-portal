@@ -82,15 +82,6 @@ page_header(
     )
 
 
-# ---------------------------------------------------------------------------
-week_iso = st.selectbox(
-    "Hafta",
-    week_options,
-    index=0,
-    format_func=lambda w: f"{w} — {format_week_human(w)}",
-)
-
-
 # Yetkili bölümleri çek (üretim yeri adıyla birlikte)
 # ---------------------------------------------------------------------------
 with get_session() as s:
@@ -110,10 +101,18 @@ if not dept_with_site:
 
 
 # ---------------------------------------------------------------------------
-# Bölüm seçimi
+# Hafta ve bölüm seçimi
 # ---------------------------------------------------------------------------
 dept_options = {f"{site_name} — {d.name}": d.id for d, site_name in dept_with_site}
-selected_label = st.selectbox("Bölüm seç", list(dept_options.keys()))
+
+select_week_col, select_dept_col = st.columns([1, 2])
+week_iso = select_week_col.selectbox(
+    "Hafta",
+    week_options,
+    index=0,
+    format_func=lambda w: f"{w} — {format_week_human(w)}",
+)
+selected_label = select_dept_col.selectbox("Bölüm", list(dept_options.keys()))
 selected_dept_id = dept_options[selected_label]
 
 # Seçilen bölümün tüm bilgileri
@@ -121,15 +120,6 @@ with get_session() as s:
     selected_dept = s.get(Department, selected_dept_id)
     selected_site = s.get(ProductionSite, selected_dept.production_site_id)
     target_tonnage = float(selected_dept.weekly_tonnage_target) if selected_dept.weekly_tonnage_target else None
-
-col_a, col_b, col_c = st.columns(3)
-col_a.metric("Üretim Yeri", selected_site.name)
-col_b.metric("Bölüm", selected_dept.name)
-col_c.metric(
-    "Haftalık Tonaj Hedefi",
-    f"{target_tonnage:.2f} t" if target_tonnage is not None else "-"
-)
-
 
 # ---------------------------------------------------------------------------
 # Status kontrolü
@@ -144,11 +134,24 @@ elif status == "late":
 else:
     st.error(
         "Sayım girişi şu an kapalı. "
-        "Bir sonraki pencere: **Cuma 09.00 – 12.00** (Türkiye saati). "
-        "Geç giriş için yöneticinizle iletişime geçin."
+        "Formu görüntüleyebilirsin ancak kayıt gönderemezsin. "
+        "Bir sonraki normal pencere: **Cuma 09.00 – 12.00**. "
+        "Acil düzeltme gerekiyorsa yöneticiniz geç giriş açabilir."
     )
 
 can_submit = status in ("open", "late")
+
+col_a, col_b, col_c, col_d = st.columns(4)
+col_a.metric("Üretim Yeri", selected_site.name)
+col_b.metric("Bölüm", selected_dept.name)
+col_c.metric(
+    "Haftalık Tonaj Hedefi",
+    f"{target_tonnage:.2f} t" if target_tonnage is not None else "-"
+)
+col_d.metric(
+    "Form Durumu",
+    "Açık" if can_submit else "Kapalı",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -191,7 +194,7 @@ default_tonnage = float(existing.actual_tonnage) if existing and existing.actual
 # Form
 # ---------------------------------------------------------------------------
 st.divider()
-st.subheader("Konteyner Sayımı")
+st.subheader("Sayım Bilgisi")
 
 if existing is not None:
     updater_name = existing_user.full_name if existing_user else "-"
@@ -218,15 +221,17 @@ if len(authorized_users) > 1:
     )
 
 with st.form("submission_form", clear_on_submit=False):
-    cdate = st.date_input("Sayım tarihi", value=default_count_date, disabled=not can_submit)
-    ctime = st.time_input("Sayım saati", value=default_count_time, disabled=not can_submit)
-    tonnage = st.number_input(
-        "Bu hafta gerçekleşen tonaj (ton)",
+    info_date, info_time, info_tonnage = st.columns([1, 1, 1.2])
+    cdate = info_date.date_input("Sayım tarihi", value=default_count_date, disabled=not can_submit)
+    ctime = info_time.time_input("Sayım saati", value=default_count_time, disabled=not can_submit)
+    tonnage = info_tonnage.number_input(
+        "Gerçekleşen tonaj (ton)",
         value=default_tonnage, min_value=0.0, step=0.1, format="%.2f",
         disabled=not can_submit,
     )
 
-    st.write("**Renk bazlı sayım**")
+    st.markdown("#### Renk Bazlı Sayım")
+    st.caption("Kanban, dolu konteynerlerin alt kümesidir; kanban sayısı dolu sayısından büyük olamaz.")
     color_inputs: dict[int, dict[str, int]] = {}
 
     # Tablo başlığı
