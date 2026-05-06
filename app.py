@@ -216,21 +216,17 @@ def render_dashboard() -> None:
     # Hızlı erişim — kısayollar
     st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
     section_header("Hızlı Erişim")
-    qa1, qa2, qa3, qa4 = st.columns(4)
+    qa1, qa2, qa3 = st.columns(3)
     qa1.markdown(
         quick_action_card("", "Sayım Girişi", "Haftalık sayımı girin", "sayim_girisi"),
         unsafe_allow_html=True,
     )
     qa2.markdown(
-        quick_action_card("", "Anlık Durum", "Bölüm × renk matrisi", "anlik_durum"),
+        quick_action_card("", "Haftalık Durum", "Giren/eksik bölümler + matris", "haftalik_takip"),
         unsafe_allow_html=True,
     )
     qa3.markdown(
         quick_action_card("", "Analiz", "Trend ve sapma analizi", "analiz"),
-        unsafe_allow_html=True,
-    )
-    qa4.markdown(
-        quick_action_card("", "Haftalık Takip", "Giren ve eksik bölümler", "haftalik_takip"),
         unsafe_allow_html=True,
     )
     timer.finish()
@@ -245,8 +241,7 @@ if is_authenticated():
     pages = [
         st.Page(render_dashboard, title="Ana Sayfa", default=True),
         st.Page("pages/01_sayim_girisi.py", title="Sayım Girişi"),
-        st.Page("pages/02_anlik_durum.py", title="Anlık Durum"),
-        st.Page("pages/03_haftalik_takip.py", title="Haftalık Takip"),
+        st.Page("pages/03_haftalik_takip.py", title="Haftalık Durum"),
         st.Page("pages/04_analiz.py", title="Analiz"),
         st.Page("pages/05_yetkililer.py", title="Yetkililer"),
     ]
