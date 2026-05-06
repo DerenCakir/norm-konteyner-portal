@@ -34,6 +34,7 @@ from db.models import (
 from config.settings import get_settings
 from utils.auth import hash_password, require_admin, restore_session_from_query
 from utils.cached_queries import clear_cached_queries, get_active_department_count, get_week_export_rows
+from utils.excel_export import build_week_excel
 from utils.performance import page_timer
 from utils.ui import inject_css, page_header, render_sidebar_user
 from utils.week import current_week_iso, format_week_human, now_tr, week_iso_from_date
@@ -1212,12 +1213,14 @@ with tab_override:
         m4.metric("Geç Girilen", late_submission_count)
 
         if export_rows:
-            export_df = pd.DataFrame(export_rows)
+            xlsx_bytes = build_week_excel(
+                export_rows, override_week, format_week_human(override_week)
+            )
             st.download_button(
-                "Seçili Haftayı CSV İndir",
-                data=export_df.to_csv(index=False).encode("utf-8-sig"),
-                file_name=f"sayim_export_{override_week}.csv",
-                mime="text/csv",
+                "Seçili Haftayı Excel İndir",
+                data=xlsx_bytes,
+                file_name=f"sayim_export_{override_week}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 use_container_width=True,
             )
         else:
