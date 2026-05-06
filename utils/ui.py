@@ -481,15 +481,21 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 }
 /* Force the two columns of the login screen to share a single tall row
    and vertically center their contents. We can't put the st.form inside
-   our custom div, so we lift the centering up to the Streamlit column. */
-[data-testid="stAppViewContainer"]:has(.login-brand-pane) [data-testid="stHorizontalBlock"] {
-    min-height: 80vh;
+   our custom div, so we lift the centering up to the Streamlit column.
+   Streamlit's data-testid for columns has changed across versions
+   (column / stColumn / stHorizontalBlock), so we target several. */
+[data-testid="stAppViewContainer"]:has(.login-brand-pane) [data-testid="stHorizontalBlock"],
+[data-testid="stAppViewContainer"]:has(.login-brand-pane) [data-testid="horizontalBlock"] {
+    min-height: 80vh !important;
     align-items: center !important;
 }
-[data-testid="stAppViewContainer"]:has(.login-brand-pane) [data-testid="column"] {
+[data-testid="stAppViewContainer"]:has(.login-brand-pane) [data-testid="column"],
+[data-testid="stAppViewContainer"]:has(.login-brand-pane) [data-testid="stColumn"],
+[data-testid="stAppViewContainer"]:has(.login-brand-pane) div[class*="stColumn"] {
     display: flex !important;
     flex-direction: column !important;
     justify-content: center !important;
+    min-height: 80vh;
 }
 .login-brand-pane,
 .login-form-pane {
