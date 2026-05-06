@@ -801,6 +801,23 @@ def _esc(value: object) -> str:
     return escape(str(value), quote=True)
 
 
+def _with_session_token(href: str) -> str:
+    """Append the current ?s=<token> to an internal href so top-level
+    navigation (raw <a> in custom cards) doesn't drop the auth token and
+    bounce the user to login on arrival.
+    """
+    if not href or "://" in href or href.startswith("#"):
+        return href
+    try:
+        token = st.query_params.get("s")
+    except Exception:
+        token = None
+    if not token:
+        return href
+    sep = "&" if "?" in href else "?"
+    return f"{href}{sep}s={token}"
+
+
 def inject_css() -> None:
     """Inject the global design system stylesheet."""
     st.markdown(_GLOBAL_CSS, unsafe_allow_html=True)
@@ -956,7 +973,7 @@ def status_panel(
             for label, value in items
         ) + '</div>'
     cta_html = (
-        f'<a class="status-panel-action" href="{_esc(cta_href)}" target="_self">{_esc(cta_label)}</a>'
+        f'<a class="status-panel-action" href="{_esc(_with_session_token(cta_href))}" target="_self">{_esc(cta_label)}</a>'
         if cta_label and cta_href else ""
     )
     return (
@@ -1055,7 +1072,7 @@ def process_diagram(status: str) -> str:
 def quick_action_card(icon: str, title: str, desc: str, href: str = "", cta: str = "Aç") -> str:
     """Return a clickable quick action card."""
     tag = "a" if href else "div"
-    href_attr = f' href="{_esc(href)}" target="_self"' if href else ""
+    href_attr = f' href="{_esc(_with_session_token(href))}" target="_self"' if href else ""
     return (
         f'<{tag} class="qa-card"{href_attr}>'
         f'  <span class="qa-icon">{_esc(icon)}</span>'
