@@ -31,6 +31,7 @@ from db.models import (
     User,
     UserDepartment,
 )
+from config.settings import get_settings
 from utils.auth import hash_password, require_admin, restore_session_from_query
 from utils.cached_queries import clear_cached_queries, get_active_department_count, get_week_export_rows
 from utils.performance import page_timer
@@ -65,7 +66,12 @@ page_header(
     subtitle=f"Giriş yapan yönetici: {admin_username}",
     )
 
-tab_users, tab_perms, tab_departments, tab_colors, tab_late, tab_override, tab_audit = st.tabs([
+# Test Sıfırlama sekmesi yalnız production-dışı ortamda görünür. APP_ENV
+# Railway'de "staging" iken sekme açılır, "production"a alınınca kaybolur.
+_settings = get_settings()
+_is_test_mode = _settings.app_env != "production"
+
+_tab_labels = [
     "Kullanıcılar",
     "Yetkilendirme",
     "Bölümler",
@@ -73,7 +79,13 @@ tab_users, tab_perms, tab_departments, tab_colors, tab_late, tab_override, tab_a
     "Geç Giriş",
     "Sayım Düzeltme",
     "İşlem Geçmişi",
-])
+]
+if _is_test_mode:
+    _tab_labels.append("⚠ Test Sıfırlama")
+
+_tabs = st.tabs(_tab_labels)
+tab_users, tab_perms, tab_departments, tab_colors, tab_late, tab_override, tab_audit = _tabs[:7]
+tab_test_reset = _tabs[7] if _is_test_mode else None
 
 
 def _recent_week_options(count: int = 12) -> list[str]:
@@ -1487,5 +1499,131 @@ with tab_override:
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Hata: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# TAB 8 — TEST VERİSİ SIFIRLAMA (yalnız APP_ENV != production)
+# ---------------------------------------------------------------------------
+if tab_test_reset is not None:
+    with tab_test_reset:
+        st.subheader("Test Verisini Sıfırla")
+        st.caption(
+            f"Bu sekme yalnız APP_ENV='{_settings.app_env}' iken görünür. "
+            "Production'a alındığında otomatik gizlenir."
+        )
+        st.warning(
+            "Bu işlem **tüm sayım kayıtlarını, sayım detaylarını, geç giriş "
+            "pencerelerini ve transactional audit log girdilerini kalıcı "
+            "olarak siler.** Master data (kullanıcılar, bölümler, renkler, "
+            "üretim yerleri) korunur."
+        )
+
+        # Önce kullanıcıya silinecekleri özetle
+        with get_session() as s:
+            n_subs = s.execute(select(func.count(CountSubmission.id))).scalar_one()
+            n_details = s.execute(select(func.count(CountDetail.id))).scalar_one()
+            n_late = s.execute(select(func.count(LateWindowOverride.week_iso))).scalar_one()
+            n_late_user = s.execute(select(func.count(LateUserWindowOverride.id))).scalar_one()
+            n_audit_tx = s.execute(
+                select(func.count(AuditLog.id)).where(
+                    AuditLog.action.in_([
+                        "count_submit", "count_update", "count_delete",
+                        "count_admin_override", "count_bulk_delete",
+                        "late_window_open", "late_window_close",
+                        "late_user_window_open", "late_user_window_close",
+                        "login_success", "login_failed", "logout",
+                    ])
+                )
+            ).scalar_one()
+            n_users = s.execute(select(func.count(User.id))).scalar_one()
+            n_depts = s.execute(select(func.count(Department.id))).scalar_one()
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Sayım Kayıtları", n_subs)
+        c2.metric("Sayım Detayları", n_details)
+        c3.metric("Geç Giriş Pencereleri", n_late + n_late_user)
+        c4.metric("Audit (transactional)", n_audit_tx)
+
+        st.markdown(
+            f"<small style='color:var(--text-muted);'>Korunacak: "
+            f"<b>{n_users}</b> kullanıcı, <b>{n_depts}</b> bölüm, "
+            f"6 renk, 11 üretim yeri.</small>",
+            unsafe_allow_html=True,
+        )
+
+        st.divider()
+
+        # Onay zinciri: ONAYLIYORUM yaz + checkbox + buton
+        confirm_text = st.text_input(
+            "Silmek için ONAYLIYORUM yaz",
+            key="test_reset_confirm_text",
+            placeholder="ONAYLIYORUM",
+        )
+        confirm_check = st.checkbox(
+            "Yedek aldığımı ve master data'nın korunacağını anladım.",
+            key="test_reset_confirm_check",
+        )
+        do_wipe = st.button(
+            "TÜM TEST VERİSİNİ KALICI OLARAK SİL",
+            key="test_reset_button",
+            use_container_width=True,
+            type="primary",
+            disabled=(confirm_text != "ONAYLIYORUM") or (not confirm_check),
+        )
+
+        if do_wipe:
+            try:
+                with get_session() as s:
+                    # Sayım detaylarını CASCADE ile siliyoruz
+                    deleted_details = s.execute(
+                        CountDetail.__table__.delete()
+                    ).rowcount
+                    deleted_subs = s.execute(
+                        CountSubmission.__table__.delete()
+                    ).rowcount
+                    deleted_late = s.execute(
+                        LateWindowOverride.__table__.delete()
+                    ).rowcount
+                    deleted_late_user = s.execute(
+                        LateUserWindowOverride.__table__.delete()
+                    ).rowcount
+                    deleted_audit = s.execute(
+                        AuditLog.__table__.delete().where(
+                            AuditLog.action.in_([
+                                "count_submit", "count_update", "count_delete",
+                                "count_admin_override", "count_bulk_delete",
+                                "late_window_open", "late_window_close",
+                                "late_user_window_open", "late_user_window_close",
+                                "login_success", "login_failed", "logout",
+                            ])
+                        )
+                    ).rowcount
+                    # Sıfırlama işleminin kendisini audit log'a yaz (kalıcı,
+                    # transactional listede değil — özel action).
+                    s.add(AuditLog(
+                        user_id=admin_id,
+                        action="test_data_wipe",
+                        entity_type="system",
+                        new_value={
+                            "deleted_submissions": deleted_subs,
+                            "deleted_details": deleted_details,
+                            "deleted_late_overrides": deleted_late + deleted_late_user,
+                            "deleted_audit_rows": deleted_audit,
+                            "app_env": _settings.app_env,
+                        },
+                    ))
+                clear_cached_queries()
+                st.success(
+                    f"Sıfırlama tamam. Silinen: {deleted_subs} sayım, "
+                    f"{deleted_details} detay, {deleted_late + deleted_late_user} "
+                    f"geç giriş penceresi, {deleted_audit} audit satırı."
+                )
+                st.info(
+                    "Go-live öncesi son adım: Railway'de APP_ENV'i "
+                    "'production' yapıp bu sekmeyi gizle."
+                )
+            except Exception as exc:
+                st.error(f"Hata: {exc}")
+
 
 timer.finish()
