@@ -93,13 +93,7 @@ def render_login_form() -> None:
             f'<div class="login-brand-pane">'
             f'  <div class="login-brand-mark">{logo_img}<span>Norm Fasteners</span></div>'
             f'  <div class="login-brand-eyebrow">Konteyner Operasyon Merkezi</div>'
-            f'  <h2>Haftalık sayım, tek ekrandan görünür operasyon</h2>'
-            f'  <p>11 üretim yerinde 42 bölümün konteyner sayımını topla, fazla / eksik dengesini hızlıca gör, üretim duruşlarını önle.</p>'
-            f'  <div class="login-brand-features">'
-            f'    <div class="login-brand-feature">42 bölüm × 6 renk × 38.000 konteyner</div>'
-            f'    <div class="login-brand-feature">Cuma 09.00 – 12.00 sayım penceresi</div>'
-            f'    <div class="login-brand-feature">Tonaj sapma analizi ve haftalık trend</div>'
-            f'  </div>'
+            f'  <p class="login-brand-instruction">Devam etmek için kullanıcı adınızı ve şifrenizi giriniz.</p>'
             f'</div>',
             unsafe_allow_html=True,
         )

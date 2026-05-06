@@ -471,44 +471,33 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 .progress-track { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
 .progress-fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width 0.4s ease; }
 
-/* ---------- Login screen — split-panel premium look ---------- */
-.login-shell {
-    min-height: 86vh;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0;
-    border-radius: 18px;
-    overflow: hidden;
-    background: var(--surface);
-    border: 1px solid var(--border-soft);
-    box-shadow: 0 24px 60px rgba(0,0,0,0.35);
-    margin: 1rem auto;
-    max-width: 1100px;
-}
-@media (max-width: 880px) {
-    .login-shell { grid-template-columns: 1fr; }
-    .login-brand-pane { display: none; }
-}
-
-/* Left pane — branded gradient with subtle pattern */
-.login-brand-pane {
-    position: relative;
-    padding: 3rem 2.5rem;
+/* ---------- Login screen — full-bleed gradient, no card ---------- */
+/* The whole page becomes the brand surface; there is no inner card. */
+[data-testid="stAppViewContainer"]:has(.login-brand-pane) {
     background:
-        radial-gradient(ellipse at top right, rgba(96,165,250,0.18) 0%, transparent 55%),
-        radial-gradient(ellipse at bottom left, rgba(96,165,250,0.10) 0%, transparent 60%),
-        linear-gradient(160deg, #1B2233 0%, #141925 100%);
-    display: flex; flex-direction: column;
-    border-right: 1px solid var(--border-soft);
+        radial-gradient(ellipse 90% 70% at 80% 0%, rgba(96,165,250,0.18) 0%, transparent 55%),
+        radial-gradient(ellipse 80% 80% at 10% 100%, rgba(96,165,250,0.10) 0%, transparent 60%),
+        linear-gradient(160deg, #1B2233 0%, #141925 100%) !important;
 }
+.login-brand-pane,
+.login-form-pane {
+    position: relative;
+    padding: 3.5rem 2.5rem;
+    display: flex; flex-direction: column;
+    min-height: 78vh;
+}
+.login-brand-pane { justify-content: center; }
+.login-form-pane  { justify-content: center; }
+
+/* Faint grid pattern only over the brand pane */
 .login-brand-pane::before {
     content: ""; position: absolute; inset: 0;
     background-image:
-        linear-gradient(rgba(96,165,250,0.04) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(96,165,250,0.04) 1px, transparent 1px);
+        linear-gradient(rgba(96,165,250,0.05) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(96,165,250,0.05) 1px, transparent 1px);
     background-size: 32px 32px;
     pointer-events: none;
-    mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+    mask-image: radial-gradient(ellipse at center, black 25%, transparent 85%);
 }
 .login-brand-pane > * { position: relative; z-index: 1; }
 
@@ -519,7 +508,7 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
     margin-bottom: 2rem;
 }
 .login-brand-mark img {
-    width: 36px; height: 36px; border-radius: 9px;
+    width: 38px; height: 38px; border-radius: 9px;
     background: #fff; padding: 4px;
 }
 
@@ -527,37 +516,21 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
     color: var(--primary);
     letter-spacing: 0.22em; text-transform: uppercase;
     font-size: 0.72rem; font-weight: 600;
-    margin-bottom: 1rem;
+    margin-bottom: 0.85rem;
 }
-.login-brand-pane h2 {
-    color: var(--text); font-size: 1.85rem; font-weight: 700;
-    line-height: 1.25; letter-spacing: -0.02em; margin: 0 0 0.85rem;
-    max-width: 24ch;
-}
-.login-brand-pane p {
-    color: var(--text-muted); font-size: 0.92rem; line-height: 1.6;
-    margin: 0; max-width: 38ch;
-}
-.login-brand-features {
-    margin-top: auto; padding-top: 2.5rem;
-    display: flex; flex-direction: column; gap: 0.85rem;
-}
-.login-brand-feature {
-    display: flex; align-items: center; gap: 0.75rem;
-    color: var(--text-muted); font-size: 0.85rem;
-}
-.login-brand-feature::before {
-    content: ""; width: 6px; height: 6px;
-    border-radius: 50%; background: var(--primary);
-    flex-shrink: 0;
+.login-brand-instruction {
+    color: var(--text); font-size: 1.05rem; font-weight: 500;
+    line-height: 1.55; max-width: 32ch;
+    margin: 0;
 }
 
-/* Right pane — clean form */
-.login-form-pane {
-    padding: 3rem 3rem 2.25rem;
-    display: flex; flex-direction: column; justify-content: center;
+@media (max-width: 880px) {
+    .login-brand-pane { display: none; }
+    .login-form-pane  { padding: 2rem 1rem; min-height: 70vh; }
 }
-.login-form-head { margin-bottom: 1.75rem; }
+
+/* Right pane — form lives directly on the page surface */
+.login-form-head { margin-bottom: 1.5rem; max-width: 380px; }
 .login-form-head h1 {
     color: var(--text); font-size: 1.5rem; font-weight: 600;
     margin: 0 0 0.4rem; letter-spacing: -0.01em;
@@ -565,11 +538,14 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 .login-form-head p {
     color: var(--text-muted); font-size: 0.88rem; margin: 0;
 }
+.login-form-pane form,
+.login-form-pane > div:has(form) { max-width: 380px; }
 .login-form-foot {
     margin-top: 1.5rem; padding-top: 1.25rem;
     border-top: 1px solid var(--border-soft);
     display: flex; justify-content: space-between; align-items: center;
     color: var(--text-faint); font-size: 0.72rem;
+    max-width: 380px;
 }
 .login-form-foot .badge {
     display: inline-flex; align-items: center; gap: 0.4rem;
@@ -578,8 +554,6 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 .login-form-foot .badge::before {
     content: "🔒"; filter: grayscale(0.5);
 }
-
-/* Make the inputs in the login pane breathe a little more */
 .login-form-pane .stTextInput input,
 .login-form-pane [data-baseweb="input"] > div {
     padding: 0.6rem 0.85rem !important;
