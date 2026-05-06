@@ -71,19 +71,32 @@ page_header(
 # (ONAYLIYORUM yazma + checkbox), bu yüzden ayrıca env-gate'e ihtiyacımız yok.
 _settings = get_settings()
 
-(
-    tab_users, tab_perms, tab_departments, tab_colors,
-    tab_late, tab_override, tab_audit, tab_test_reset,
-) = st.tabs([
-    "Kullanıcılar",
-    "Yetkilendirme",
-    "Bölümler",
-    "Renkler",
-    "Geç Giriş",
-    "Sayım Düzeltme",
-    "İşlem Geçmişi",
-    "⚠ Test Sıfırlama",
-])
+# st.tabs Streamlit reruns sonrası ilk sekmeye dönüyor; selectbox/form
+# etkileşimleri kullanıcıyı her seferinde Kullanıcılar sekmesine atıyordu.
+# session_state'e bağlı bir radio ile sticky bir sekme yapısı kuruyoruz.
+_TAB_KEYS = [
+    ("users",        "Kullanıcılar"),
+    ("perms",        "Yetkilendirme"),
+    ("departments",  "Bölümler"),
+    ("colors",       "Renkler"),
+    ("late",         "Geç Giriş"),
+    ("override",     "Sayım Düzeltme"),
+    ("audit",        "İşlem Geçmişi"),
+    ("test_reset",   "⚠ Test Sıfırlama"),
+]
+_TAB_LABELS = [label for _, label in _TAB_KEYS]
+_active_label = st.radio(
+    "Sekme",
+    _TAB_LABELS,
+    horizontal=True,
+    label_visibility="collapsed",
+    key="admin_tab",
+)
+_active_key = next(k for k, label in _TAB_KEYS if label == _active_label)
+
+
+def _is_active(key: str) -> bool:
+    return _active_key == key
 
 
 def _recent_week_options(count: int = 12) -> list[str]:
@@ -117,7 +130,7 @@ def _valid_hex_code(value: str) -> bool:
 # ---------------------------------------------------------------------------
 # TAB 1 — KULLANICILAR
 # ---------------------------------------------------------------------------
-with tab_users:
+if _is_active("users"):
     st.subheader("Yeni Kullanıcı Oluştur")
 
     with st.form("create_user_form", clear_on_submit=True):
@@ -322,7 +335,7 @@ with tab_users:
 # ---------------------------------------------------------------------------
 # TAB 6 — RENKLER
 # ---------------------------------------------------------------------------
-with tab_colors:
+if _is_active("colors"):
     st.subheader("Renk Yönetimi")
     st.caption("Renkler fiziksel olarak silinmez; geçmiş sayımlar bozulmasın diye pasif hale getirilir.")
 
@@ -506,7 +519,7 @@ with tab_colors:
 # ---------------------------------------------------------------------------
 # TAB 7 — AUDIT LOG
 # ---------------------------------------------------------------------------
-with tab_audit:
+if _is_active("audit"):
     st.subheader("Audit Log")
     st.caption("Güvenlik ve operasyon açısından önemli işlemlerin kaydı.")
 
@@ -554,7 +567,7 @@ with tab_audit:
             })
         st.dataframe(rows, use_container_width=True, hide_index=True)
 
-with tab_users:
+if _is_active("users"):
     if editable_users and selected_user_id != admin_id:
             if st.button(
                 "Kullanıcıyı Sil (Pasifleştir)",
@@ -584,7 +597,7 @@ with tab_users:
 # ---------------------------------------------------------------------------
 # TAB 5 — BÖLÜMLER
 # ---------------------------------------------------------------------------
-with tab_departments:
+if _is_active("departments"):
     st.subheader("Bölüm Yönetimi")
     st.caption("Üretim yerleri sabittir; buradan mevcut üretim yerlerinin altındaki bölümler eklenir, düzenlenir veya pasifleştirilir.")
 
@@ -759,7 +772,7 @@ with tab_departments:
                 except Exception as exc:
                     st.error(f"Hata: {exc}")
 
-with tab_users:
+if _is_active("users"):
     st.divider()
     st.subheader("Mevcut Kullanıcılar")
 
@@ -806,7 +819,7 @@ with tab_users:
 # ---------------------------------------------------------------------------
 # TAB 2 — YETKİLENDİRME
 # ---------------------------------------------------------------------------
-with tab_perms:
+if _is_active("perms"):
     st.subheader("Kullanıcı-Bölüm Yetkilendirme")
     st.caption("Bir kullanıcıyı seç, hangi bölümlerin sayımını girebileceğini belirle.")
 
@@ -910,7 +923,7 @@ with tab_perms:
 # ---------------------------------------------------------------------------
 # TAB 3 — GEÇ GİRİŞ PENCERESİ
 # ---------------------------------------------------------------------------
-with tab_late:
+if _is_active("late"):
     st.subheader("Geç Giriş Penceresi")
     st.caption("Kapanmış bir hafta için hafta geneli veya kullanıcı özelinde sayım girişi açar.")
 
@@ -1158,7 +1171,7 @@ with tab_late:
 # ---------------------------------------------------------------------------
 # TAB 6 — SAYIM DÜZELTME
 # ---------------------------------------------------------------------------
-with tab_override:
+if _is_active("override"):
     st.subheader("Sayım Düzeltme")
     st.caption("Pencere kapandıktan sonra hatalı sayımı yönetici olarak düzenle veya sil.")
 
@@ -1514,7 +1527,7 @@ with tab_override:
 # ---------------------------------------------------------------------------
 # TAB 8 — TEST VERİSİ SIFIRLAMA
 # ---------------------------------------------------------------------------
-with tab_test_reset:
+if _is_active("test_reset"):
     st.subheader("Test Verisini Sıfırla")
     st.caption(
         "Test sırasında üretilen sayım kayıtlarını ve transactional audit "

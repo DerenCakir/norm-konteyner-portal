@@ -96,7 +96,10 @@ a:hover { color: var(--text); }
     visibility: visible !important;
 }
 [data-testid="stSidebarCollapseButton"],
+[data-testid="stSidebarCollapsedControl"],
 [data-testid="collapsedControl"],
+[aria-label="Close sidebar"],
+[aria-label="Collapse sidebar"],
 button[kind="header"][data-testid="baseButton-header"] {
     display: none !important;
 }
