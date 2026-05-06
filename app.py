@@ -24,6 +24,7 @@ from utils.ui import (
     _logo_data_uri,
     inject_css,
     page_header,
+    process_diagram,
     quick_action_card,
     render_sidebar_brand,
     render_sidebar_user,
@@ -206,6 +207,11 @@ def render_dashboard() -> None:
         ),
         unsafe_allow_html=True,
     )
+
+    # Süreç diyagramı — herkesin nerede olduğunu net görsün
+    st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
+    section_header("Sayım Süreci", "Bu hafta hangi adımdayız")
+    st.markdown(process_diagram(status), unsafe_allow_html=True)
 
     # Hızlı erişim — kısayollar
     st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)

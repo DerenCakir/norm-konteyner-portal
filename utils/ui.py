@@ -74,6 +74,19 @@ a:hover { color: var(--text); }
 }
 [data-testid="stSidebar"] * { color: var(--text); }
 
+/* Reorder sidebar contents so the Norm Fasteners brand block sits at the
+   top, then the navigation links, then the user card + logout at the
+   bottom. Streamlit defaults to nav-on-top which buried the brand. */
+[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
+    display: flex !important;
+    flex-direction: column !important;
+}
+[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] > div:has(.sidebar-brand-card) { order: 1; }
+[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] > div:has(.sidebar-user-card) { order: 3; }
+[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] > div:has(button[kind="secondary"]) { order: 4; }
+[data-testid="stSidebar"] [data-testid="stSidebarNavItems"],
+[data-testid="stSidebar"] nav { order: 2 !important; }
+
 /* The collapse / expand arrow needs to be visible against the dark sidebar */
 [data-testid="stSidebarCollapseButton"] svg,
 [data-testid="collapsedControl"] svg {
@@ -406,6 +419,103 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 }
 .flow-step strong { display: block; color: var(--text); font-size: 0.88rem; font-weight: 600; }
 .flow-step small { color: var(--text-muted); font-size: 0.78rem; line-height: 1.4; }
+
+/* Process diagram — 3 yatay adım, şu anki adım vurgulu */
+.process-diagram {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr auto 1fr;
+    gap: 0;
+    align-items: stretch;
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    padding: 1.5rem 1.25rem;
+}
+@media (max-width: 720px) {
+    .process-diagram { grid-template-columns: 1fr; }
+    .process-arrow { display: none; }
+}
+.process-step {
+    display: flex; flex-direction: column; align-items: center; gap: 0.5rem;
+    padding: 0.85rem 0.75rem;
+    border-radius: var(--radius);
+    text-align: center;
+    border: 1px solid transparent;
+    transition: all 0.15s ease;
+}
+.process-step .icon {
+    width: 48px; height: 48px;
+    border-radius: 50%;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem; font-weight: 700;
+    border: 2px solid var(--border);
+}
+.process-step .label {
+    color: var(--text-muted); font-size: 0.95rem; font-weight: 600;
+}
+.process-step .when {
+    color: var(--text-faint); font-size: 0.8rem;
+}
+.process-step .badge {
+    display: inline-block;
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.68rem; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    background: transparent; color: var(--text-faint);
+    border: 1px solid var(--border);
+    margin-top: 0.15rem;
+}
+/* Past step — muted, tamamlandı */
+.process-step.is-done .icon {
+    background: var(--surface-2); color: var(--text-muted);
+    border-color: var(--border);
+}
+.process-step.is-done .label  { color: var(--text-muted); }
+.process-step.is-done .badge  { color: var(--text-faint); }
+/* Active step — büyük ve renkli */
+.process-step.is-active {
+    background: var(--primary-soft);
+    border-color: var(--primary-line);
+}
+.process-step.is-active .icon {
+    background: var(--primary); color: #0B1220;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 6px var(--primary-soft);
+}
+.process-step.is-active .label { color: var(--text); font-size: 1rem; }
+.process-step.is-active .badge {
+    background: var(--primary); color: #0B1220;
+    border-color: var(--primary);
+}
+/* Active "geç giriş" varyantı — sarı */
+.process-step.is-active.is-late {
+    background: var(--warning-soft);
+    border-color: var(--warning);
+}
+.process-step.is-active.is-late .icon {
+    background: var(--warning); color: #0B1220;
+    border-color: var(--warning);
+    box-shadow: 0 0 0 6px var(--warning-soft);
+}
+.process-step.is-active.is-late .badge {
+    background: var(--warning); color: #0B1220;
+    border-color: var(--warning);
+}
+/* Future step — soluk, henüz gelmedi */
+.process-step.is-future .icon {
+    background: transparent; color: var(--text-faint);
+    border-style: dashed;
+}
+.process-step.is-future .label { color: var(--text-faint); }
+
+.process-arrow {
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-faint); font-size: 1.1rem;
+    padding: 0 0.4rem;
+}
 
 /* Quick action cards — flat, no transforms */
 .qa-card {
@@ -751,6 +861,70 @@ def timeline_panel(steps: list[tuple[str, str, str]]) -> str:
         for number, title, desc in steps
     )
     return f'<div class="flow-panel">{rows}</div>'
+
+
+def process_diagram(status: str) -> str:
+    """3-step horizontal process diagram for the weekly submission cycle.
+
+    The current step is highlighted prominently; past steps are muted;
+    future steps are outlined. Designed to be read at a glance, including
+    by users who are not desk workers.
+
+    ``status`` values: ``"open"``, ``"late"``, ``"locked"``.
+    """
+    # Hangi adımdayız? open/late = adım 2 (sayım açık), locked = adım 3 (kapalı)
+    # Step 1 = "henüz açılmadı" durumu, locked olduğunda da step 3 (kapandı)
+    # gösterilebilir. Cuma 09:00 öncesi mi sonrası mı bilemediğimiz için
+    # locked'ı her zaman "kapalı" olarak step 3'e koyuyoruz.
+    cls_step1 = "process-step is-done"
+    cls_step2 = "process-step is-future"
+    cls_step3 = "process-step is-future"
+    badge_step1 = "Tamamlandı"
+    badge_step2 = ""
+    badge_step3 = "Sonraki"
+
+    if status == "open":
+        cls_step1 = "process-step is-done"
+        cls_step2 = "process-step is-active"
+        cls_step3 = "process-step is-future"
+        badge_step1 = "Tamamlandı"
+        badge_step2 = "Şu an"
+        badge_step3 = "Sonraki"
+    elif status == "late":
+        cls_step1 = "process-step is-done"
+        cls_step2 = "process-step is-active is-late"
+        cls_step3 = "process-step is-future"
+        badge_step1 = "Tamamlandı"
+        badge_step2 = "Geç giriş"
+        badge_step3 = "Sonraki"
+    elif status == "locked":
+        cls_step1 = "process-step is-done"
+        cls_step2 = "process-step is-done"
+        cls_step3 = "process-step is-active"
+        badge_step1 = "Tamamlandı"
+        badge_step2 = "Tamamlandı"
+        badge_step3 = "Şu an"
+
+    def _step(cls: str, icon: str, label: str, when: str, badge: str) -> str:
+        badge_html = f'<span class="badge">{_esc(badge)}</span>' if badge else ""
+        return (
+            f'<div class="{cls}">'
+            f'  <div class="icon">{_esc(icon)}</div>'
+            f'  <div class="label">{_esc(label)}</div>'
+            f'  <div class="when">{_esc(when)}</div>'
+            f'  {badge_html}'
+            f'</div>'
+        )
+
+    return (
+        f'<div class="process-diagram">'
+        f'  {_step(cls_step1, "1", "Bekleme", "Cuma 09.00 öncesi", badge_step1)}'
+        f'  <div class="process-arrow">→</div>'
+        f'  {_step(cls_step2, "2", "Sayım Açık", "Cuma 09.00 – 12.00", badge_step2)}'
+        f'  <div class="process-arrow">→</div>'
+        f'  {_step(cls_step3, "3", "Kapalı", "Cuma 12.00 sonrası", badge_step3)}'
+        f'</div>'
+    )
 
 
 def quick_action_card(icon: str, title: str, desc: str, href: str = "", cta: str = "Aç") -> str:
