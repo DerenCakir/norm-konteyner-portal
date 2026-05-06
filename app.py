@@ -85,27 +85,15 @@ def render_login_form() -> None:
         f'<img src="{data_uri}" alt="Norm Fasteners"/>' if data_uri else ""
     )
 
-    # Sol panel — marka kimliği + değer önermesi
-    left_col, right_col = st.columns([1, 1], gap="large")
-
-    with left_col:
+    # Tek kolon — marka bloğu üstte, form altta, hepsi ortada
+    _, mid, _ = st.columns([1, 1.2, 1])
+    with mid:
         st.markdown(
             f'<div class="login-brand-pane">'
             f'  <div class="login-brand-mark">{logo_img}<span>Norm Fasteners</span></div>'
             f'  <div class="login-brand-eyebrow">Konteyner Operasyon Merkezi</div>'
             f'  <p class="login-brand-instruction">Devam etmek için kullanıcı adınızı ve şifrenizi giriniz.</p>'
             f'</div>',
-            unsafe_allow_html=True,
-        )
-
-    with right_col:
-        st.markdown(
-            '<div class="login-form-pane">'
-            '  <div class="login-form-head">'
-            '    <h1>Hoş geldiniz</h1>'
-            '    <p>Konteyner Sayım ve Takip Portalı için kurumsal hesabınızla giriş yapın.</p>'
-            '  </div>'
-            '</div>',
             unsafe_allow_html=True,
         )
         with st.form("login_form", clear_on_submit=False):

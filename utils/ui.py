@@ -471,22 +471,18 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 .progress-track { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
 .progress-fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width 0.4s ease; }
 
-/* ---------- Login screen — full-bleed gradient, no card ---------- */
-/* The whole page becomes the brand surface; there is no inner card. */
+/* ---------- Login screen — full-bleed gradient, single centered column ---------- */
 [data-testid="stAppViewContainer"]:has(.login-brand-pane) {
     background:
         radial-gradient(ellipse 90% 70% at 80% 0%, rgba(96,165,250,0.18) 0%, transparent 55%),
         radial-gradient(ellipse 80% 80% at 10% 100%, rgba(96,165,250,0.10) 0%, transparent 60%),
         linear-gradient(160deg, #1B2233 0%, #141925 100%) !important;
 }
-/* Force the two columns of the login screen to share a single tall row
-   and vertically center their contents. We can't put the st.form inside
-   our custom div, so we lift the centering up to the Streamlit column.
-   Streamlit's data-testid for columns has changed across versions
-   (column / stColumn / stHorizontalBlock), so we target several. */
+/* Center the middle column vertically on the page so the whole stack
+   (brand block + form + footer) sits in the visual middle. */
 [data-testid="stAppViewContainer"]:has(.login-brand-pane) [data-testid="stHorizontalBlock"],
 [data-testid="stAppViewContainer"]:has(.login-brand-pane) [data-testid="horizontalBlock"] {
-    min-height: 80vh !important;
+    min-height: 88vh !important;
     align-items: center !important;
 }
 [data-testid="stAppViewContainer"]:has(.login-brand-pane) [data-testid="column"],
@@ -495,13 +491,14 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
     display: flex !important;
     flex-direction: column !important;
     justify-content: center !important;
-    min-height: 80vh;
 }
-.login-brand-pane,
-.login-form-pane {
+
+.login-brand-pane {
     position: relative;
-    padding: 1rem 2.5rem;
-    display: flex; flex-direction: column;
+    padding: 0 0 1.5rem;
+    margin-bottom: 1.5rem;
+    text-align: center;
+    display: flex; flex-direction: column; align-items: center;
 }
 
 /* Faint grid pattern only over the brand pane */
@@ -519,48 +516,32 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 .login-brand-mark {
     display: inline-flex; align-items: center; gap: 0.7rem;
     color: var(--text); font-weight: 700;
-    letter-spacing: 0.18em; text-transform: uppercase; font-size: 0.78rem;
-    margin-bottom: 2rem;
+    letter-spacing: 0.18em; text-transform: uppercase; font-size: 0.85rem;
+    margin-bottom: 1.5rem;
 }
 .login-brand-mark img {
-    width: 38px; height: 38px; border-radius: 9px;
-    background: #fff; padding: 4px;
+    width: 44px; height: 44px; border-radius: 10px;
+    background: #fff; padding: 5px;
 }
 
 .login-brand-eyebrow {
     color: var(--primary);
     letter-spacing: 0.22em; text-transform: uppercase;
-    font-size: 0.72rem; font-weight: 600;
+    font-size: 0.74rem; font-weight: 600;
     margin-bottom: 0.85rem;
 }
 .login-brand-instruction {
-    color: var(--text); font-size: 1.05rem; font-weight: 500;
-    line-height: 1.55; max-width: 32ch;
-    margin: 0;
+    color: var(--text-muted); font-size: 0.95rem; font-weight: 400;
+    line-height: 1.55; max-width: 36ch;
+    margin: 0 auto;
 }
 
-@media (max-width: 880px) {
-    .login-brand-pane { display: none; }
-    .login-form-pane  { padding: 2rem 1rem; min-height: 70vh; }
-}
-
-/* Right pane — form lives directly on the page surface */
-.login-form-head { margin-bottom: 1.5rem; max-width: 380px; }
-.login-form-head h1 {
-    color: var(--text); font-size: 1.5rem; font-weight: 600;
-    margin: 0 0 0.4rem; letter-spacing: -0.01em;
-}
-.login-form-head p {
-    color: var(--text-muted); font-size: 0.88rem; margin: 0;
-}
-.login-form-pane form,
-.login-form-pane > div:has(form) { max-width: 380px; }
+/* Form footer — security badge + copyright row */
 .login-form-foot {
-    margin-top: 1.5rem; padding-top: 1.25rem;
+    margin-top: 1.25rem; padding-top: 1rem;
     border-top: 1px solid var(--border-soft);
     display: flex; justify-content: space-between; align-items: center;
     color: var(--text-faint); font-size: 0.72rem;
-    max-width: 380px;
 }
 .login-form-foot .badge {
     display: inline-flex; align-items: center; gap: 0.4rem;
@@ -568,16 +549,6 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 }
 .login-form-foot .badge::before {
     content: "🔒"; filter: grayscale(0.5);
-}
-.login-form-pane .stTextInput input,
-.login-form-pane [data-baseweb="input"] > div {
-    padding: 0.6rem 0.85rem !important;
-    font-size: 0.92rem !important;
-}
-.login-form-pane .stFormSubmitButton > button {
-    padding: 0.7rem 1rem !important;
-    font-size: 0.95rem !important;
-    margin-top: 0.5rem;
 }
 
 </style>
