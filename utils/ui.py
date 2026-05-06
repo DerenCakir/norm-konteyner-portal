@@ -147,6 +147,12 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
     border-color: var(--primary) !important;
     box-shadow: 0 0 0 3px var(--primary-soft) !important;
 }
+/* Hide the "Press Enter to submit form" hint that Streamlit overlays
+   on focused inputs — it overlaps long values and looks broken. */
+[data-testid="InputInstructions"],
+[data-testid="stWidgetInstructions"] {
+    display: none !important;
+}
 .stSelectbox div[role="listbox"], [data-baseweb="popover"] div[role="listbox"] {
     background: var(--surface-2) !important; border: 1px solid var(--border) !important;
 }
