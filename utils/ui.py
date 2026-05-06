@@ -479,15 +479,24 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
         radial-gradient(ellipse 80% 80% at 10% 100%, rgba(96,165,250,0.10) 0%, transparent 60%),
         linear-gradient(160deg, #1B2233 0%, #141925 100%) !important;
 }
+/* Force the two columns of the login screen to share a single tall row
+   and vertically center their contents. We can't put the st.form inside
+   our custom div, so we lift the centering up to the Streamlit column. */
+[data-testid="stAppViewContainer"]:has(.login-brand-pane) [data-testid="stHorizontalBlock"] {
+    min-height: 80vh;
+    align-items: center !important;
+}
+[data-testid="stAppViewContainer"]:has(.login-brand-pane) [data-testid="column"] {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+}
 .login-brand-pane,
 .login-form-pane {
     position: relative;
-    padding: 3.5rem 2.5rem;
+    padding: 1rem 2.5rem;
     display: flex; flex-direction: column;
-    min-height: 78vh;
 }
-.login-brand-pane { justify-content: center; }
-.login-form-pane  { justify-content: center; }
 
 /* Faint grid pattern only over the brand pane */
 .login-brand-pane::before {
