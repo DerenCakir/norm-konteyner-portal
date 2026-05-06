@@ -242,8 +242,6 @@ def render_dashboard() -> None:
 restore_session_from_query()
 
 if is_authenticated():
-    render_sidebar_brand(_LOGO_PATH)
-
     pages = [
         st.Page(render_dashboard, title="Ana Sayfa", default=True),
         st.Page("pages/01_sayim_girisi.py", title="Sayım Girişi"),
@@ -255,7 +253,18 @@ if is_authenticated():
     if st.session_state.get("role") == "admin":
         pages.append(st.Page("pages/99_admin.py", title="Admin Paneli"))
 
-    selected_page = st.navigation(pages)
+    # Streamlit'in otomatik sidebar nav'ını kapat — kendi sidebar'ımızı
+    # tamamen elle çiziyoruz: brand üstte, sayfa linkleri ortada, kullanıcı
+    # kart + logout altta.
+    selected_page = st.navigation(pages, position="hidden")
+
+    render_sidebar_brand(_LOGO_PATH)
+    with st.sidebar:
+        st.markdown('<div class="sidebar-nav-section">', unsafe_allow_html=True)
+        for page in pages:
+            st.page_link(page, label=page.title)
+        st.markdown('</div>', unsafe_allow_html=True)
+
     selected_page.run()
 else:
     render_login_form()

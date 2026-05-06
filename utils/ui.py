@@ -74,29 +74,53 @@ a:hover { color: var(--text); }
 }
 [data-testid="stSidebar"] * { color: var(--text); }
 
-/* The collapse / expand arrow needs to be visible against the dark sidebar */
-[data-testid="stSidebarCollapseButton"] svg,
-[data-testid="collapsedControl"] svg {
-    color: var(--text) !important;
-    fill: var(--text) !important;
+/* Sidebar'ı sabit aç tut — gizleme butonu yok. Kullanıcılar kapatıp
+   açamasın, hep aynı yerde kalsın. */
+[data-testid="stSidebar"] {
+    min-width: 230px !important;
+    max-width: 230px !important;
+    width: 230px !important;
+    transform: translateX(0) !important;
+    visibility: visible !important;
 }
-[data-testid="collapsedControl"] {
-    background: var(--surface) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: var(--radius-sm) !important;
+[data-testid="stSidebarCollapseButton"],
+[data-testid="collapsedControl"],
+button[kind="header"][data-testid="baseButton-header"] {
+    display: none !important;
 }
 
-/* The brand card uses negative margin-top to slide above the navigation
-   list that Streamlit always inserts above user-added sidebar content.
-   It still scrolls naturally with the rest of the sidebar. */
+/* Brand card sits at the natural top of the sidebar now that we
+   render the page-link nav ourselves below it (no Streamlit auto-nav
+   to fight). Just a clean header with bottom divider. */
 .sidebar-brand-card {
     display: flex; align-items: center; gap: 0.75rem;
     padding: 1.1rem 0.9rem 1rem;
-    background: #0B1220;
     border-bottom: 1px solid var(--border-soft);
-    margin: -3.5rem -1rem 1rem;
-    position: relative;
-    z-index: 5;
+    margin: 0 -1rem 0.5rem;
+}
+
+/* Manual page-link nav section */
+.sidebar-nav-section {
+    display: flex; flex-direction: column; gap: 0.15rem;
+    margin: 0.5rem 0 1rem;
+}
+[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] {
+    color: var(--text-muted) !important;
+    border-radius: var(--radius-sm) !important;
+    padding: 0.55rem 0.85rem !important;
+    text-decoration: none !important;
+    font-size: 0.92rem !important;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"]:hover {
+    background: var(--surface) !important;
+    color: var(--text) !important;
+}
+[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"][aria-current="page"],
+[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"].active {
+    background: var(--primary-soft) !important;
+    color: var(--primary) !important;
+    font-weight: 600;
 }
 .sidebar-brand-logo { width: 38px; height: 38px; border-radius: 9px; background: #fff; padding: 4px; }
 .sidebar-brand-title {
