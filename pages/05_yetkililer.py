@@ -1,5 +1,11 @@
 """
 Yetkililer — bölüm sorumluları ve haftalık sayım durumu.
+
+Görünüm role göre değişir:
+  - Regular kullanıcı: kendi bölümleri üstte vurgulu, diğer bölümler basit
+    bir liste (bölüm, sorumlu kişiler, sayım durumu).
+  - Admin: tüm detaylı tablo (gönderim zamanı, tonaj, geç giriş bayrağı,
+    yetki durumu, durum filtresi) — eski admin-odaklı görünümün aynısı.
 """
 
 from __future__ import annotations
@@ -8,7 +14,11 @@ import pandas as pd
 import streamlit as st
 
 from db.connection import get_session
-from utils.auth import require_auth, restore_session_from_query
+from utils.auth import (
+    get_user_departments,
+    require_auth,
+    restore_session_from_query,
+)
 from utils.cached_queries import (
     get_active_sites_departments,
     get_available_weeks,
@@ -18,11 +28,8 @@ from utils.cached_queries import (
 from utils.performance import page_timer
 from utils.ui import (
     data_panel,
-    filter_bar,
     inject_css,
-    kpi_card,
     page_header,
-    render_kpis,
     render_sidebar_user,
     table_note,
 )
@@ -35,18 +42,28 @@ timer = page_timer("yetkililer")
 
 with get_session() as _s:
     me = require_auth(_s)
+    my_depts = get_user_departments(me.id, _s)
+    my_dept_ids = {d.id for d in my_depts}
+
+is_admin = me.role == "admin"
 render_sidebar_user(me.full_name, me.role)
 
 page_header(
     title="Yetkililer",
-    subtitle="Bölüm sorumluları ve haftalık sayım giriş durumu",
+    subtitle=(
+        "Tüm bölümlerin sorumluları ve haftalık sayım durumu"
+        if is_admin
+        else "Bölüm sorumluları ve sayım durumu"
+    ),
 )
 
 
+# ---------------------------------------------------------------------------
+# Hafta seçici
+# ---------------------------------------------------------------------------
 default_week = current_week_iso()
 weeks = get_available_weeks(default_week)
 
-filter_bar("Hafta filtresi", "Yetki ve sayım durumunu kontrol etmek istediğiniz haftayı seçin.")
 selected_week = st.selectbox(
     "Hafta",
     weeks,
@@ -55,27 +72,14 @@ selected_week = st.selectbox(
 )
 
 
+# ---------------------------------------------------------------------------
+# Veri
+# ---------------------------------------------------------------------------
 sites_depts = get_active_sites_departments()
 submissions = get_week_submissions_with_users(selected_week)
-dept_users = get_department_users(include_inactive=True)
+dept_users = get_department_users(include_inactive=is_admin)
 
 sub_by_dept = {sub["department_id"]: sub for sub in submissions}
-
-total_depts = len(sites_depts)
-submitted_count = sum(1 for dept in sites_depts if dept["department_id"] in sub_by_dept)
-missing_count = total_depts - submitted_count
-assigned_count = sum(1 for dept in sites_depts if dept_users.get(dept["department_id"]))
-unassigned_count = total_depts - assigned_count
-
-kpi_cards = [
-    kpi_card("Toplam Bölüm", f"{total_depts}", sub="Aktif takip kapsamı"),
-    kpi_card("Sayım Giren", f"{submitted_count}", sub="Seçili haftada tamamlanan", tone="green"),
-    kpi_card("Eksik", f"{missing_count}", sub="Henüz sayım bekleyen", tone="amber" if missing_count else "green"),
-    kpi_card("Yetkilisi Olmayan", f"{unassigned_count}", sub="Atama kontrolü gerekli", tone="red" if unassigned_count else "green"),
-]
-render_kpis(kpi_cards)
-
-
 
 
 def _status_label(status: str) -> str:
@@ -87,26 +91,85 @@ def _status_label(status: str) -> str:
 
 
 def _format_users(users: list[dict]) -> str:
-    active_names = [user["full_name"] for user in users if user["is_active"]]
+    active_names = [u["full_name"] for u in users if u["is_active"]]
     inactive_names = [
-        f"{user['full_name']} (pasif)"
-        for user in users
-        if not user["is_active"]
+        f"{u['full_name']} (pasif)" for u in users if not u["is_active"]
     ]
     names = active_names + inactive_names
     return ", ".join(names) if names else "Atanmamış"
 
 
+def _simple_row(dept: dict) -> dict[str, object]:
+    sub = sub_by_dept.get(dept["department_id"])
+    users = dept_users.get(dept["department_id"], [])
+    return {
+        "Üretim Yeri": dept["site_name"],
+        "Bölüm": dept["department_name"],
+        "Yetkili Kullanıcılar": _format_users(users),
+        "Sayım Durumu": _status_label(sub["status"]) if sub else "Eksik",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Regular kullanıcı görünümü — sade, kendi bölümleri vurgulu
+# ---------------------------------------------------------------------------
+if not is_admin:
+    if my_depts:
+        data_panel(
+            "Sizin Bölümleriniz",
+            "Sayım girişi yetkiniz olan bölümler ve birlikte yetkili olduğunuz kişiler.",
+        )
+        own_rows = [
+            _simple_row(d)
+            for d in sites_depts
+            if d["department_id"] in my_dept_ids
+        ]
+        st.dataframe(
+            pd.DataFrame(own_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
+
+    data_panel(
+        "Diğer Bölümler",
+        "Tüm bölümlerin sorumluları ve bu haftaki sayım durumu — başka bir bölümden bilgi almak gerekirse buradaki sorumluya ulaşabilirsiniz.",
+    )
+    other_rows = [
+        _simple_row(d)
+        for d in sites_depts
+        if d["department_id"] not in my_dept_ids
+    ]
+    st.dataframe(
+        pd.DataFrame(other_rows) if other_rows else pd.DataFrame(),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    timer.finish()
+    st.stop()
+
+
+# ---------------------------------------------------------------------------
+# Admin görünümü — eski detaylı tablo + filtre
+# ---------------------------------------------------------------------------
+total_depts = len(sites_depts)
+submitted_count = sum(1 for d in sites_depts if d["department_id"] in sub_by_dept)
+missing_count = total_depts - submitted_count
+unassigned_count = sum(1 for d in sites_depts if not dept_users.get(d["department_id"]))
+
+
 def _assignment_status(users: list[dict]) -> str:
-    active_count = sum(1 for user in users if user["is_active"])
-    if active_count == 0:
+    active = sum(1 for u in users if u["is_active"])
+    if active == 0:
         return "Yetkilisi Yok"
-    if active_count == 1:
+    if active == 1:
         return "Tek Yetkili"
     return "Mükerrer Yetki"
 
 
-rows: list[dict[str, object]] = []
+admin_rows: list[dict[str, object]] = []
 for dept in sites_depts:
     sub = sub_by_dept.get(dept["department_id"])
     users = dept_users.get(dept["department_id"], [])
@@ -127,11 +190,11 @@ for dept in sites_depts:
         actual_tonnage = sub["actual_tonnage"]
         late_flag = "Evet" if sub["status"] == "late_submitted" else "Hayır"
 
-    rows.append({
+    admin_rows.append({
         "Üretim Yeri": dept["site_name"],
         "Bölüm": dept["department_name"],
         "Yetkili Kullanıcı(lar)": _format_users(users),
-        "Aktif Yetkili Sayısı": sum(1 for user in users if user["is_active"]),
+        "Aktif Yetkili Sayısı": sum(1 for u in users if u["is_active"]),
         "Yetki Durumu": _assignment_status(users),
         "Sayım Durumu": count_status,
         "Giren Kullanıcı": entered_by,
@@ -140,9 +203,8 @@ for dept in sites_depts:
         "Tonaj (t)": actual_tonnage,
     })
 
-df = pd.DataFrame(rows)
+df = pd.DataFrame(admin_rows)
 
-filter_bar("Durum filtresi", "Tümü, eksik girilen, tamamlanan, geç girilen ve yetkilisi olmayan bölümleri ayrı izleyin.")
 status_filter = st.segmented_control(
     "Durum filtresi",
     ["Tümü", "Eksik Girilen", "Tamamlanan", "Geç Girilen", "Yetkilisi Olmayan"],
@@ -161,7 +223,7 @@ elif status_filter == "Yetkilisi Olmayan":
 
 data_panel(
     "Yetki ve Sayım Durumu",
-    "Bölüm sorumluları, mükerrer yetki ve haftalık giriş durumları birlikte izlenir.",
+    f"{total_depts} bölüm · {submitted_count} girdi · {missing_count} eksik · {unassigned_count} atanmamış",
 )
 st.dataframe(
     filtered,
@@ -171,7 +233,6 @@ st.dataframe(
         "Tonaj (t)": st.column_config.NumberColumn("Tonaj (t)", format="%.2f"),
     },
 )
-
 table_note(
     "Bu tablo, her bölüm için kimin yetkili olduğunu ve seçilen haftada sayımın girilip girilmediğini gösterir."
 )

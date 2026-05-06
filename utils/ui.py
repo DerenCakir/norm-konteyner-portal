@@ -51,6 +51,7 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
     background: var(--bg) !important;
     color: var(--text) !important;
     font-family: var(--font) !important;
+    font-size: 15.5px;
 }
 .block-container {
     padding-top: 2rem !important;
@@ -60,8 +61,12 @@ html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"] {
 #MainMenu, footer, [data-testid="stToolbar"], [data-testid="stDecoration"] {
     visibility: hidden;
 }
-h1, h2, h3, h4, h5, h6 { color: var(--text); font-family: var(--font); letter-spacing: -0.01em; }
-p, span, label, li { color: var(--text); }
+h1, h2, h3, h4, h5, h6 {
+    color: var(--text); font-family: var(--font);
+    letter-spacing: -0.01em; font-weight: 700;
+}
+p, span, label, li { color: var(--text); font-weight: 450; }
+strong, b { font-weight: 700; }
 small, .caption, .stCaption { color: var(--text-muted); }
 hr { border-color: var(--border-soft); }
 a { color: var(--primary); text-decoration: none; }
@@ -69,8 +74,8 @@ a:hover { color: var(--text); }
 
 /* ---------- Sidebar ---------- */
 [data-testid="stSidebar"] {
-    background: var(--surface) !important;
-    border-right: 1px solid var(--border-soft) !important;
+    background: linear-gradient(180deg, #EEF4FB 0%, #E5EEF8 100%) !important;
+    border-right: 1px solid #D8E4F2 !important;
 }
 [data-testid="stSidebar"] * { color: var(--text); }
 
