@@ -74,43 +74,57 @@ def render_login_form() -> None:
             pointer-events: none !important;
         }
         [data-testid="stAppViewContainer"] { margin-left: 0 !important; }
-        .block-container { max-width: 720px !important; }
+        .block-container { max-width: 1180px !important; padding-top: 2.5rem !important; }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
     data_uri = _logo_data_uri(str(_LOGO_PATH))
-    logo_html = (
-        f'<img src="{data_uri}" alt="Norm Fasteners" class="login-img"/>'
-        if data_uri
-        else '<div class="icon">📦</div>'
+    logo_img = (
+        f'<img src="{data_uri}" alt="Norm Fasteners"/>' if data_uri else ""
     )
 
-    st.markdown(
-        '<div class="login-wrap">'
-        '  <div class="login-logo">'
-        '    <div class="login-brand">NORM FASTENERS</div>'
-        f'   {logo_html}'
-        '    <h1>Konteyner Sayım ve Takip Portalı</h1>'
-        '  </div>'
-        '  <div class="login-divider"></div>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+    # Sol panel — marka kimliği + değer önermesi
+    left_col, right_col = st.columns([1, 1], gap="large")
 
-    # Form içeriği — kapsayıcı için ortala
-    _, mid, _ = st.columns([1, 2, 1])
-    with mid:
+    with left_col:
+        st.markdown(
+            f'<div class="login-brand-pane">'
+            f'  <div class="login-brand-mark">{logo_img}<span>Norm Fasteners</span></div>'
+            f'  <div class="login-brand-eyebrow">Konteyner Operasyon Merkezi</div>'
+            f'  <h2>Haftalık sayım, tek ekrandan görünür operasyon</h2>'
+            f'  <p>11 üretim yerinde 42 bölümün konteyner sayımını topla, fazla / eksik dengesini hızlıca gör, üretim duruşlarını önle.</p>'
+            f'  <div class="login-brand-features">'
+            f'    <div class="login-brand-feature">42 bölüm × 6 renk × 38.000 konteyner</div>'
+            f'    <div class="login-brand-feature">Cuma 09.00 – 12.00 sayım penceresi</div>'
+            f'    <div class="login-brand-feature">Tonaj sapma analizi ve haftalık trend</div>'
+            f'  </div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+    with right_col:
+        st.markdown(
+            '<div class="login-form-pane">'
+            '  <div class="login-form-head">'
+            '    <h1>Hoş geldiniz</h1>'
+            '    <p>Konteyner Sayım ve Takip Portalı için kurumsal hesabınızla giriş yapın.</p>'
+            '  </div>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
         with st.form("login_form", clear_on_submit=False):
             username = st.text_input("Kullanıcı adı", placeholder="kullanici_adi")
             password = st.text_input("Şifre", type="password", placeholder="••••••••")
             submitted = st.form_submit_button(
                 "Giriş Yap", use_container_width=True, type="primary",
             )
-
         st.markdown(
-            '<div class="login-footer">© 2026 Norm Fasteners · Tüm hakları saklıdır</div>',
+            '<div class="login-form-foot">'
+            '  <span class="badge">Güvenli kurumsal oturum</span>'
+            '  <span>© 2026 Norm Fasteners</span>'
+            '</div>',
             unsafe_allow_html=True,
         )
 

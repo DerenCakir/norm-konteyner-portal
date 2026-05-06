@@ -471,21 +471,125 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 .progress-track { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
 .progress-fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width 0.4s ease; }
 
-/* Login screen */
-.login-wrap { display: flex; flex-direction: column; align-items: center; padding: 3rem 1rem 1.5rem; }
-.login-logo { display: flex; flex-direction: column; align-items: center; gap: 1rem; max-width: 460px; text-align: center; }
-.login-brand {
-    color: var(--primary); font-weight: 700; letter-spacing: 0.18em;
-    font-size: 0.78rem; text-transform: uppercase;
+/* ---------- Login screen — split-panel premium look ---------- */
+.login-shell {
+    min-height: 86vh;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    border-radius: 18px;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    box-shadow: 0 24px 60px rgba(0,0,0,0.35);
+    margin: 1rem auto;
+    max-width: 1100px;
 }
-.login-img { width: 86px; height: 86px; border-radius: 18px; background: #fff; padding: 8px; }
-.login-logo h1 {
-    color: var(--text); font-size: 1.4rem; font-weight: 600; line-height: 1.4;
-    margin: 0.5rem 0 0; letter-spacing: -0.01em;
+@media (max-width: 880px) {
+    .login-shell { grid-template-columns: 1fr; }
+    .login-brand-pane { display: none; }
 }
-.login-logo .icon { font-size: 3rem; }
-.login-divider { width: 80px; height: 3px; background: var(--primary); border-radius: 999px; margin: 1.5rem auto; }
-.login-footer { text-align: center; color: var(--text-faint); font-size: 0.75rem; margin-top: 1.5rem; }
+
+/* Left pane — branded gradient with subtle pattern */
+.login-brand-pane {
+    position: relative;
+    padding: 3rem 2.5rem;
+    background:
+        radial-gradient(ellipse at top right, rgba(96,165,250,0.18) 0%, transparent 55%),
+        radial-gradient(ellipse at bottom left, rgba(96,165,250,0.10) 0%, transparent 60%),
+        linear-gradient(160deg, #1B2233 0%, #141925 100%);
+    display: flex; flex-direction: column;
+    border-right: 1px solid var(--border-soft);
+}
+.login-brand-pane::before {
+    content: ""; position: absolute; inset: 0;
+    background-image:
+        linear-gradient(rgba(96,165,250,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(96,165,250,0.04) 1px, transparent 1px);
+    background-size: 32px 32px;
+    pointer-events: none;
+    mask-image: radial-gradient(ellipse at center, black 30%, transparent 80%);
+}
+.login-brand-pane > * { position: relative; z-index: 1; }
+
+.login-brand-mark {
+    display: inline-flex; align-items: center; gap: 0.7rem;
+    color: var(--text); font-weight: 700;
+    letter-spacing: 0.18em; text-transform: uppercase; font-size: 0.78rem;
+    margin-bottom: 2rem;
+}
+.login-brand-mark img {
+    width: 36px; height: 36px; border-radius: 9px;
+    background: #fff; padding: 4px;
+}
+
+.login-brand-eyebrow {
+    color: var(--primary);
+    letter-spacing: 0.22em; text-transform: uppercase;
+    font-size: 0.72rem; font-weight: 600;
+    margin-bottom: 1rem;
+}
+.login-brand-pane h2 {
+    color: var(--text); font-size: 1.85rem; font-weight: 700;
+    line-height: 1.25; letter-spacing: -0.02em; margin: 0 0 0.85rem;
+    max-width: 24ch;
+}
+.login-brand-pane p {
+    color: var(--text-muted); font-size: 0.92rem; line-height: 1.6;
+    margin: 0; max-width: 38ch;
+}
+.login-brand-features {
+    margin-top: auto; padding-top: 2.5rem;
+    display: flex; flex-direction: column; gap: 0.85rem;
+}
+.login-brand-feature {
+    display: flex; align-items: center; gap: 0.75rem;
+    color: var(--text-muted); font-size: 0.85rem;
+}
+.login-brand-feature::before {
+    content: ""; width: 6px; height: 6px;
+    border-radius: 50%; background: var(--primary);
+    flex-shrink: 0;
+}
+
+/* Right pane — clean form */
+.login-form-pane {
+    padding: 3rem 3rem 2.25rem;
+    display: flex; flex-direction: column; justify-content: center;
+}
+.login-form-head { margin-bottom: 1.75rem; }
+.login-form-head h1 {
+    color: var(--text); font-size: 1.5rem; font-weight: 600;
+    margin: 0 0 0.4rem; letter-spacing: -0.01em;
+}
+.login-form-head p {
+    color: var(--text-muted); font-size: 0.88rem; margin: 0;
+}
+.login-form-foot {
+    margin-top: 1.5rem; padding-top: 1.25rem;
+    border-top: 1px solid var(--border-soft);
+    display: flex; justify-content: space-between; align-items: center;
+    color: var(--text-faint); font-size: 0.72rem;
+}
+.login-form-foot .badge {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    color: var(--text-muted);
+}
+.login-form-foot .badge::before {
+    content: "🔒"; filter: grayscale(0.5);
+}
+
+/* Make the inputs in the login pane breathe a little more */
+.login-form-pane .stTextInput input,
+.login-form-pane [data-baseweb="input"] > div {
+    padding: 0.6rem 0.85rem !important;
+    font-size: 0.92rem !important;
+}
+.login-form-pane .stFormSubmitButton > button {
+    padding: 0.7rem 1rem !important;
+    font-size: 0.95rem !important;
+    margin-top: 0.5rem;
+}
 
 </style>
 """
