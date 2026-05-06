@@ -74,6 +74,13 @@ a:hover { color: var(--text); }
 }
 [data-testid="stSidebar"] * { color: var(--text); }
 
+/* Streamlit'in otomatik (pages/ klasör tabanlı) sidebar nav'ını gizle.
+   st.navigation hâlâ routing yapıyor, biz aşağıda elle st.page_link
+   listesi çiziyoruz; aynı linklerin iki kez görünmesini engelliyoruz. */
+[data-testid="stSidebar"] [data-testid="stSidebarNav"] {
+    display: none !important;
+}
+
 /* Sidebar'ı sabit aç tut — gizleme butonu yok. Kullanıcılar kapatıp
    açamasın, hep aynı yerde kalsın. */
 [data-testid="stSidebar"] {

@@ -253,10 +253,11 @@ if is_authenticated():
     if st.session_state.get("role") == "admin":
         pages.append(st.Page("pages/99_admin.py", title="Admin Paneli"))
 
-    # Streamlit'in otomatik sidebar nav'ını kapat — kendi sidebar'ımızı
-    # tamamen elle çiziyoruz: brand üstte, sayfa linkleri ortada, kullanıcı
-    # kart + logout altta.
-    selected_page = st.navigation(pages, position="hidden")
+    # st.navigation routing yapsın — otomatik çizdiği sidebar nav'ı CSS ile
+    # gizleyip ([data-testid="stSidebarNav"]) yerine kendi page_link
+    # listesini elle çiziyoruz: brand üstte, sayfa linkleri ortada,
+    # kullanıcı kart + logout altta.
+    selected_page = st.navigation(pages)
 
     render_sidebar_brand(_LOGO_PATH)
     with st.sidebar:
