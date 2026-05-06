@@ -132,20 +132,28 @@ if not is_admin:
 
         st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
 
-    data_panel(
-        "Diğer Bölümler",
-        "Tüm bölümlerin sorumluları ve bu haftaki sayım durumu — başka bir bölümden bilgi almak gerekirse buradaki sorumluya ulaşabilirsiniz.",
-    )
     other_rows = [
         _simple_row(d)
         for d in sites_depts
         if d["department_id"] not in my_dept_ids
     ]
-    st.dataframe(
-        pd.DataFrame(other_rows) if other_rows else pd.DataFrame(),
-        use_container_width=True,
-        hide_index=True,
-    )
+
+    if other_rows:
+        data_panel(
+            "Diğer Bölümler",
+            "Tüm bölümlerin sorumluları ve bu haftaki sayım durumu — "
+            "başka bir bölümden bilgi almak gerekirse buradaki sorumluya "
+            "ulaşabilirsiniz.",
+        )
+        st.dataframe(
+            pd.DataFrame(other_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info(
+            "Tüm aktif bölümlere yetkiniz var; gösterilecek başka bölüm yok."
+        )
 
     timer.finish()
     st.stop()
