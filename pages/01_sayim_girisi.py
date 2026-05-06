@@ -437,7 +437,7 @@ if submit_clicked and can_submit:
 
         clear_cached_queries()
         success_text = "Sayım güncellendi." if audit_action == "count_update" else "Sayım gönderildi."
-        st.success(f"{success_text} Durum: **{new_status}**")
+        st.toast(f"{success_text} Durum: **{new_status}**", icon="✅")
         timer.finish()
         st.rerun()
 
