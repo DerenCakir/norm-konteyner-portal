@@ -59,11 +59,21 @@ def render_login_form() -> None:
     """Stilize login formu — ortalanmış kart."""
     timer = page_timer("login")
     # Sidebar'ı login ekranında gizle
-    # Login ekranında sidebar boş görünür ama gizlenmez — daha önceki agresif
-    # display:none kuralı login sonrası DOM'da kalıp sidebar'ı kilitleyebiliyordu.
+    # Login ekranında sidebar'ı gizle ama collapsedControl'a (geri açma oku)
+    # dokunma — daha önceki sürümde onu da display:none yapınca kullanıcılar
+    # sidebar'ı bir kez kapattıktan sonra geri açamıyordu.
     st.markdown(
         """
         <style>
+        [data-testid="stSidebar"] {
+            transform: translateX(-100%) !important;
+            visibility: hidden !important;
+            min-width: 0 !important;
+            max-width: 0 !important;
+            width: 0 !important;
+            pointer-events: none !important;
+        }
+        [data-testid="stAppViewContainer"] { margin-left: 0 !important; }
         .block-container { max-width: 720px !important; }
         </style>
         """,
