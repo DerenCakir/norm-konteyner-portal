@@ -74,19 +74,6 @@ a:hover { color: var(--text); }
 }
 [data-testid="stSidebar"] * { color: var(--text); }
 
-/* Reorder sidebar contents so the Norm Fasteners brand block sits at the
-   top, then the navigation links, then the user card + logout at the
-   bottom. Streamlit defaults to nav-on-top which buried the brand. */
-[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] {
-    display: flex !important;
-    flex-direction: column !important;
-}
-[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] > div:has(.sidebar-brand-card) { order: 1; }
-[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] > div:has(.sidebar-user-card) { order: 3; }
-[data-testid="stSidebar"] [data-testid="stSidebarUserContent"] > div:has(button[kind="secondary"]) { order: 4; }
-[data-testid="stSidebar"] [data-testid="stSidebarNavItems"],
-[data-testid="stSidebar"] nav { order: 2 !important; }
-
 /* The collapse / expand arrow needs to be visible against the dark sidebar */
 [data-testid="stSidebarCollapseButton"] svg,
 [data-testid="collapsedControl"] svg {
@@ -99,11 +86,17 @@ a:hover { color: var(--text); }
     border-radius: var(--radius-sm) !important;
 }
 
+/* The brand card uses negative margin-top to slide above the navigation
+   list that Streamlit always inserts above user-added sidebar content.
+   It still scrolls naturally with the rest of the sidebar. */
 .sidebar-brand-card {
     display: flex; align-items: center; gap: 0.75rem;
     padding: 1.1rem 0.9rem 1rem;
+    background: #0B1220;
     border-bottom: 1px solid var(--border-soft);
-    margin-bottom: 0.75rem;
+    margin: -3.5rem -1rem 1rem;
+    position: relative;
+    z-index: 5;
 }
 .sidebar-brand-logo { width: 38px; height: 38px; border-radius: 9px; background: #fff; padding: 4px; }
 .sidebar-brand-title {
