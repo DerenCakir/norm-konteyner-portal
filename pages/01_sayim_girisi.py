@@ -275,21 +275,29 @@ with st.form("submission_form", clear_on_submit=False):
     st.markdown('<div style="height:0.5rem"></div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="color-table-caption">'
-        '<strong>Önemli:</strong> Kanban, dolu konteynerlerin <strong>içinden</strong> kaç tanesinin '
-        'kanban olduğunu söyleyen alandır. Toplam doluyu olduğu gibi yazın; kanban değeri dolu '
-        'sayısından büyük olamaz.'
-        '<br/><span style="color: var(--text-faint);">Örnek: 500 dolu konteynerin 100\'ü kanban ise: '
-        'Dolu=500, Kanban=100.</span>'
+        'Her renk için <strong>boş</strong> kaç tane var, <strong>dolu</strong> '
+        'kaç tane var, <strong>doluların kaçı</strong> kanban — sırayla yazın.'
+        '<div class="example-grid">'
+        '  <div class="example-row">'
+        '    <span class="ex-label">Örnek</span>'
+        '    <span class="ex-cell"><b>100</b><small>boş</small></span>'
+        '    <span class="ex-cell"><b>500</b><small>dolu (toplam)</small></span>'
+        '    <span class="ex-cell"><b>100</b><small>bunlardan kanban</small></span>'
+        '  </div>'
+        '  <div class="example-note">Kanban (100), doluya (500) <strong>dahildir</strong>; '
+        'doludan büyük olamaz.</div>'
+        '</div>'
         '</div>',
         unsafe_allow_html=True,
     )
     color_inputs: dict[int, dict[str, int]] = {}
+    color_warnings: list[str] = []
 
     h1, h2, h3, h4 = st.columns([2, 1, 1, 1.4])
     h1.markdown('<div class="color-table-head">Renk</div>', unsafe_allow_html=True)
     h2.markdown('<div class="color-table-head">Boş</div>', unsafe_allow_html=True)
-    h3.markdown('<div class="color-table-head">Dolu</div>', unsafe_allow_html=True)
-    h4.markdown('<div class="color-table-head">Kanban (doluya dahil)</div>', unsafe_allow_html=True)
+    h3.markdown('<div class="color-table-head">Dolu (toplam)</div>', unsafe_allow_html=True)
+    h4.markdown('<div class="color-table-head">Bunlardan Kanban</div>', unsafe_allow_html=True)
 
     for color in active_colors:
         prev = existing_details.get(color.id)
