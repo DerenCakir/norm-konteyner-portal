@@ -42,6 +42,7 @@ from utils.auth import (
     restore_session_from_query,
     user_can_submit_for,
 )
+from utils.cached_queries import clear_cached_queries
 from utils.performance import page_timer
 from utils.ui import (
     empty_state,
@@ -434,6 +435,7 @@ if submit_clicked and can_submit:
                 },
             ))
 
+        clear_cached_queries()
         success_text = "Sayım güncellendi." if audit_action == "count_update" else "Sayım gönderildi."
         st.success(f"{success_text} Durum: **{new_status}**")
         timer.finish()
