@@ -61,6 +61,12 @@ def get_session() -> Iterator[Session]:
     """Yield a SQLAlchemy session, committing on success and rolling
     back on error. Always closes the session.
 
+    BaseException-but-not-Exception (e.g. Streamlit's RerunException,
+    KeyboardInterrupt) is treated as a control-flow signal: the work the
+    caller already did inside the ``with`` block is committed before the
+    signal is allowed to propagate. Without this, calling ``st.rerun()``
+    inside the block would silently discard the writes.
+
     Usage:
         with get_session() as session:
             session.add(obj)
@@ -68,9 +74,16 @@ def get_session() -> Iterator[Session]:
     session = SessionLocal()
     try:
         yield session
-        session.commit()
     except Exception:
         session.rollback()
         raise
+    except BaseException:
+        try:
+            session.commit()
+        except Exception:
+            session.rollback()
+        raise
+    else:
+        session.commit()
     finally:
         session.close()

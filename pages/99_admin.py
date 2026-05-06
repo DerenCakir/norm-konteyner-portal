@@ -244,6 +244,9 @@ with tab_users:
             elif selected_user_id == admin_id and (not edit_is_active or edit_role != "admin"):
                 st.error("Kendi yönetici hesabınızı pasifleştiremez veya kullanıcı rolüne düşüremezsiniz.")
             else:
+                update_ok = False
+                update_error: str | None = None
+                updated_username = clean_username
                 try:
                     with get_session() as s:
                         target = s.get(User, selected_user_id)
@@ -255,7 +258,7 @@ with tab_users:
                         ).scalar_one_or_none()
 
                         if username_taken is not None:
-                            st.error(f"'{clean_username}' kullanıcı adı zaten alınmış.")
+                            update_error = f"'{clean_username}' kullanıcı adı zaten alınmış."
                         else:
                             old_value = {
                                 "username": target.username,
@@ -299,15 +302,21 @@ with tab_users:
                                     new_value={"username": target.username},
                                 ))
 
-                            clear_cached_queries()
-                            if selected_user_id == admin_id:
-                                st.session_state["username"] = target.username
-                                st.session_state["role"] = target.role
-                                st.session_state["full_name"] = target.full_name
-                            st.success(f"'{target.username}' güncellendi.")
-                            st.rerun()
+                            updated_username = target.username
+                            update_ok = True
                 except Exception as exc:
-                    st.error(f"Hata: {exc}")
+                    update_error = f"Hata: {exc}"
+
+                if update_ok:
+                    clear_cached_queries()
+                    if selected_user_id == admin_id:
+                        st.session_state["username"] = updated_username
+                        st.session_state["role"] = edit_role
+                        st.session_state["full_name"] = clean_full_name
+                    st.success(f"'{updated_username}' güncellendi.")
+                    st.rerun()
+                elif update_error:
+                    st.error(update_error)
 
 
 # ---------------------------------------------------------------------------
