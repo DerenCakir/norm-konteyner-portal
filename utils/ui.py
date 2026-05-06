@@ -21,24 +21,24 @@ import streamlit as st
 _GLOBAL_CSS = """
 <style>
 :root {
-    --bg:            #1A1E29;
-    --surface:       #222734;
-    --surface-2:     #2A2F3D;
-    --surface-3:     #313644;
-    --border:        #2F3543;
-    --border-soft:   #262B38;
-    --text:          #E5E7EB;
-    --text-muted:    #9CA3AF;
-    --text-faint:    #6B7280;
-    --primary:       #60A5FA;
-    --primary-soft:  rgba(96, 165, 250, 0.12);
-    --primary-line:  rgba(96, 165, 250, 0.35);
-    --success:       #4ADE80;
-    --success-soft:  rgba(74, 222, 128, 0.12);
-    --warning:       #FBBF24;
-    --warning-soft:  rgba(251, 191, 36, 0.12);
-    --danger:        #F87171;
-    --danger-soft:   rgba(248, 113, 113, 0.12);
+    --bg:            #F8FAFC;
+    --surface:       #FFFFFF;
+    --surface-2:     #F1F5F9;
+    --surface-3:     #E2E8F0;
+    --border:        #CBD5E1;
+    --border-soft:   #E2E8F0;
+    --text:          #0F172A;
+    --text-muted:    #475569;
+    --text-faint:    #94A3B8;
+    --primary:       #2563EB;
+    --primary-soft:  rgba(37, 99, 235, 0.10);
+    --primary-line:  rgba(37, 99, 235, 0.30);
+    --success:       #16A34A;
+    --success-soft:  rgba(22, 163, 74, 0.10);
+    --warning:       #D97706;
+    --warning-soft:  rgba(217, 119, 6, 0.10);
+    --danger:        #DC2626;
+    --danger-soft:   rgba(220, 38, 38, 0.10);
     --radius:        10px;
     --radius-sm:     6px;
     --font:          'Inter', system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -69,7 +69,7 @@ a:hover { color: var(--text); }
 
 /* ---------- Sidebar ---------- */
 [data-testid="stSidebar"] {
-    background: #0B1220 !important;
+    background: var(--surface) !important;
     border-right: 1px solid var(--border-soft) !important;
 }
 [data-testid="stSidebar"] * { color: var(--text); }
@@ -129,7 +129,7 @@ button[kind="header"][data-testid="baseButton-header"] {
     color: var(--primary) !important;
     font-weight: 600;
 }
-.sidebar-brand-logo { width: 38px; height: 38px; border-radius: 9px; background: #fff; padding: 4px; }
+.sidebar-brand-logo { width: 38px; height: 38px; border-radius: 9px; background: var(--surface-2); padding: 4px; }
 .sidebar-brand-title {
     font-weight: 700; font-size: 0.85rem; letter-spacing: 0.08em; color: var(--text);
 }
@@ -316,14 +316,14 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 }
 .stButton > button[kind="primary"], .stFormSubmitButton > button[kind="primary"] {
     background: var(--primary);
-    color: #0B1220;
+    color: #FFFFFF;
     border-color: var(--primary);
     font-weight: 600;
 }
 .stButton > button[kind="primary"]:hover, .stFormSubmitButton > button[kind="primary"]:hover {
-    background: #7DD3FC;
-    border-color: #7DD3FC;
-    color: #0B1220;
+    background: #1D4ED8;
+    border-color: #1D4ED8;
+    color: #FFFFFF;
 }
 .stButton > button:disabled, .stFormSubmitButton > button:disabled {
     background: var(--surface) !important;
@@ -516,7 +516,7 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
     background: var(--primary-soft); padding: 0.35rem 0.8rem;
     border-radius: 999px; border: 1px solid var(--primary-line);
 }
-.status-panel-action:hover { background: var(--primary); color: #0B1220; }
+.status-panel-action:hover { background: var(--primary); color: #FFFFFF; }
 
 /* Timeline (weekly flow) */
 .flow-panel {
@@ -600,13 +600,13 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
     border-color: var(--primary-line);
 }
 .process-step.is-active .icon {
-    background: var(--primary); color: #0B1220;
+    background: var(--primary); color: #FFFFFF;
     border-color: var(--primary);
     box-shadow: 0 0 0 6px var(--primary-soft);
 }
 .process-step.is-active .label { color: var(--text); font-size: 1rem; }
 .process-step.is-active .badge {
-    background: var(--primary); color: #0B1220;
+    background: var(--primary); color: #FFFFFF;
     border-color: var(--primary);
 }
 /* Active "geç giriş" varyantı — sarı */
@@ -615,12 +615,12 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
     border-color: var(--warning);
 }
 .process-step.is-active.is-late .icon {
-    background: var(--warning); color: #0B1220;
+    background: var(--warning); color: #FFFFFF;
     border-color: var(--warning);
     box-shadow: 0 0 0 6px var(--warning-soft);
 }
 .process-step.is-active.is-late .badge {
-    background: var(--warning); color: #0B1220;
+    background: var(--warning); color: #FFFFFF;
     border-color: var(--warning);
 }
 /* Future step — soluk, henüz gelmedi */
@@ -706,12 +706,12 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 .progress-track { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; }
 .progress-fill { height: 100%; background: var(--primary); border-radius: 3px; transition: width 0.4s ease; }
 
-/* ---------- Login screen — full-bleed gradient, single centered column ---------- */
+/* ---------- Login screen — full-bleed soft gradient, single centered column ---------- */
 [data-testid="stAppViewContainer"]:has(.login-brand-pane) {
     background:
-        radial-gradient(ellipse 90% 70% at 80% 0%, rgba(96,165,250,0.18) 0%, transparent 55%),
-        radial-gradient(ellipse 80% 80% at 10% 100%, rgba(96,165,250,0.10) 0%, transparent 60%),
-        linear-gradient(160deg, #1B2233 0%, #141925 100%) !important;
+        radial-gradient(ellipse 90% 70% at 80% 0%, rgba(37, 99, 235, 0.10) 0%, transparent 55%),
+        radial-gradient(ellipse 80% 80% at 10% 100%, rgba(37, 99, 235, 0.06) 0%, transparent 60%),
+        linear-gradient(160deg, #F8FAFC 0%, #EEF2F7 100%) !important;
 }
 /* Center the middle column vertically on the page so the whole stack
    (brand block + form + footer) sits in the visual middle. */
@@ -740,8 +740,8 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 .login-brand-pane::before {
     content: ""; position: absolute; inset: 0;
     background-image:
-        linear-gradient(rgba(96,165,250,0.05) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(96,165,250,0.05) 1px, transparent 1px);
+        linear-gradient(rgba(37, 99, 235, 0.06) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(37, 99, 235, 0.06) 1px, transparent 1px);
     background-size: 32px 32px;
     pointer-events: none;
     mask-image: radial-gradient(ellipse at center, black 25%, transparent 85%);
@@ -756,7 +756,8 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 }
 .login-brand-mark img {
     width: 44px; height: 44px; border-radius: 10px;
-    background: #fff; padding: 5px;
+    background: var(--surface); padding: 5px;
+    border: 1px solid var(--border-soft);
 }
 
 .login-brand-eyebrow {
