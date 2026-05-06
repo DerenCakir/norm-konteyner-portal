@@ -45,11 +45,7 @@ from utils.auth import (
 from utils.performance import page_timer
 from utils.ui import (
     empty_state,
-    filter_bar,
-    form_panel,
     inject_css,
-    kpi_card,
-    render_kpis,
     page_header,
     render_sidebar_user,
     status_panel,
@@ -165,9 +161,9 @@ with get_session() as s:
     )
 
 status_meta = {
-    "open": ("success", "Açık", "Sayım girişi açık", "Cuma 09.00-12.00 penceresinde kayıt gönderebilirsiniz."),
-    "late": ("warning", "Geç giriş", "Geç giriş penceresi açık", "Yönetici tarafından açılan ek süre içinde kayıt gönderebilirsiniz."),
-    "locked": ("danger", "Kapalı", "Sayım girişi kapalı", "Formu görüntüleyebilirsiniz ancak kayıt gönderemezsiniz. Gerekirse yöneticiniz geç giriş açabilir."),
+    "open": ("success", "Açık", "Sayım girişi açık", "Cuma 09.00 – 12.00 arasındasınız, kaydedebilirsiniz."),
+    "late": ("warning", "Geç giriş", "Geç giriş penceresi açık", "Yönetici manuel ek süre açtı, kaydedebilirsiniz."),
+    "locked": ("danger", "Kapalı", "Sayım girişi kapalı", "Bir sonraki pencere Cuma 09.00'da açılır. Acil değişiklik için yöneticiyle iletişime geçin."),
 }
 status_tone, status_badge_text, status_title, status_body = status_meta.get(status, status_meta["locked"])
 st.markdown(
@@ -182,12 +178,37 @@ st.markdown(
 
 can_submit = status in ("open", "late")
 
-render_kpis([
-    kpi_card("Üretim Yeri", selected_site.name, sub="Seçili bölümün bağlı olduğu üretim yeri"),
-    kpi_card("Bölüm", selected_dept.name, sub="Sayım yapılacak sorumluluk alanı"),
-    kpi_card("Haftalık Tonaj Hedefi", f"{target_tonnage:.2f} t" if target_tonnage is not None else "-", sub="Bölüm hedefi"),
-    kpi_card("Form Durumu", "Açık" if can_submit else "Kapalı", sub="Kayıt gönderme durumu", tone="green" if can_submit else "red"),
-])
+# Bölüm bilgisi tek satır — KPI kart yok, sadece tonaj hedefi + (varsa) çoklu yetkili notu
+authorized_users_preview: list[str] = []
+with get_session() as _s:
+    authorized_users_preview = [
+        u.full_name for u in _s.execute(
+            select(User)
+            .join(UserDepartment, UserDepartment.user_id == User.id)
+            .where(
+                UserDepartment.department_id == selected_dept_id,
+                User.is_active.is_(True),
+            )
+            .order_by(User.full_name)
+        ).scalars()
+    ]
+
+tonnage_part = (
+    f'<span>Haftalık tonaj hedefi: <strong>{target_tonnage:.2f} t</strong></span>'
+    if target_tonnage is not None
+    else '<span>Haftalık tonaj hedefi: <strong>belirsiz</strong></span>'
+)
+multi_user_part = ""
+if len(authorized_users_preview) > 1:
+    names = ", ".join(authorized_users_preview)
+    multi_user_part = (
+        f'<span class="meta-warn">{len(authorized_users_preview)} yetkili kişi var: '
+        f'{names}. Son kaydeden mevcudun üzerine yazar.</span>'
+    )
+st.markdown(
+    f'<div class="dept-meta-row">{tonnage_part}{multi_user_part}</div>',
+    unsafe_allow_html=True,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -229,33 +250,18 @@ default_tonnage = float(existing.actual_tonnage) if existing and existing.actual
 # ---------------------------------------------------------------------------
 # Form
 # ---------------------------------------------------------------------------
-form_panel("Sayım Bilgisi", "Tarih, saat, tonaj ve renk bazlı konteyner sayılarını tek formda girin.")
-
+# Bu bölüm + hafta için zaten kayıt varsa kullanıcıya tek satır info ver
 if existing is not None:
     updater_name = existing_user.full_name if existing_user else "-"
-    if can_submit:
-        st.warning(
-            f"Bu bölüm ve hafta için daha önce kayıt gönderilmiş. "
-            f"Son giren/güncelleyen: **{updater_name}**. "
-            f"Son güncelleme: **{existing.updated_at:%Y-%m-%d %H:%M}**. "
-            "Formu kaydedersen mevcut kayıt güncellenecek."
-        )
-    else:
-        st.info(
-            f"Bu bölüm ve hafta için kayıt var ama giriş penceresi kapalı. "
-            f"Son giren/güncelleyen: **{updater_name}**. "
-            f"Son güncelleme: **{existing.updated_at:%Y-%m-%d %H:%M}**. "
-            "Düzeltme gerekiyorsa yöneticinizden destek isteyin."
-        )
-
-if len(authorized_users) > 1:
-    names = ", ".join(user.full_name for user in authorized_users)
-    st.warning(
-        "Bu bölümde birden fazla aktif yetkili var. Aynı hafta içinde son kaydeden kişi "
-        f"mevcut sayımın üzerine yazabilir. Yetkililer: {names}"
+    msg = (
+        f"Bu hafta için daha önce kayıt var. Son giren: **{updater_name}** "
+        f"({existing.updated_at:%d.%m %H:%M}). "
+        + ("Kaydederseniz üzerine yazılır." if can_submit else "Düzeltme için yönetici gerekir.")
     )
+    (st.warning if can_submit else st.info)(msg)
 
 with st.form("submission_form", clear_on_submit=False):
+    # Tarih + Saat + Tonaj
     info_date, info_time, info_tonnage = st.columns([1, 1, 1.2])
     cdate = info_date.date_input("Sayım tarihi", value=default_count_date, disabled=not can_submit)
     ctime = info_time.time_input("Sayım saati", value=default_count_time, disabled=not can_submit)
@@ -265,16 +271,25 @@ with st.form("submission_form", clear_on_submit=False):
         disabled=not can_submit,
     )
 
-    st.markdown("#### Renk Bazlı Sayım")
-    st.caption("Kanban, dolu konteynerlerin alt kümesidir; kanban sayısı dolu sayısından büyük olamaz.")
+    # Renk × Boş / Dolu / Kanban tablosu
+    st.markdown('<div style="height:0.5rem"></div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="color-table-caption">'
+        '<strong>Önemli:</strong> Kanban, dolu konteynerlerin <strong>içinden</strong> kaç tanesinin '
+        'kanban olduğunu söyleyen alandır. Toplam doluyu olduğu gibi yazın; kanban değeri dolu '
+        'sayısından büyük olamaz.'
+        '<br/><span style="color: var(--text-faint);">Örnek: 500 dolu konteynerin 100\'ü kanban ise: '
+        'Dolu=500, Kanban=100.</span>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
     color_inputs: dict[int, dict[str, int]] = {}
 
-    # Tablo başlığı
-    h1, h2, h3, h4 = st.columns([2, 1, 1, 1])
-    h1.markdown("**Renk**")
-    h2.markdown("**Boş**")
-    h3.markdown("**Dolu**")
-    h4.markdown("**Kanban**")
+    h1, h2, h3, h4 = st.columns([2, 1, 1, 1.4])
+    h1.markdown('<div class="color-table-head">Renk</div>', unsafe_allow_html=True)
+    h2.markdown('<div class="color-table-head">Boş</div>', unsafe_allow_html=True)
+    h3.markdown('<div class="color-table-head">Dolu</div>', unsafe_allow_html=True)
+    h4.markdown('<div class="color-table-head">Kanban (doluya dahil)</div>', unsafe_allow_html=True)
 
     for color in active_colors:
         prev = existing_details.get(color.id)
@@ -282,8 +297,11 @@ with st.form("submission_form", clear_on_submit=False):
         prev_full = prev.full_count if prev else 0
         prev_kanban = prev.kanban_count if prev else 0
 
-        c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
-        c1.write(color.name)
+        c1, c2, c3, c4 = st.columns([2, 1, 1, 1.4])
+        c1.markdown(
+            f'<div style="padding-top:0.7rem; font-weight:500;">{color.name}</div>',
+            unsafe_allow_html=True,
+        )
         empty_v = c2.number_input(
             f"empty_{color.id}", value=prev_empty, min_value=0, step=1,
             label_visibility="collapsed", disabled=not can_submit,

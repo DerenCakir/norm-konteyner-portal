@@ -166,6 +166,66 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 [data-testid="stWidgetInstructions"] {
     display: none !important;
 }
+
+/* Number input: hide the +/- spinner buttons so the field reads as a
+   single clean cell. Operators on the floor will type the number. */
+.stNumberInput button,
+.stNumberInput [data-testid="stNumberInputStepDown"],
+.stNumberInput [data-testid="stNumberInputStepUp"] {
+    display: none !important;
+}
+.stNumberInput input,
+.stNumberInput [data-baseweb="input"] > div {
+    border-width: 1.5px !important;
+    border-color: var(--border) !important;
+    background: var(--surface) !important;
+    font-size: 1rem !important;
+    font-weight: 500 !important;
+    text-align: center !important;
+    padding: 0.55rem 0.7rem !important;
+}
+.stNumberInput [data-baseweb="input"] {
+    width: 100% !important;
+}
+.stNumberInput:focus-within input,
+.stNumberInput:focus-within [data-baseweb="input"] > div {
+    border-color: var(--primary) !important;
+    border-width: 2px !important;
+    box-shadow: 0 0 0 3px var(--primary-soft) !important;
+}
+
+/* Sayım sayfasındaki bilgi satırı (tonaj hedefi + yetkili notu) */
+.dept-meta-row {
+    display: flex; gap: 1.5rem; flex-wrap: wrap;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border-soft);
+    margin: 0.25rem 0 1.25rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+.dept-meta-row strong { color: var(--text); font-weight: 600; }
+.dept-meta-row .meta-warn { color: var(--warning); }
+.dept-meta-row .meta-warn::before { content: "⚠ "; }
+
+/* Renk tablosu: başlık satırı vurgulu, satırlar hafif vurgulu */
+.color-table-caption {
+    background: var(--surface-2);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm);
+    padding: 0.65rem 0.85rem;
+    margin: 0.5rem 0 1rem;
+    color: var(--text-muted); font-size: 0.85rem; line-height: 1.5;
+}
+.color-table-caption strong { color: var(--text); }
+.color-table-head {
+    color: var(--text-muted) !important;
+    font-size: 0.78rem !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid var(--border-soft);
+}
 .stSelectbox div[role="listbox"], [data-baseweb="popover"] div[role="listbox"] {
     background: var(--surface-2) !important; border: 1px solid var(--border) !important;
 }
