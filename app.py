@@ -165,19 +165,12 @@ if is_authenticated():
         pages.insert(3, st.Page("pages/04_analiz.py", title="Analiz"))
         pages.append(st.Page("pages/99_admin.py", title="Admin Paneli"))
 
-    # st.navigation routing yapsın — otomatik çizdiği sidebar nav'ı CSS ile
-    # gizleyip ([data-testid="stSidebarNav"]) yerine kendi page_link
-    # listesini elle çiziyoruz: brand üstte, sayfa linkleri ortada,
-    # kullanıcı kart + logout altta.
+    # st.navigation hem routing yapıyor hem sidebar'a kendi nav listesini
+    # otomatik çiziyor. Manuel page_link listesini kaldırdık; üstüne
+    # sadece brand ekliyoruz, sayfanın kendisi user card + logout'u
+    # ekliyor. Streamlit ile çatışma yok.
     selected_page = st.navigation(pages)
-
     render_sidebar_brand(_LOGO_PATH)
-    with st.sidebar:
-        st.markdown('<div class="sidebar-nav-section">', unsafe_allow_html=True)
-        for page in pages:
-            st.page_link(page, label=page.title)
-        st.markdown('</div>', unsafe_allow_html=True)
-
     selected_page.run()
 else:
     render_login_form()
