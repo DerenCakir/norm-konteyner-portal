@@ -22,6 +22,7 @@ from utils.auth import (
 from utils.performance import page_timer
 from utils.ui import (
     _logo_data_uri,
+    flush_pending_toasts,
     inject_css,
     page_header,
     process_diagram,
@@ -33,8 +34,10 @@ from utils.ui import (
 )
 from utils.week import (
     current_week_iso,
+    format_schedule_human,
     format_week_human,
     get_submission_status,
+    load_schedule,
 )
 
 
@@ -83,6 +86,12 @@ def render_login_form() -> None:
         f'<img src="{data_uri}" alt="Norm Fasteners"/>' if data_uri else ""
     )
 
+    # Önceki rerun'dan kalan hata mesajını al — formun üstünde belirgin
+    # bir kutuda göstereceğiz, ayrıca toast ile de bildireceğiz.
+    pending_error = st.session_state.pop("login_error", None)
+    if pending_error:
+        st.toast(f"⚠️ {pending_error}", icon="🚫")
+
     # Tek kolon — marka bloğu üstte, form altta, hepsi ortada
     _, mid, _ = st.columns([1, 1.2, 1])
     with mid:
@@ -94,6 +103,16 @@ def render_login_form() -> None:
             f'</div>',
             unsafe_allow_html=True,
         )
+
+        if pending_error:
+            st.markdown(
+                f'<div class="login-error-banner" role="alert">'
+                f'  <span class="login-error-icon">⚠️</span>'
+                f'  <span class="login-error-text">{escape(pending_error)}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
         with st.form("login_form", clear_on_submit=False):
             username = st.text_input("Kullanıcı adı", placeholder="kullanici_adi")
             password = st.text_input("Şifre", type="password", placeholder="••••••••")
@@ -112,31 +131,27 @@ def render_login_form() -> None:
         timer.finish()
         return
 
-    if not username or not password:
-        st.error("Kullanıcı adı ve şifre boş olamaz.")
-        timer.finish()
-        return
+    error_msg: str | None = None
 
-    try:
-        with get_session() as session:
-            user = authenticate(username.strip(), password, session)
-            if user is None:
-                st.error("Kullanıcı adı veya şifre hatalı.")
-                timer.finish()
-                return
-            login_user(user)
-    except OperationalError:
-        st.error("Veritabanına bağlanılamıyor. Lütfen yöneticiye bildirin.")
-        timer.finish()
-        return
-    except SQLAlchemyError:
-        st.error("Veritabanı hatası oluştu. Lütfen tekrar deneyin.")
-        timer.finish()
-        return
-    except Exception:
-        st.error("Beklenmeyen bir hata oluştu.")
-        timer.finish()
-        return
+    if not username or not password:
+        error_msg = "Kullanıcı adı ve şifre boş olamaz."
+    else:
+        try:
+            with get_session() as session:
+                user = authenticate(username.strip(), password, session)
+                if user is None:
+                    error_msg = "Kullanıcı adı veya şifre hatalı."
+                else:
+                    login_user(user)
+        except OperationalError:
+            error_msg = "Veritabanına bağlanılamıyor. Lütfen yöneticiye bildirin."
+        except SQLAlchemyError:
+            error_msg = "Veritabanı hatası oluştu. Lütfen tekrar deneyin."
+        except Exception:
+            error_msg = "Beklenmeyen bir hata oluştu."
+
+    if error_msg:
+        st.session_state["login_error"] = error_msg
 
     timer.finish()
     st.rerun()
@@ -157,6 +172,7 @@ def render_sidebar() -> None:
 # ---------------------------------------------------------------------------
 def render_dashboard() -> None:
     timer = page_timer("ana_sayfa")
+    flush_pending_toasts()
     render_sidebar()
 
     full_name = st.session_state.get("full_name", "")
@@ -167,15 +183,28 @@ def render_dashboard() -> None:
 
     try:
         with get_session() as session:
-            status = get_submission_status(week_iso, session)
+            # user_id'i geç — kullanıcıya özel late window varsa
+            # ana sayfa da "açık" göstersin; ana sayfa ile sayım girişi
+            # sayfası tutarlı olsun.
+            me_id_for_status = st.session_state.get("user_id")
+            status = get_submission_status(
+                week_iso, session, user_id=me_id_for_status,
+            )
+            active_schedule = load_schedule(session)
     except SQLAlchemyError:
         st.error("Sayım durumu okunamadı (veritabanı hatası).")
         timer.finish()
         return
 
-    # Sade üst başlık — sadece selamlama, KPI yok, hero meta yok
-    status_label = {"open": "Açık", "late": "Geç giriş", "locked": "Kapalı"}[status]
-    status_kind = {"open": "success", "late": "warning", "locked": "info"}[status]
+    is_admin_view = role == "admin"
+    schedule_human = format_schedule_human(active_schedule)
+
+    # Kullanıcılara "geç giriş" terimi gösterilmez — admin'in açtığı late
+    # pencere de onlara "açık" olarak görünür.
+    effective_status = status if is_admin_view else ("open" if status == "late" else status)
+
+    status_label = {"open": "Açık", "late": "Geç giriş", "locked": "Kapalı"}[effective_status]
+    status_kind = {"open": "success", "late": "warning", "locked": "info"}[effective_status]
 
     page_header(
         title=f"Hoş geldin, {full_name.split()[0] if full_name else ''}".strip(),
@@ -183,17 +212,18 @@ def render_dashboard() -> None:
     )
 
     # Tek büyük durum paneli — bu sayfanın asıl amacı bunu söylemek
-    if status == "open":
+    if effective_status == "open":
         status_title = "Sayım girişi şu an açık"
         status_text = f"{week_human} haftası için yetkili olduğunuz bölümlerde sayım girişi yapabilirsiniz."
         status_meta = "Aktif pencere"
-    elif status == "late":
+    elif effective_status == "late":
+        # Sadece admin'e gösterilir
         status_title = "Geç giriş penceresi açık"
-        status_text = f"Yönetici {week_human} haftası için manuel geç giriş açtı."
+        status_text = f"{week_human} haftası için manuel geç giriş açtınız."
         status_meta = "Admin onaylı"
     else:
         status_title = "Sayım girişi şu an kapalı"
-        status_text = "Bir sonraki giriş penceresi Cuma 09.00 – 12.00 arasında açılır."
+        status_text = f"Bir sonraki giriş penceresi {schedule_human} arasında açılır."
         status_meta = "Takip modu"
 
     st.markdown(
@@ -211,12 +241,15 @@ def render_dashboard() -> None:
     # Süreç diyagramı — herkesin nerede olduğunu net görsün
     st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
     section_header("Sayım Süreci", "Bu hafta hangi adımdayız")
-    st.markdown(process_diagram(status), unsafe_allow_html=True)
+    st.markdown(process_diagram(effective_status, schedule_human), unsafe_allow_html=True)
 
-    # Hızlı erişim — kısayollar
+    # Hızlı erişim — kısayollar (Analiz sadece adminlere)
     st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
     section_header("Hızlı Erişim")
-    qa1, qa2, qa3 = st.columns(3)
+    if is_admin_view:
+        qa1, qa2, qa3 = st.columns(3)
+    else:
+        qa1, qa2 = st.columns(2)
     qa1.markdown(
         quick_action_card("", "Sayım Girişi", "Haftalık sayımı girin", "sayim_girisi"),
         unsafe_allow_html=True,
@@ -225,10 +258,11 @@ def render_dashboard() -> None:
         quick_action_card("", "Haftalık Durum", "Giren/eksik bölümler + matris", "haftalik_takip"),
         unsafe_allow_html=True,
     )
-    qa3.markdown(
-        quick_action_card("", "Analiz", "Trend ve sapma analizi", "analiz"),
-        unsafe_allow_html=True,
-    )
+    if is_admin_view:
+        qa3.markdown(
+            quick_action_card("", "Analiz", "Trend ve sapma analizi", "analiz"),
+            unsafe_allow_html=True,
+        )
     timer.finish()
 
 
@@ -242,10 +276,11 @@ if is_authenticated():
         st.Page(render_dashboard, title="Ana Sayfa", default=True),
         st.Page("pages/01_sayim_girisi.py", title="Sayım Girişi"),
         st.Page("pages/03_haftalik_takip.py", title="Haftalık Durum"),
-        st.Page("pages/04_analiz.py", title="Analiz"),
         st.Page("pages/05_yetkililer.py", title="Yetkililer"),
     ]
+    # Analiz ve admin paneli sadece adminlere açıktır.
     if st.session_state.get("role") == "admin":
+        pages.insert(3, st.Page("pages/04_analiz.py", title="Analiz"))
         pages.append(st.Page("pages/99_admin.py", title="Admin Paneli"))
 
     # st.navigation routing yapsın — otomatik çizdiği sidebar nav'ı CSS ile

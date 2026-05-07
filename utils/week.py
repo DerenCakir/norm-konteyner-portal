@@ -1,11 +1,15 @@
 """
 ISO week and submission-window helpers, anchored to Europe/Istanbul.
 
-Submission rules (per CLAUDE.md):
+Submission rules:
 
-    Friday 09:00 → 12:00 (TR)        open       → status='submitted'
-    Otherwise (default)              locked     → users cannot submit
-    Late window (admin-opened only)  late       → status='late_submitted'
+    Configured day, open_hour → close_hour (TR)   open    → status='submitted'
+    Otherwise (default)                           locked  → users cannot submit
+    Late window (admin-opened only)               late    → status='late_submitted'
+
+The on-time window day/hours are stored in the ``submission_schedules``
+table (single row, id=1). Admins edit them from the admin panel.
+Defaults to Monday 09:00–12:00 if no row exists.
 
 The late window is NOT automatic. An admin inserts a row into the
 ``late_window_overrides`` table for a specific ``week_iso`` with a
@@ -28,14 +32,65 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 # Imported lazily-friendly: db.models pulls in db.base only.
-from db.models import LateUserWindowOverride, LateWindowOverride
+from db.models import LateUserWindowOverride, LateWindowOverride, SubmissionSchedule
 
 TR_TZ = pytz.timezone("Europe/Istanbul")
 
-# Submission window — narrow on-time slot.
-SUBMISSION_DAY = 5            # ISO weekday: Friday
-SUBMISSION_OPEN_HOUR = 9      # 09:00 inclusive
-SUBMISSION_CLOSE_HOUR = 12    # 12:00 exclusive
+# Default schedule used when DB row absent or no session is available
+# (tests, scripts). Production reads the actual values from the
+# ``submission_schedules`` table.
+DEFAULT_SUBMISSION_DAY = 1            # ISO weekday: Monday
+DEFAULT_SUBMISSION_OPEN_HOUR = 9      # 09:00 inclusive
+DEFAULT_SUBMISSION_CLOSE_HOUR = 12    # 12:00 exclusive
+
+# Backwards-compatible aliases — older code paths may still import these.
+SUBMISSION_DAY = DEFAULT_SUBMISSION_DAY
+SUBMISSION_OPEN_HOUR = DEFAULT_SUBMISSION_OPEN_HOUR
+SUBMISSION_CLOSE_HOUR = DEFAULT_SUBMISSION_CLOSE_HOUR
+
+# Tuple type: (iso_weekday, open_hour, close_hour)
+ScheduleTuple = tuple[int, int, int]
+DEFAULT_SCHEDULE: ScheduleTuple = (
+    DEFAULT_SUBMISSION_DAY,
+    DEFAULT_SUBMISSION_OPEN_HOUR,
+    DEFAULT_SUBMISSION_CLOSE_HOUR,
+)
+
+_TR_WEEKDAY_NAMES = [
+    "Pazartesi", "Salı", "Çarşamba", "Perşembe", "Cuma", "Cumartesi", "Pazar",
+]
+
+
+def weekday_name_tr(iso_weekday: int) -> str:
+    """Return the Turkish name for an ISO weekday (1=Mon..7=Sun)."""
+    if 1 <= iso_weekday <= 7:
+        return _TR_WEEKDAY_NAMES[iso_weekday - 1]
+    return "?"
+
+
+def load_schedule(session: Optional[Session]) -> ScheduleTuple:
+    """Read the active submission schedule from the database.
+
+    Falls back to ``DEFAULT_SCHEDULE`` when no session is provided
+    (test mode) or when the table has no row yet.
+    """
+    if session is None:
+        return DEFAULT_SCHEDULE
+    try:
+        row = session.execute(
+            select(SubmissionSchedule).where(SubmissionSchedule.id == 1)
+        ).scalar_one_or_none()
+    except SQLAlchemyError:
+        return DEFAULT_SCHEDULE
+    if row is None:
+        return DEFAULT_SCHEDULE
+    return (row.day_of_week, row.open_hour, row.close_hour)
+
+
+def format_schedule_human(schedule: ScheduleTuple) -> str:
+    """Render a schedule tuple as ``"Pazartesi 09:00–12:00"``."""
+    day, open_h, close_h = schedule
+    return f"{weekday_name_tr(day)} {open_h:02d}:00–{close_h:02d}:00"
 
 _TR_MONTHS = [
     "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
@@ -95,15 +150,21 @@ def week_iso_to_dates(week_iso: str) -> tuple[date, date]:
 # ---------------------------------------------------------------------------
 # Submission window predicates
 # ---------------------------------------------------------------------------
-def is_submission_open(now: Optional[datetime] = None) -> bool:
+def is_submission_open(
+    now: Optional[datetime] = None,
+    schedule: Optional[ScheduleTuple] = None,
+) -> bool:
     """True if the regular on-time submission window is active.
 
-    Window: Friday 09:00 (inclusive) → Friday 12:00 (exclusive), TR.
+    The window is configurable via ``submission_schedules`` (one row).
+    When no schedule is passed, the module-level default is used —
+    Monday 09:00 (inclusive) → 12:00 (exclusive), TR.
     """
+    day, open_h, close_h = schedule if schedule is not None else DEFAULT_SCHEDULE
     n = now_tr(now)
-    if n.isoweekday() != SUBMISSION_DAY:
+    if n.isoweekday() != day:
         return False
-    return SUBMISSION_OPEN_HOUR <= n.hour < SUBMISSION_CLOSE_HOUR
+    return open_h <= n.hour < close_h
 
 
 def is_late_window_open(
@@ -168,7 +229,8 @@ def get_submission_status(
       3. ``locked`` — otherwise (default, applies to past/future weeks
                       and to the current week outside the Friday slot).
     """
-    if is_submission_open(now) and week_iso == current_week_iso(now):
+    schedule = load_schedule(session)
+    if is_submission_open(now, schedule) and week_iso == current_week_iso(now):
         return "open"
     if is_late_window_open(week_iso, session, now, user_id=user_id, department_id=department_id):
         return "late"

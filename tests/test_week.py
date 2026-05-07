@@ -55,30 +55,38 @@ class TestNowTr:
 # ---------------------------------------------------------------------------
 class TestIsSubmissionOpenLocal:
     @pytest.mark.parametrize("dt, expected", [
-        # 2026-05-01 is a Friday
-        (datetime(2026, 5, 1, 11, 0),  True),   # Friday 11:00
-        (datetime(2026, 5, 1, 9, 0),   True),   # Friday 09:00 (lower bound, inclusive)
-        (datetime(2026, 5, 1, 11, 59), True),   # Friday 11:59
-        (datetime(2026, 5, 1, 12, 0),  False),  # Friday 12:00 (upper bound, exclusive)
-        (datetime(2026, 5, 1, 8, 59),  False),  # Friday 08:59
-        # 2026-04-30 is Thursday, 2026-05-02 is Saturday
-        (datetime(2026, 4, 30, 11, 0), False),  # Thursday 11:00
-        (datetime(2026, 5, 2, 11, 0),  False),  # Saturday 11:00
+        # 2026-04-27 is a Monday — default schedule day
+        (datetime(2026, 4, 27, 11, 0),  True),   # Monday 11:00
+        (datetime(2026, 4, 27, 9, 0),   True),   # Monday 09:00 (inclusive)
+        (datetime(2026, 4, 27, 11, 59), True),   # Monday 11:59
+        (datetime(2026, 4, 27, 12, 0),  False),  # Monday 12:00 (exclusive)
+        (datetime(2026, 4, 27, 8, 59),  False),  # Monday 08:59
+        # Other weekdays should never be open under the default schedule
+        (datetime(2026, 4, 28, 11, 0),  False),  # Tuesday 11:00
+        (datetime(2026, 5, 1, 11, 0),   False),  # Friday 11:00
+        (datetime(2026, 5, 3, 11, 0),   False),  # Sunday 11:00
     ])
     def test_window(self, dt, expected):
         assert is_submission_open(dt) is expected
+
+    def test_explicit_schedule_overrides_default(self):
+        # Custom schedule: Friday 09–12 — same as the legacy default
+        friday = datetime(2026, 5, 1, 11, 0)
+        assert is_submission_open(friday, schedule=(5, 9, 12)) is True
+        assert is_submission_open(friday) is False  # default Monday says closed
 
 
 # ---------------------------------------------------------------------------
 # is_submission_open  (timezone-aware UTC inputs)
 # ---------------------------------------------------------------------------
 class TestIsSubmissionOpenUtc:
-    def test_utc_friday_06_is_tr_09_open(self):
-        utc_dt = datetime(2026, 5, 1, 6, 0, tzinfo=pytz.UTC)
+    def test_utc_monday_06_is_tr_09_open(self):
+        # 2026-04-27 06:00 UTC == 09:00 TR (Monday)
+        utc_dt = datetime(2026, 4, 27, 6, 0, tzinfo=pytz.UTC)
         assert is_submission_open(utc_dt) is True
 
-    def test_utc_friday_09_is_tr_12_closed(self):
-        utc_dt = datetime(2026, 5, 1, 9, 0, tzinfo=pytz.UTC)
+    def test_utc_monday_09_is_tr_12_closed(self):
+        utc_dt = datetime(2026, 4, 27, 9, 0, tzinfo=pytz.UTC)
         assert is_submission_open(utc_dt) is False
 
 
@@ -163,27 +171,27 @@ class TestGetSubmissionStatus:
         )
 
     # ----- late closed -----
-    def test_open_during_friday_for_current_week(self, stub_late_closed):
-        now = datetime(2026, 5, 1, 11, 0)  # Friday 11:00, week = 2026-W18
+    def test_open_during_monday_for_current_week(self, stub_late_closed):
+        now = datetime(2026, 4, 27, 11, 0)  # Monday 11:00, week = 2026-W18
         assert get_submission_status("2026-W18", session=None, now=now) == "open"
 
     def test_locked_for_past_week_even_in_window(self, stub_late_closed):
-        now = datetime(2026, 5, 1, 11, 0)  # Friday 11:00
+        now = datetime(2026, 4, 27, 11, 0)  # Monday 11:00, current week W18
         assert get_submission_status("2026-W17", session=None, now=now) == "locked"
 
-    def test_locked_outside_friday_window(self, stub_late_closed):
-        now = datetime(2026, 5, 1, 13, 0)  # Friday 13:00, after cutoff
+    def test_locked_outside_monday_window(self, stub_late_closed):
+        now = datetime(2026, 4, 27, 13, 0)  # Monday 13:00, after cutoff
         assert get_submission_status("2026-W18", session=None, now=now) == "locked"
 
-    def test_locked_on_monday(self, stub_late_closed):
-        now = datetime(2026, 4, 27, 11, 0)  # Monday
+    def test_locked_on_friday(self, stub_late_closed):
+        now = datetime(2026, 5, 1, 11, 0)  # Friday — not the configured day
         assert get_submission_status("2026-W18", session=None, now=now) == "locked"
 
     # ----- late open -----
     def test_open_takes_precedence_over_late(self, stub_late_open):
-        now = datetime(2026, 5, 1, 11, 0)  # in regular window
+        now = datetime(2026, 4, 27, 11, 0)  # in regular Monday window
         assert get_submission_status("2026-W18", session=None, now=now) == "open"
 
     def test_late_when_outside_window_but_override_active(self, stub_late_open):
-        now = datetime(2026, 5, 1, 13, 0)  # Friday 13:00, regular closed
+        now = datetime(2026, 4, 27, 13, 0)  # Monday 13:00, regular closed
         assert get_submission_status("2026-W18", session=None, now=now) == "late"

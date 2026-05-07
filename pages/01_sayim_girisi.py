@@ -20,7 +20,8 @@ from __future__ import annotations
 from decimal import Decimal
 
 import streamlit as st
-from sqlalchemy import select
+from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 
 from db.connection import get_session
@@ -46,21 +47,26 @@ from utils.cached_queries import clear_cached_queries
 from utils.performance import page_timer
 from utils.ui import (
     empty_state,
+    flush_pending_toasts,
     inject_css,
     page_header,
+    queue_toast,
     render_sidebar_user,
     status_panel,
 )
 from utils.week import (
     current_week_iso,
+    format_schedule_human,
     format_week_human,
     get_submission_status,
+    load_schedule,
     now_tr,
 )
 
 
 inject_css()
 restore_session_from_query()
+flush_pending_toasts()
 timer = page_timer("sayim_girisi")
 
 
@@ -70,6 +76,8 @@ timer = page_timer("sayim_girisi")
 with get_session() as _s:
     me = require_auth(_s)
 me_id = me.id
+me_role = me.role
+is_admin = me_role == "admin"
 render_sidebar_user(me.full_name, me.role)
 
 current_week = current_week_iso()
@@ -161,11 +169,40 @@ with get_session() as s:
         department_id=selected_dept_id,
     )
 
-status_meta = {
-    "open": ("success", "Açık", "Sayım girişi açık", "Cuma 09.00 – 12.00 arasındasınız, kaydedebilirsiniz."),
-    "late": ("warning", "Geç giriş", "Geç giriş penceresi açık", "Yönetici manuel ek süre açtı, kaydedebilirsiniz."),
-    "locked": ("danger", "Kapalı", "Sayım girişi kapalı", "Bir sonraki pencere Cuma 09.00'da açılır. Acil değişiklik için yöneticiyle iletişime geçin."),
-}
+# Aktif takvimi al (kullanıcılara "geç giriş" terimi gösterilmez —
+# pencere kavramı tek tip "açık/kapalı" sunulur. Admin için late state'i
+# ayrıca görünür kalır.)
+with get_session() as _s_sched:
+    active_schedule = load_schedule(_s_sched)
+schedule_human = format_schedule_human(active_schedule)
+
+if is_admin:
+    status_meta = {
+        "open": ("success", "Açık", "Sayım girişi açık",
+                 f"{schedule_human} arasındasınız, kaydedebilirsiniz."),
+        "late": ("warning", "Geç giriş", "Geç giriş penceresi açık",
+                 "Yönetici manuel ek süre açtı, kaydedebilirsiniz."),
+        "locked": ("danger", "Kapalı", "Sayım girişi kapalı",
+                   f"Bir sonraki pencere {schedule_human}'da açılır."),
+    }
+else:
+    # Kullanıcılar için 'late' durumu "açık" olarak sunulur. Geç giriş
+    # kavramının duyurulması suistimale açık olduğu için, kullanıcı
+    # sadece "şu an açık" ya da "kapalı" görür.
+    user_open_meta = (
+        "success", "Açık", "Sayım girişi açık",
+        "Sayımı girip kaydedebilirsiniz.",
+    )
+    user_locked_meta = (
+        "danger", "Kapalı", "Sayım girişi kapalı",
+        "Şu an sayım girişi açık değil. Acil bir durum varsa yöneticinizle "
+        "iletişime geçiniz.",
+    )
+    status_meta = {
+        "open": user_open_meta,
+        "late": user_open_meta,
+        "locked": user_locked_meta,
+    }
 status_tone, status_badge_text, status_title, status_body = status_meta.get(status, status_meta["locked"])
 st.markdown(
     status_panel(
@@ -242,10 +279,14 @@ with get_session() as s:
         for d in existing.details:
             existing_details[d.color_id] = d
 
-# Form prefill değerleri
-default_count_date = existing.count_date if existing else now_tr().date()
-default_count_time = existing.count_time if existing else now_tr().time().replace(microsecond=0)
-default_tonnage = float(existing.actual_tonnage) if existing and existing.actual_tonnage else 0.0
+# Tonaj prefill: kayıt yoksa boş (None) — kutuya tıklanınca rakam yazmaya
+# başlandığında baştaki "0" yerine boş başlasın. Mevcut kayıt varsa o
+# değer prefill olur.
+default_tonnage = (
+    float(existing.actual_tonnage)
+    if existing is not None and existing.actual_tonnage is not None
+    else None
+)
 
 
 # ---------------------------------------------------------------------------
@@ -261,15 +302,26 @@ if existing is not None:
     )
     (st.warning if can_submit else st.info)(msg)
 
-with st.form("submission_form", clear_on_submit=False):
-    # Tarih + Saat + Tonaj
-    info_date, info_time, info_tonnage = st.columns([1, 1, 1.2])
-    cdate = info_date.date_input("Sayım tarihi", value=default_count_date, disabled=not can_submit)
-    ctime = info_time.time_input("Sayım saati", value=default_count_time, disabled=not can_submit)
-    tonnage = info_tonnage.number_input(
-        "Gerçekleşen tonaj (ton)",
-        value=default_tonnage, min_value=0.0, step=0.1, format="%.2f",
+    # Widget keys must change whenever (department, week) changes; otherwise
+    # Streamlit reuses the previous session_state value and ignores the
+    # `value=` prefill, leading to stale displays and silent overwrites
+    # when the user navigates between departments. Scope every input by
+    # (selected_dept_id, week_iso).
+form_scope = f"{selected_dept_id}_{week_iso}"
+
+with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
+    # Tarih ve saat müdahaleye kapalı — kayıt anında otomatik atanır.
+    # Sadece tonaj girişi alıyoruz; üstte küçük bir bilgi satırı.
+    st.caption(
+        "Tarih ve saat sayımı kaydederken otomatik olarak işlenir; manuel "
+        "değiştirilemez."
+    )
+    tonnage = st.number_input(
+        "Yarı mamül tonajı (toplam) — ton",
+        value=default_tonnage, min_value=0.0, step=0.1, format="%g",
         disabled=not can_submit,
+        key=f"sayim_tonnage_{form_scope}",
+        placeholder="örn. 1234",
     )
 
     # Renk × Boş / Dolu / Kanban tablosu
@@ -302,9 +354,12 @@ with st.form("submission_form", clear_on_submit=False):
 
     for color in active_colors:
         prev = existing_details.get(color.id)
-        prev_empty = prev.empty_count if prev else 0
-        prev_full = prev.full_count if prev else 0
-        prev_kanban = prev.kanban_count if prev else 0
+        # value=None → kutu boş açılır; kullanıcı tıklayıp rakam yazmaya
+        # başladığında baştaki sıfırla uğraşmaz. Mevcut kayıt varsa o
+        # sayı prefill olur.
+        prev_empty = prev.empty_count if prev is not None else None
+        prev_full = prev.full_count if prev is not None else None
+        prev_kanban = prev.kanban_count if prev is not None else None
 
         c1, c2, c3, c4 = st.columns([2, 1, 1, 1.4])
         c1.markdown(
@@ -312,22 +367,34 @@ with st.form("submission_form", clear_on_submit=False):
             unsafe_allow_html=True,
         )
         empty_v = c2.number_input(
-            f"empty_{color.id}", value=prev_empty, min_value=0, step=1,
+            f"{color.name} — Boş",
+            key=f"sayim_empty_{form_scope}_{color.id}",
+            value=prev_empty, min_value=0, step=1,
             label_visibility="collapsed", disabled=not can_submit,
+            placeholder="0",
         )
         full_v = c3.number_input(
-            f"full_{color.id}", value=prev_full, min_value=0, step=1,
+            f"{color.name} — Dolu",
+            key=f"sayim_full_{form_scope}_{color.id}",
+            value=prev_full, min_value=0, step=1,
             label_visibility="collapsed", disabled=not can_submit,
+            placeholder="0",
         )
         kanban_v = c4.number_input(
-            f"kanban_{color.id}", value=prev_kanban, min_value=0, step=1,
+            f"{color.name} — Kanban",
+            key=f"sayim_kanban_{form_scope}_{color.id}",
+            value=prev_kanban, min_value=0, step=1,
             label_visibility="collapsed", disabled=not can_submit,
+            placeholder="0",
         )
+        # Boş bırakılan kutuyu 0 olarak değerlendir.
         color_inputs[color.id] = {
-            "empty": int(empty_v), "full": int(full_v), "kanban": int(kanban_v)
+            "empty": int(empty_v) if empty_v is not None else 0,
+            "full": int(full_v) if full_v is not None else 0,
+            "kanban": int(kanban_v) if kanban_v is not None else 0,
         }
 
-    submit_label = "Sayımı Güncelle" if existing is not None else "Gönder"
+    submit_label = "Güncelle" if existing is not None else "Kaydet"
     submit_clicked = st.form_submit_button(
         submit_label, use_container_width=True, disabled=not can_submit, type="primary",
     )
@@ -348,39 +415,78 @@ if submit_clicked and can_submit:
         for e in errors:
             st.error(e)
     else:
-        # Yetki teyidi (defansif)
+        # Tarih/saat müdahaleye kapalı; her kayıt/güncellemede şu anki
+        # TR zamanı yazılır.
+        submit_now = now_tr()
+        cdate = submit_now.date()
+        ctime = submit_now.time().replace(microsecond=0)
+
+        # Boş bırakılan tonajı 0 olarak ele al.
+        tonnage_value = float(tonnage) if tonnage is not None else 0.0
+
+        # No-change detection: if the form values match the existing
+        # submission exactly, skip the DB write to keep the audit log
+        # clean and tell the user nothing happened. Tarih/saat değişimi
+        # sayılmaz (otomatik atanıyor).
+        new_tonnage_dec = Decimal(str(tonnage_value)).quantize(Decimal("0.01"))
+        unchanged = False
+        if existing is not None:
+            existing_tonnage_dec = (
+                Decimal(str(existing.actual_tonnage)).quantize(Decimal("0.01"))
+                if existing.actual_tonnage is not None
+                else Decimal("0.00")
+            )
+            same_meta = existing_tonnage_dec == new_tonnage_dec
+            same_details = all(
+                (
+                    existing_details.get(cid) is not None
+                    and existing_details[cid].empty_count == vals["empty"]
+                    and existing_details[cid].full_count == vals["full"]
+                    and existing_details[cid].kanban_count == vals["kanban"]
+                )
+                for cid, vals in color_inputs.items()
+            ) and len(existing_details) == len(color_inputs)
+            unchanged = same_meta and same_details
+
+        if unchanged:
+            queue_toast("Değişiklik yapılmadı — değerler zaten kayıtlı.", icon="ℹ️")
+            timer.finish()
+            st.rerun()
+
+        # Yetki teyidi (defansif) — bu kullanıcı hâlâ aktif mi ve bu
+        # bölüme yazabiliyor mu? Sayfa yüklendikten sonra admin yetki
+        # kaldırabilir veya hesabı pasifleştirebilir; submit anında
+        # tekrar kontrol edip eski oturumun "açık kalması" boşluğunu
+        # kapatıyoruz.
         with get_session() as s:
+            fresh_user = s.get(User, me_id)
+            if fresh_user is None or not fresh_user.is_active:
+                st.error("Hesabınız artık aktif değil. Lütfen tekrar giriş yapın.")
+                timer.finish()
+                st.stop()
             if not user_can_submit_for(me_id, selected_dept_id, s):
                 st.error("Bu bölüme sayım girme yetkiniz yok.")
                 timer.finish()
                 st.stop()
 
-            # UPSERT
+            new_status = "submitted" if status == "open" else "late_submitted"
+            submit_ts = now_tr()
+
+            # Old value snapshot (audit için) — kayıt zaten varsa eski
+            # halini logla. Yarış koşulu olmaması için aynı transaction'da
+            # SELECT FOR UPDATE ile satırı kilitliyoruz.
             sub = s.execute(
-                select(CountSubmission).where(
+                select(CountSubmission)
+                .where(
                     CountSubmission.department_id == selected_dept_id,
                     CountSubmission.week_iso == week_iso,
                 )
+                .with_for_update()
             ).scalar_one_or_none()
 
-            new_status = "submitted" if status == "open" else "late_submitted"
             old_value = None
             audit_action = "count_submit"
-
-            if sub is None:
-                sub = CountSubmission(
-                    department_id=selected_dept_id,
-                    user_id=me_id,
-                    week_iso=week_iso,
-                    count_date=cdate,
-                    count_time=ctime,
-                    actual_tonnage=Decimal(str(tonnage)),
-                    status=new_status,
-                    submitted_at=now_tr(),
-                )
-                s.add(sub)
-                s.flush()  # sub.id
-            else:
+            if sub is not None:
                 audit_action = "count_update"
                 old_value = {
                     "week_iso": sub.week_iso,
@@ -396,39 +502,70 @@ if submit_clicked and can_submit:
                         for detail in sub.details
                     },
                 }
-                sub.user_id = me_id
-                sub.count_date = cdate
-                sub.count_time = ctime
-                sub.actual_tonnage = Decimal(str(tonnage))
-                sub.status = new_status
-                sub.submitted_at = now_tr()
-                # Eski detayları sil
-                for d in list(sub.details):
-                    s.delete(d)
-                s.flush()
 
-            # Yeni detayları ekle
-            for cid, vals in color_inputs.items():
-                s.add(CountDetail(
-                    submission_id=sub.id,
-                    color_id=cid,
-                    empty_count=vals["empty"],
-                    full_count=vals["full"],
-                    kanban_count=vals["kanban"],
-                ))
+            # PostgreSQL native UPSERT — atomik, yarış koşulu yok.
+            # Aynı (dept, week) için iki kullanıcı milisaniye farkıyla
+            # çakışsa bile son yazan ON CONFLICT branch'ine düşer ve
+            # UNIQUE constraint ihlali atılmaz.
+            sub_stmt = (
+                pg_insert(CountSubmission.__table__)
+                .values(
+                    department_id=selected_dept_id,
+                    user_id=me_id,
+                    week_iso=week_iso,
+                    count_date=cdate,
+                    count_time=ctime,
+                    actual_tonnage=new_tonnage_dec,
+                    status=new_status,
+                    submitted_at=submit_ts,
+                )
+                .on_conflict_do_update(
+                    index_elements=["department_id", "week_iso"],
+                    set_={
+                        "user_id": me_id,
+                        "count_date": cdate,
+                        "count_time": ctime,
+                        "actual_tonnage": new_tonnage_dec,
+                        "status": new_status,
+                        "submitted_at": submit_ts,
+                    },
+                )
+                .returning(CountSubmission.__table__.c.id)
+            )
+            sub_id = s.execute(sub_stmt).scalar_one()
+
+            # Detayları aynı atomiklik garantisiyle yaz: eskileri sil,
+            # yenilerini at — hepsi bu transaction içinde, dış dünya
+            # commit'ten önce hiçbir şey görmez.
+            s.execute(
+                delete(CountDetail).where(CountDetail.submission_id == sub_id)
+            )
+            s.execute(
+                CountDetail.__table__.insert(),
+                [
+                    {
+                        "submission_id": sub_id,
+                        "color_id": cid,
+                        "empty_count": vals["empty"],
+                        "full_count": vals["full"],
+                        "kanban_count": vals["kanban"],
+                    }
+                    for cid, vals in color_inputs.items()
+                ],
+            )
 
             # Audit
             s.add(AuditLog(
                 user_id=me_id,
                 action=audit_action,
                 entity_type="count_submission",
-                entity_id=sub.id,
+                entity_id=sub_id,
                 old_value=old_value,
                 new_value={
                     "week_iso": week_iso,
                     "department_id": selected_dept_id,
                     "status": new_status,
-                    "actual_tonnage": float(tonnage),
+                    "actual_tonnage": tonnage_value,
                     "details": {
                         str(cid): vals for cid, vals in color_inputs.items()
                     },
@@ -436,8 +573,8 @@ if submit_clicked and can_submit:
             ))
 
         clear_cached_queries()
-        success_text = "Sayım güncellendi." if audit_action == "count_update" else "Sayım gönderildi."
-        st.toast(f"{success_text} Durum: **{new_status}**", icon="✅")
+        success_text = "Sayım güncellendi." if audit_action == "count_update" else "Sayım kaydedildi."
+        queue_toast(success_text, icon="✅")
         timer.finish()
         st.rerun()
 

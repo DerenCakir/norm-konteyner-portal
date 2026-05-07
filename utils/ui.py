@@ -87,21 +87,41 @@ a:hover { color: var(--text); }
 }
 
 /* Sidebar'ı sabit aç tut — gizleme butonu yok. Kullanıcılar kapatıp
-   açamasın, hep aynı yerde kalsın. */
-[data-testid="stSidebar"] {
+   açamasın, hep aynı yerde kalsın. Login ekranı bu kuralları kendi
+   stil bloğuyla daha sonra ezerek sidebar'ı gizliyor (app.py login). */
+[data-testid="stSidebar"],
+[data-testid="stSidebar"][aria-expanded="false"],
+[data-testid="stSidebar"][data-collapsed="true"],
+section[data-testid="stSidebar"] {
     min-width: 230px !important;
     max-width: 230px !important;
     width: 230px !important;
-    transform: translateX(0) !important;
+    transform: none !important;
+    margin-left: 0 !important;
+    left: 0 !important;
     visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+    transition: none !important;
+}
+/* Streamlit, daraltılmış durumda sidebar'a inline transform/translate
+   uygulayabiliyor; attribute selector ile yakalayıp eziyoruz. */
+[data-testid="stSidebar"][style*="translateX"],
+[data-testid="stSidebar"][style*="translate("],
+[data-testid="stSidebar"][style*="display: none"] {
+    transform: none !important;
+    display: block !important;
 }
 [data-testid="stSidebarCollapseButton"],
 [data-testid="stSidebarCollapsedControl"],
 [data-testid="collapsedControl"],
+[data-testid="stSidebar"] button[kind="header"],
 [aria-label="Close sidebar"],
 [aria-label="Collapse sidebar"],
 button[kind="header"][data-testid="baseButton-header"] {
     display: none !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
 }
 
 /* Brand card sits at the natural top of the sidebar now that we
@@ -208,22 +228,40 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 }
 .stNumberInput input,
 .stNumberInput [data-baseweb="input"] > div {
-    border-width: 1.5px !important;
-    border-color: var(--border) !important;
+    border-width: 2px !important;
+    border-color: var(--text-faint) !important;
     background: var(--surface) !important;
-    font-size: 1rem !important;
-    font-weight: 500 !important;
+    font-size: 1.05rem !important;
+    font-weight: 600 !important;
     text-align: center !important;
-    padding: 0.55rem 0.7rem !important;
+    padding: 0.65rem 0.8rem !important;
+    color: var(--text) !important;
+    box-shadow: inset 0 1px 0 rgba(15, 23, 42, 0.04);
 }
 .stNumberInput [data-baseweb="input"] {
     width: 100% !important;
 }
+.stNumberInput:hover input,
+.stNumberInput:hover [data-baseweb="input"] > div {
+    border-color: var(--text-muted) !important;
+}
 .stNumberInput:focus-within input,
 .stNumberInput:focus-within [data-baseweb="input"] > div {
     border-color: var(--primary) !important;
-    border-width: 2px !important;
-    box-shadow: 0 0 0 3px var(--primary-soft) !important;
+    border-width: 2.5px !important;
+    box-shadow:
+        0 0 0 4px var(--primary-soft),
+        inset 0 1px 0 rgba(37, 99, 235, 0.06) !important;
+    background: #FAFCFF !important;
+}
+/* Disabled (form kapalı) kutular — daha soluk göster ki açık olanlarla
+   karışmasın. */
+.stNumberInput input:disabled,
+.stNumberInput [data-baseweb="input"][aria-disabled="true"] > div {
+    background: var(--surface-2) !important;
+    border-color: var(--border-soft) !important;
+    color: var(--text-faint) !important;
+    box-shadow: none !important;
 }
 
 /* Sayım sayfasındaki bilgi satırı (tonaj hedefi + yetkili notu) */
@@ -795,6 +833,31 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
     content: "🔒"; filter: grayscale(0.5);
 }
 
+/* Login error banner — formun üstünde, dikkat çekici kırmızı kart */
+.login-error-banner {
+    display: flex; align-items: flex-start; gap: 0.7rem;
+    margin: 0 auto 1rem auto;
+    padding: 0.85rem 1rem;
+    background: var(--danger-soft);
+    border: 1px solid var(--danger);
+    border-left: 4px solid var(--danger);
+    border-radius: var(--radius);
+    color: var(--danger);
+    font-size: 0.9rem; font-weight: 500;
+    box-shadow: 0 4px 14px rgba(220, 38, 38, 0.18);
+    animation: login-error-pop 0.25s ease-out;
+}
+.login-error-banner .login-error-icon {
+    font-size: 1.05rem; line-height: 1.3;
+}
+.login-error-banner .login-error-text {
+    color: #991B1B; line-height: 1.4;
+}
+@keyframes login-error-pop {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
 </style>
 """
 
@@ -802,6 +865,26 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 def _esc(value: object) -> str:
     """Escape text before injecting it into controlled HTML snippets."""
     return escape(str(value), quote=True)
+
+
+def queue_toast(message: str, icon: str = "✅") -> None:
+    """Queue a toast that will fire on the next page render.
+
+    `st.toast` followed by `st.rerun` often loses the toast because the
+    rerun cancels the in-flight render. Persist it via session_state and
+    `flush_pending_toasts()` reads it back on the next run.
+    """
+    bucket = st.session_state.setdefault("pending_toasts", [])
+    bucket.append({"message": message, "icon": icon})
+
+
+def flush_pending_toasts() -> None:
+    """Render any toasts queued with `queue_toast` and clear the bucket."""
+    bucket = st.session_state.pop("pending_toasts", None)
+    if not bucket:
+        return
+    for entry in bucket:
+        st.toast(entry["message"], icon=entry.get("icon"))
 
 
 def _with_session_token(href: str) -> str:
@@ -1008,7 +1091,7 @@ def timeline_panel(steps: list[tuple[str, str, str]]) -> str:
     return f'<div class="flow-panel">{rows}</div>'
 
 
-def process_diagram(status: str) -> str:
+def process_diagram(status: str, schedule_human: str = "") -> str:
     """3-step horizontal process diagram for the weekly submission cycle.
 
     The current step is highlighted prominently; past steps are muted;
@@ -1016,10 +1099,12 @@ def process_diagram(status: str) -> str:
     by users who are not desk workers.
 
     ``status`` values: ``"open"``, ``"late"``, ``"locked"``.
+    ``schedule_human`` (optional) such as ``"Pazartesi 09:00–12:00"``;
+    falls back to a generic label when empty.
     """
     # Hangi adımdayız? open/late = adım 2 (sayım açık), locked = adım 3 (kapalı)
     # Step 1 = "henüz açılmadı" durumu, locked olduğunda da step 3 (kapandı)
-    # gösterilebilir. Cuma 09:00 öncesi mi sonrası mı bilemediğimiz için
+    # gösterilebilir. Pencere öncesi mi sonrası mı bilemediğimiz için
     # locked'ı her zaman "kapalı" olarak step 3'e koyuyoruz.
     cls_step1 = "process-step is-done"
     cls_step2 = "process-step is-future"
@@ -1061,13 +1146,22 @@ def process_diagram(status: str) -> str:
             f'</div>'
         )
 
+    if schedule_human:
+        when_open = schedule_human
+        when_before = f"{schedule_human} öncesi"
+        when_after = f"{schedule_human} sonrası"
+    else:
+        when_open = "Pencere"
+        when_before = "Pencere öncesi"
+        when_after = "Pencere sonrası"
+
     return (
         f'<div class="process-diagram">'
-        f'  {_step(cls_step1, "1", "Bekleme", "Cuma 09.00 öncesi", badge_step1)}'
+        f'  {_step(cls_step1, "1", "Bekleme", when_before, badge_step1)}'
         f'  <div class="process-arrow">→</div>'
-        f'  {_step(cls_step2, "2", "Sayım Açık", "Cuma 09.00 – 12.00", badge_step2)}'
+        f'  {_step(cls_step2, "2", "Sayım Açık", when_open, badge_step2)}'
         f'  <div class="process-arrow">→</div>'
-        f'  {_step(cls_step3, "3", "Kapalı", "Cuma 12.00 sonrası", badge_step3)}'
+        f'  {_step(cls_step3, "3", "Kapalı", when_after, badge_step3)}'
         f'</div>'
     )
 

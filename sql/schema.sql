@@ -67,7 +67,7 @@ CREATE TABLE count_submissions (
     user_id INTEGER NOT NULL REFERENCES users(id),
     week_iso VARCHAR(8) NOT NULL,
     count_date DATE NOT NULL,
-    count_time TIME,
+    count_time TIME NOT NULL,
     actual_tonnage NUMERIC(10, 2),
     status VARCHAR(20) NOT NULL DEFAULT 'draft',
     submitted_at TIMESTAMPTZ,
@@ -124,6 +124,27 @@ CREATE INDEX idx_late_user_overrides_lookup
     ON late_user_window_overrides(week_iso, user_id, department_id, closes_at);
 CREATE INDEX idx_late_user_overrides_closes
     ON late_user_window_overrides(closes_at);
+
+-- 8b. SUBMISSION SCHEDULES (admin-configurable on-time window)
+-- Tek satır (id=1) tutar; haftanın hangi günü ve saatlerinde sayım
+-- girilebileceğini admin panelinden ayarlayabilir.
+CREATE TABLE submission_schedules (
+    id           INTEGER PRIMARY KEY,
+    day_of_week  INTEGER NOT NULL DEFAULT 1,
+    open_hour    INTEGER NOT NULL DEFAULT 9,
+    close_hour   INTEGER NOT NULL DEFAULT 12,
+    updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_by   INTEGER REFERENCES users(id),
+
+    CONSTRAINT valid_day_of_week  CHECK (day_of_week BETWEEN 1 AND 7),
+    CONSTRAINT valid_open_hour    CHECK (open_hour BETWEEN 0 AND 23),
+    CONSTRAINT valid_close_hour   CHECK (close_hour BETWEEN 1 AND 24),
+    CONSTRAINT close_after_open   CHECK (close_hour > open_hour)
+);
+
+INSERT INTO submission_schedules (id, day_of_week, open_hour, close_hour)
+VALUES (1, 1, 9, 12)
+ON CONFLICT (id) DO NOTHING;
 
 -- 9. AUDIT LOG
 CREATE TABLE audit_log (
