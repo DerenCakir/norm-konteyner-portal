@@ -1516,6 +1516,7 @@ if _is_active("override"):
                                         "empty": detail.empty_count,
                                         "full": detail.full_count,
                                         "kanban": detail.kanban_count,
+                                        "scrap": detail.scrap_count,
                                     }
                                     for detail in sub.details
                                 },
@@ -1558,16 +1559,17 @@ if _is_active("override"):
                 key=f"override_reason_{override_scope}",
             )
 
-            h1, h2, h3, h4 = st.columns([2, 1, 1, 1])
+            h1, h2, h3, h4, h5 = st.columns([2, 1, 1, 1, 1])
             h1.markdown("**Renk**")
             h2.markdown("**Boş**")
             h3.markdown("**Dolu**")
             h4.markdown("**Kanban**")
+            h5.markdown("**Hurda**")
 
             override_counts: dict[int, dict[str, int]] = {}
             for color in override_colors:
                 previous = existing_details.get(color.id)
-                c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
+                c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1, 1])
                 c1.write(color.name)
                 empty_value = c2.number_input(
                     f"{color.name} — Boş",
@@ -1593,10 +1595,19 @@ if _is_active("override"):
                     step=1,
                     label_visibility="collapsed",
                 )
+                scrap_value = c5.number_input(
+                    f"{color.name} — Hurda",
+                    key=f"override_scrap_{override_scope}_{color.id}",
+                    min_value=0,
+                    value=previous.scrap_count if previous else 0,
+                    step=1,
+                    label_visibility="collapsed",
+                )
                 override_counts[color.id] = {
                     "empty": int(empty_value),
                     "full": int(full_value),
                     "kanban": int(kanban_value),
+                    "scrap": int(scrap_value),
                 }
 
             override_clicked = st.form_submit_button(
@@ -1644,6 +1655,7 @@ if _is_active("override"):
                                         "empty": detail.empty_count,
                                         "full": detail.full_count,
                                         "kanban": detail.kanban_count,
+                                        "scrap": detail.scrap_count,
                                     }
                                     for detail in sub.details
                                 },
@@ -1691,6 +1703,7 @@ if _is_active("override"):
                                     "empty_count": values["empty"],
                                     "full_count": values["full"],
                                     "kanban_count": values["kanban"],
+                                    "scrap_count": values["scrap"],
                                 }
                                 for color_id, values in override_counts.items()
                             ],

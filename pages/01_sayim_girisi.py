@@ -327,21 +327,26 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
     )
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # Renk × Boş / Dolu / Kanban tablosu
+    # Renk × Boş / Dolu / Kanban / Hurda tablosu
     st.markdown('<div style="height:0.5rem"></div>', unsafe_allow_html=True)
     st.markdown(
         '<div class="color-table-caption">'
-        'Her renk için <strong>boş</strong> kaç tane var, <strong>dolu</strong> '
-        'kaç tane var, <strong>doluların kaçı</strong> kanban — sırayla yazın.'
+        'Her renk için <strong>boş</strong>, <strong>dolu</strong>, '
+        '<strong>doluların kaçı</strong> kanban ve <strong>hurda</strong> '
+        '— sırayla yazın.'
         '<div class="example-grid">'
         '  <div class="example-row">'
         '    <span class="ex-label">Örnek</span>'
         '    <span class="ex-cell"><b>100</b><small>boş</small></span>'
         '    <span class="ex-cell"><b>500</b><small>dolu (toplam)</small></span>'
         '    <span class="ex-cell"><b>100</b><small>bunlardan kanban</small></span>'
+        '    <span class="ex-cell"><b>5</b><small>hurda</small></span>'
         '  </div>'
         '  <div class="example-note">Kanban (100), doluya (500) <strong>dahildir</strong>; '
         'doludan büyük olamaz.</div>'
+        '  <div class="example-note">Hurda — artık kullanılmayacak konteynerler '
+        '(ayağı kırık, vs). Boş ve dolu sayılarına <strong>dahil değildir</strong>, '
+        'ayrı sayılır.</div>'
         '</div>'
         '</div>',
         unsafe_allow_html=True,
@@ -349,11 +354,12 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
     color_inputs: dict[int, dict[str, int]] = {}
     color_warnings: list[str] = []
 
-    h1, h2, h3, h4 = st.columns([2, 1, 1, 1.4])
+    h1, h2, h3, h4, h5 = st.columns([2, 1, 1, 1.4, 1])
     h1.markdown('<div class="color-table-head">Renk</div>', unsafe_allow_html=True)
     h2.markdown('<div class="color-table-head">Boş</div>', unsafe_allow_html=True)
     h3.markdown('<div class="color-table-head">Dolu (toplam)</div>', unsafe_allow_html=True)
     h4.markdown('<div class="color-table-head">Bunlardan Kanban</div>', unsafe_allow_html=True)
+    h5.markdown('<div class="color-table-head">Hurda</div>', unsafe_allow_html=True)
 
     for color in active_colors:
         prev = existing_details.get(color.id)
@@ -363,8 +369,9 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
         prev_empty = prev.empty_count if prev is not None else None
         prev_full = prev.full_count if prev is not None else None
         prev_kanban = prev.kanban_count if prev is not None else None
+        prev_scrap = prev.scrap_count if prev is not None else None
 
-        c1, c2, c3, c4 = st.columns([2, 1, 1, 1.4])
+        c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1.4, 1])
         c1.markdown(
             f'<div style="padding-top:0.7rem; font-weight:500;">{color.name}</div>',
             unsafe_allow_html=True,
@@ -390,11 +397,19 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
             label_visibility="collapsed", disabled=not can_submit,
             placeholder="0",
         )
+        scrap_v = c5.number_input(
+            f"{color.name} — Hurda",
+            key=f"sayim_scrap_{form_scope}_{color.id}",
+            value=prev_scrap, min_value=0, step=1,
+            label_visibility="collapsed", disabled=not can_submit,
+            placeholder="0",
+        )
         # Boş bırakılan kutuyu 0 olarak değerlendir.
         color_inputs[color.id] = {
             "empty": int(empty_v) if empty_v is not None else 0,
             "full": int(full_v) if full_v is not None else 0,
             "kanban": int(kanban_v) if kanban_v is not None else 0,
+            "scrap": int(scrap_v) if scrap_v is not None else 0,
         }
 
     submit_label = "Güncelle" if existing is not None else "Kaydet"
@@ -446,6 +461,7 @@ if submit_clicked and can_submit:
                     and existing_details[cid].empty_count == vals["empty"]
                     and existing_details[cid].full_count == vals["full"]
                     and existing_details[cid].kanban_count == vals["kanban"]
+                    and existing_details[cid].scrap_count == vals["scrap"]
                 )
                 for cid, vals in color_inputs.items()
             ) and len(existing_details) == len(color_inputs)
@@ -501,6 +517,7 @@ if submit_clicked and can_submit:
                             "empty": detail.empty_count,
                             "full": detail.full_count,
                             "kanban": detail.kanban_count,
+                            "scrap": detail.scrap_count,
                         }
                         for detail in sub.details
                     },
@@ -552,6 +569,7 @@ if submit_clicked and can_submit:
                         "empty_count": vals["empty"],
                         "full_count": vals["full"],
                         "kanban_count": vals["kanban"],
+                        "scrap_count": vals["scrap"],
                     }
                     for cid, vals in color_inputs.items()
                 ],
