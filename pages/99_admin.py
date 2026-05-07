@@ -1152,6 +1152,35 @@ if _is_active("late"):
         if selected_late_department_id == 0:
             selected_late_department_id = None
 
+    # Süre presetleri — tek tık seçim. "Özel"i seçince date+time inputu
+    # aktif olur, kalanlarda otomatik hesaplanır.
+    duration_choice = st.radio(
+        "Pencere ne kadar açık kalsın?",
+        ["1 saat", "4 saat", "Bugün sonu", "Yarın aynı saat", "Hafta sonu", "1 hafta", "Özel"],
+        horizontal=True,
+        index=4,  # default: hafta sonu
+    )
+
+    def _compute_closes_at(choice: str) -> "datetime":
+        n = now_tr()
+        if choice == "1 saat":
+            return n + timedelta(hours=1)
+        if choice == "4 saat":
+            return n + timedelta(hours=4)
+        if choice == "Bugün sonu":
+            return n.replace(hour=23, minute=59, second=0, microsecond=0)
+        if choice == "Yarın aynı saat":
+            return n + timedelta(days=1)
+        if choice == "Hafta sonu":
+            days = (6 - n.weekday()) % 7
+            target = (n + timedelta(days=days)).replace(
+                hour=23, minute=59, second=0, microsecond=0
+            )
+            return target if target > n else (n + timedelta(hours=2))
+        if choice == "1 hafta":
+            return n + timedelta(days=7)
+        return default_closes_at  # "Özel" → date+time inputlarını kullan
+
     with st.form("late_window_form"):
         selected_week = st.selectbox(
             "Hafta",
@@ -1159,14 +1188,23 @@ if _is_active("late"):
             index=0,
             format_func=lambda w: f"{w} — {format_week_human(w)}",
         )
-        col_date, col_time = st.columns(2)
-        closes_date = col_date.date_input("Kapanış tarihi", value=default_closes_at.date())
-        closes_time = col_time.time_input("Kapanış saati", value=default_closes_at.time().replace(microsecond=0))
+        if duration_choice == "Özel":
+            col_date, col_time = st.columns(2)
+            closes_date = col_date.date_input("Kapanış tarihi", value=default_closes_at.date())
+            closes_time = col_time.time_input("Kapanış saati", value=default_closes_at.time().replace(microsecond=0))
+        else:
+            closes_date = None
+            closes_time = None
+            preview = _compute_closes_at(duration_choice)
+            st.caption(f"Pencere şu zamana kadar açık kalacak: **{preview:%d %B %Y, %H:%M}**")
         reason = st.text_area("Açıklama", placeholder="Örn. bölüm sayımı zamanında tamamlanamadı")
         open_clicked = st.form_submit_button("Pencereyi Aç / Güncelle", use_container_width=True)
 
     if open_clicked:
-        closes_at = now_tr(datetime.combine(closes_date, closes_time))
+        if duration_choice == "Özel":
+            closes_at = now_tr(datetime.combine(closes_date, closes_time))
+        else:
+            closes_at = _compute_closes_at(duration_choice)
         current_time = now_tr()
         if closes_at <= current_time:
             st.error(

@@ -22,6 +22,18 @@ from db.models import (
     User,
     UserDepartment,
 )
+from utils.week import now_tr
+
+
+def _to_tr_iso(dt) -> str | None:
+    """Convert a (UTC-aware or naive) datetime to TR-aware ISO string.
+
+    PostgreSQL TIMESTAMPTZ comes back as UTC-aware. Without conversion
+    the ISO string ends up displaying 3 hours behind in the UI.
+    """
+    if dt is None:
+        return None
+    return now_tr(dt).isoformat()
 
 
 CACHE_TTL_SECONDS = 300
@@ -119,7 +131,7 @@ def get_week_submissions_with_users(week_iso: str) -> list[dict[str, Any]]:
             "week_iso": sub.week_iso,
             "status": sub.status,
             "count_date": str(sub.count_date),
-            "submitted_at": sub.submitted_at.isoformat() if sub.submitted_at else None,
+            "submitted_at": _to_tr_iso(sub.submitted_at),
             "actual_tonnage": float(sub.actual_tonnage) if sub.actual_tonnage else None,
         })
     return result
@@ -218,7 +230,7 @@ def get_analysis_rows(week_isos: tuple[str, ...]) -> list[dict[str, Any]]:
             "user_id": row.user_id,
             "status": row.status,
             "actual_tonnage": float(row.actual_tonnage) if row.actual_tonnage is not None else None,
-            "submitted_at": row.submitted_at.isoformat() if row.submitted_at else None,
+            "submitted_at": _to_tr_iso(row.submitted_at),
             "color_id": row.color_id,
             "empty_count": row.empty_count,
             "full_count": row.full_count,
@@ -297,7 +309,7 @@ def get_all_weeks_export_rows() -> list[dict[str, Any]]:
             "Kullanıcı Adı": row.username,
             "Sayım Tarihi": str(row.count_date) if row.count_date else None,
             "Sayım Saati": str(row.count_time) if row.count_time else None,
-            "Gönderim Zamanı": row.submitted_at.isoformat() if row.submitted_at else None,
+            "Gönderim Zamanı": _to_tr_iso(row.submitted_at),
             "Submission ID": row.submission_id,
         }
         for row in rows
@@ -353,7 +365,7 @@ def get_week_export_rows(week_iso: str) -> list[dict[str, Any]]:
             "Kullanıcı Adı": row.username,
             "Sayım Tarihi": str(row.count_date) if row.count_date else None,
             "Sayım Saati": str(row.count_time) if row.count_time else None,
-            "Gönderim Zamanı": row.submitted_at.isoformat() if row.submitted_at else None,
+            "Gönderim Zamanı": _to_tr_iso(row.submitted_at),
             "Submission ID": row.submission_id,
         }
         for row in rows

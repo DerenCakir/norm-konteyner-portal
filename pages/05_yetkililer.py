@@ -77,7 +77,9 @@ selected_week = st.selectbox(
 # ---------------------------------------------------------------------------
 sites_depts = get_active_sites_departments()
 submissions = get_week_submissions_with_users(selected_week)
-dept_users = get_department_users(include_inactive=is_admin)
+# Pasif kullanıcılar yetkili tablosunda görünmesin — admin de olsa
+# silinen kullanıcıları operasyonel listelerde göstermek istemiyoruz.
+dept_users = get_department_users(include_inactive=False)
 
 sub_by_dept = {sub["department_id"]: sub for sub in submissions}
 
@@ -91,12 +93,10 @@ def _status_label(status: str) -> str:
 
 
 def _format_users(users: list[dict]) -> str:
-    active_names = [u["full_name"] for u in users if u["is_active"]]
-    inactive_names = [
-        f"{u['full_name']} (pasif)" for u in users if not u["is_active"]
-    ]
-    names = active_names + inactive_names
-    return ", ".join(names) if names else "Atanmamış"
+    # dept_users zaten sadece aktif kullanıcıları döndürüyor; defansif
+    # ek filtre cache stale ise pasif kullanıcı sızmasın.
+    active_names = [u["full_name"] for u in users if u.get("is_active", True)]
+    return ", ".join(active_names) if active_names else "Atanmamış"
 
 
 def _simple_row(dept: dict) -> dict[str, object]:

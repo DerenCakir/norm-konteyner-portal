@@ -297,7 +297,7 @@ if existing is not None:
     updater_name = existing_user.full_name if existing_user else "-"
     msg = (
         f"Bu hafta için daha önce kayıt var. Son giren: **{updater_name}** "
-        f"({existing.updated_at:%d.%m %H:%M}). "
+        f"({now_tr(existing.updated_at):%d.%m %H:%M}). "
         + ("Kaydederseniz üzerine yazılır." if can_submit else "Düzeltme için yönetici gerekir.")
     )
     (st.warning if can_submit else st.info)(msg)
