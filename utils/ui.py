@@ -220,29 +220,36 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 .stNumberInput [data-testid="stNumberInputStepUp"] {
     display: none !important;
 }
-/* Sade dikdörtgen kutu — temiz çerçeve, ortalanmış rakam, hafif focus
-   ringi. Karmaşık gölge / kalın çerçeve yok. */
-.stNumberInput input,
+/* Sade dikdörtgen kutu — sadece DIŞ wrapper'a çerçeve uygula. İç
+   input element'ine ayrıca border vermiyoruz; iç içe iki çerçeve
+   "çift çizgi" görünümüne sebep oluyordu. */
 .stNumberInput [data-baseweb="input"] > div {
     border: 1px solid var(--border) !important;
     border-radius: var(--radius-sm) !important;
     background: var(--surface) !important;
+    padding: 0.5rem 0.65rem !important;
+}
+.stNumberInput input {
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
     font-size: 1rem !important;
     text-align: center !important;
-    padding: 0.5rem 0.65rem !important;
     color: var(--text) !important;
+    padding: 0 !important;
 }
 .stNumberInput [data-baseweb="input"] {
     width: 100% !important;
 }
-.stNumberInput:focus-within input,
 .stNumberInput:focus-within [data-baseweb="input"] > div {
     border-color: var(--primary) !important;
     box-shadow: 0 0 0 2px var(--primary-soft) !important;
 }
-.stNumberInput input:disabled,
 .stNumberInput [data-baseweb="input"][aria-disabled="true"] > div {
     background: var(--surface-2) !important;
+}
+.stNumberInput input:disabled {
     color: var(--text-faint) !important;
 }
 
@@ -839,34 +846,21 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 }
 
 /* Tonaj giriş alanı — sayım formundaki tek-değer kritik input.
-   İçindeki number_input'u dikkat çeken kutuyla sarıyoruz. */
-.tonnage-field {
-    background: var(--primary-soft);
-    border: 2px solid var(--primary);
-    border-radius: var(--radius);
-    padding: 1rem 1.1rem 0.85rem;
-    margin: 0.6rem 0 1rem;
-    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.10);
+   :has() ile sadece aria-label'ında "tonaj" geçen input'u yakalayıp
+   etrafındaki dış wrapper'a vurgu veriyoruz. Ayrı div sarmaya gerek
+   yok (Streamlit input'u markdown'la sardığında kart boş kalıyordu). */
+[data-testid="stForm"] .stNumberInput:has(input[aria-label*="tonaj"]) [data-baseweb="input"] > div,
+[data-testid="stForm"] .stNumberInput:has(input[aria-label*="Tonaj"]) [data-baseweb="input"] > div {
+    border: 2px solid var(--primary) !important;
+    background: #FAFCFF !important;
+    box-shadow: 0 2px 6px rgba(37, 99, 235, 0.08) !important;
+    padding: 0.85rem 1rem !important;
 }
-/* Container içindeki number_input'a özel stiller — daha büyük rakam,
-   formdaki diğer küçük kutulardan ayrışsın. */
-.tonnage-field + div .stNumberInput input,
-.tonnage-field ~ div .stNumberInput input {
-    /* Streamlit DOM yapısı tonnage-field div'ini tek başına bırakıp
-       input'u sonraki sibling'e koyuyor; bu yüzden bu güvenli olmaz. */
-}
-/* Daha sağlam yöntem: tonnage-field DIV'inden hemen sonraki
-   stNumberInput'u yakalamak yerine, label metnini hedeflemek lazım.
-   Pratik olarak: tonnage container'ının kendi içindeki kutuyu
-   "tonnage" key'i ile dolu form_field olarak özel sınıflıyoruz. */
 [data-testid="stForm"] .stNumberInput:has(input[aria-label*="tonaj"]) input,
 [data-testid="stForm"] .stNumberInput:has(input[aria-label*="Tonaj"]) input {
-    border-width: 2px !important;
     font-size: 1.35rem !important;
     font-weight: 700 !important;
-    padding: 0.85rem 1rem !important;
-    background: var(--surface) !important;
-    border-color: var(--primary) !important;
+    background: transparent !important;
 }
 [data-testid="stForm"] .stNumberInput:has(input[aria-label*="tonaj"]) label,
 [data-testid="stForm"] .stNumberInput:has(input[aria-label*="Tonaj"]) label {

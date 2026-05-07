@@ -316,8 +316,8 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
         "Tarih ve saat sayımı kaydederken otomatik olarak işlenir; manuel "
         "değiştirilemez."
     )
-    # Tonaj alanını öne çıkar — formun en kritik tek-değer girişi.
-    st.markdown('<div class="tonnage-field">', unsafe_allow_html=True)
+    # Tonaj alanı — CSS, :has() selector'u ile bu input'a özel kalın
+    # çerçeve + büyük rakam veriyor; ekstra wrapper div'e gerek yok.
     tonnage = st.number_input(
         "Yarı mamül tonajı (toplam) — ton",
         value=default_tonnage, min_value=0.0, step=0.1, format="%g",
@@ -325,7 +325,6 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
         key=f"sayim_tonnage_{form_scope}",
         placeholder="örn. 1234",
     )
-    st.markdown('</div>', unsafe_allow_html=True)
 
     # Renk × Boş / Dolu / Kanban / Hurda tablosu
     st.markdown('<div style="height:0.5rem"></div>', unsafe_allow_html=True)
