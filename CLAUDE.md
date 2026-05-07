@@ -36,20 +36,26 @@ Bu dosya, projede çalışan AI ajanları için kalıcı bağlamdır. Her oturum
 
 ISO hafta formatı (`2026-W18`). Tüm zaman karşılaştırmaları TR timezone'da.
 
-Sayım sadece **Cuma 09:00–12:00** arası yapılır. Bu pencerede form açıktır,
-kullanıcı veriyi girip "Gönder"e basar. **Taslak özelliği YOKTUR** — pencere
-zaten dar, doğrudan gönder mantığı.
+Sayım, **admin tarafından `submission_schedules` tablosundan ayarlanan**
+gün ve saat aralığında yapılır. Default: **Pazartesi 09:00–12:00**. Form
+sadece bu pencerede açılır; kullanıcı veriyi girip "Kaydet"/"Güncelle"ye
+basar. **Taslak özelliği YOKTUR** — pencere dar, doğrudan kaydet mantığı.
 
-Cuma 12:00 sonrasında form **otomatik kapanır**. Kullanıcı geç kalmışsa,
-admin o hafta için **geç giriş penceresi** açabilir
-(`late_window_overrides` tablosu). Açıldığında `closes_at`'e kadar
-`status='late_submitted'` ile giriş kabul edilir.
+Pencere kapandıktan sonra form **otomatik kapanır**. Kullanıcı geç
+kalmışsa, admin o hafta için **geç giriş penceresi** açabilir
+(`late_window_overrides` tablosu). Bu kavram **kullanıcıdan gizlidir**:
+sadece admin görür ve yönetir; kullanıcı arayüzünde "geç giriş" terimi
+geçmez. Açıldığında `closes_at`'e kadar `status='late_submitted'` ile
+giriş kabul edilir.
 
 Geç pencere de kapandıysa sadece admin müdahale edebilir.
 
+Pazartesi yapılan sayım, içinde olduğu haftanın (yani **bu haftanın**)
+sayımı olarak kaydedilir — `current_week_iso()` ne döndürüyorsa o.
+
 | Durum | Koşul | Status |
 |---|---|---|
-| `open` | Cuma 09:00–12:00 + bu hafta | `submitted` |
+| `open` | Aktif takvim günü/saati + bu hafta | `submitted` |
 | `late` | Admin `late_window_overrides`'ta açtıysa + `closes_at` geçmemişse | `late_submitted` |
 | `locked` | Diğer her durum | sadece admin override |
 
@@ -64,7 +70,10 @@ hâlâ var (geriye uyumluluk için), ama uygulama kodu üretmiyor.
 - `current_week_iso(now=None)` — bu haftanın `YYYY-Www` kodu
 - `week_iso_from_date(d)` — verilen tarihin ISO hafta kodu
 - `week_iso_to_dates(week_iso)` — `(monday, sunday)` tuple
-- `is_submission_open(now=None)` — Cuma 09:00–12:00 mı
+- `is_submission_open(now=None, schedule=None)` — aktif takvim penceresi mi (schedule = `(day, open_h, close_h)` tuple, varsayılan Pazartesi 09–12)
+- `load_schedule(session)` — DB'den aktif takvimi okur; satır yoksa default
+- `format_schedule_human(schedule)` — `"Pazartesi 09:00–12:00"`
+- `weekday_name_tr(iso_weekday)` — `"Pazartesi"` … `"Pazar"`
 - `is_late_window_open(week_iso, session, now=None)` — DB-driven, admin override
 - `get_submission_status(week_iso, session, now=None)` — `"open"|"late"|"locked"`
 - `format_week_human(week_iso)` — `"21-27 Nisan 2026"` gibi

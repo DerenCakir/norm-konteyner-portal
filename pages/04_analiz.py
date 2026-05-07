@@ -28,7 +28,7 @@ from utils.cached_queries import (
     get_analysis_rows,
     get_available_weeks,
 )
-from utils.auth import require_auth, restore_session_from_query
+from utils.auth import require_admin, restore_session_from_query
 from utils.performance import page_timer
 from utils.ui import (
     data_panel,
@@ -44,12 +44,21 @@ from utils.ui import (
 from utils.week import current_week_iso, format_week_human, week_iso_from_date
 
 
+def _fmt_tr(n: float | int) -> str:
+    """Format an integer/float with Turkish thousands separator (.) — no
+    decimal places for whole numbers. ``1234567`` → ``"1.234.567"``."""
+    try:
+        return f"{int(round(float(n))):,}".replace(",", ".")
+    except (TypeError, ValueError):
+        return str(n)
+
+
 inject_css()
 restore_session_from_query()
 timer = page_timer("analiz")
 
 with get_session() as _s:
-    me = require_auth(_s)
+    me = require_admin(_s)
 render_sidebar_user(me.full_name, me.role)
 
 page_header(
@@ -139,28 +148,11 @@ total_containers = total_empty + total_full  # kanban dolu'nun alt kümesi, ayr�
 completion_pct = (submitted_dept_count / total_dept_count * 100) if total_dept_count else 0
 kanban_rate = (total_kanban / total_full * 100) if total_full else 0
 
-if total_actual > total_target and total_target > 0:
-    tonnage_diff = total_actual - total_target
-    tonnage_pct = tonnage_diff / total_target * 100
-    tonaj_value = f"{tonnage_diff:+.1f} t"
-    tonaj_delta = f"%{tonnage_pct:+.1f}"
-    tonaj_kind = "pos"  # kırmızı (fazla üretim sinyali)
-elif total_target > 0:
-    tonnage_diff = total_actual - total_target
-    tonnage_pct = tonnage_diff / total_target * 100
-    tonaj_value = f"{tonnage_diff:+.1f} t"
-    tonaj_delta = f"%{tonnage_pct:+.1f}"
-    tonaj_kind = "neg"
-else:
-    tonaj_value = "Hedef tanımsız"
-    tonaj_delta = ""
-    tonaj_kind = "neutral"
-
 primary_cards = [
-    kpi_card("Toplam Konteyner", f"{total_containers:,}", sub="Boş + dolu"),
-    kpi_card("Dolu Konteyner", f"{total_full:,}", sub="Ürün / yarı mamul taşıyan"),
-    kpi_card("Boş Konteyner", f"{total_empty:,}", sub="Kullanılabilir kasa"),
-    kpi_card("Kanban", f"{total_kanban:,}", sub="Dolu konteynerin alt kümesi"),
+    kpi_card("Toplam Konteyner", _fmt_tr(total_containers), sub="Boş + dolu"),
+    kpi_card("Dolu Konteyner", _fmt_tr(total_full), sub="Ürün / yarı mamul taşıyan"),
+    kpi_card("Boş Konteyner", _fmt_tr(total_empty), sub="Kullanılabilir kasa"),
+    kpi_card("Kanban", _fmt_tr(total_kanban), sub="Dolu konteynerin alt kümesi"),
 ]
 render_kpis(primary_cards)
 
@@ -173,17 +165,6 @@ secondary_cards = [
         delta_kind="neutral" if missing_count else "neg",
     ),
     kpi_card("Kanban Oranı", f"%{kanban_rate:.1f}", sub="Kanban / dolu"),
-    kpi_card(
-        "Tonaj Sapması",
-        tonaj_value,
-        sub=(
-            f"Gerçekleşen {total_actual:.1f} t / hedef {total_target:.1f} t"
-            if total_target > 0 else
-            f"Gerçekleşen {total_actual:.1f} t"
-        ),
-        delta=tonaj_delta,
-        delta_kind=tonaj_kind,
-    ),
 ]
 st.markdown("<div style='height:0.75rem'></div>", unsafe_allow_html=True)
 render_kpis(secondary_cards)

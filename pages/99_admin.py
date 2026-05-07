@@ -15,7 +15,8 @@ from decimal import Decimal
 
 import pandas as pd
 import streamlit as st
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import aliased, selectinload
 
 from db.connection import get_session
@@ -28,20 +29,42 @@ from db.models import (
     LateUserWindowOverride,
     LateWindowOverride,
     ProductionSite,
+    SubmissionSchedule,
     User,
     UserDepartment,
 )
 from config.settings import get_settings
 from utils.auth import hash_password, require_admin, restore_session_from_query
-from utils.cached_queries import clear_cached_queries, get_active_department_count, get_week_export_rows
-from utils.excel_export import build_week_excel
+from utils.cached_queries import (
+    clear_cached_queries,
+    get_active_department_count,
+    get_all_weeks_export_rows,
+    get_week_export_rows,
+)
+from utils.excel_export import build_all_weeks_excel, build_week_excel
 from utils.performance import page_timer
-from utils.ui import inject_css, page_header, render_sidebar_user
-from utils.week import current_week_iso, format_week_human, now_tr, week_iso_from_date
+from utils.ui import (
+    flush_pending_toasts,
+    inject_css,
+    page_header,
+    queue_toast,
+    render_sidebar_user,
+)
+from utils.week import (
+    DEFAULT_SCHEDULE,
+    current_week_iso,
+    format_week_human,
+    format_schedule_human,
+    load_schedule,
+    now_tr,
+    week_iso_from_date,
+    weekday_name_tr,
+)
 
 
 inject_css()
 restore_session_from_query()
+flush_pending_toasts()
 timer = page_timer("admin")
 
 # ---------------------------------------------------------------------------
@@ -79,6 +102,7 @@ _TAB_KEYS = [
     ("perms",        "Yetkilendirme"),
     ("departments",  "Bölümler"),
     ("colors",       "Renkler"),
+    ("schedule",     "Sayım Takvimi"),
     ("late",         "Geç Giriş"),
     ("override",     "Sayım Düzeltme"),
     ("audit",        "İşlem Geçmişi"),
@@ -326,7 +350,19 @@ if _is_active("users"):
                         st.session_state["username"] = updated_username
                         st.session_state["role"] = edit_role
                         st.session_state["full_name"] = clean_full_name
-                    st.toast(f"'{updated_username}' güncellendi.", icon="✅")
+                    # Clear cached widget state for this user's edit form
+                    # so Streamlit picks up the new DB values on the next
+                    # render (otherwise session_state shadows `value=`).
+                    for stale_key in (
+                        f"{user_form_key}_username",
+                        f"{user_form_key}_full_name",
+                        f"{user_form_key}_email",
+                        f"{user_form_key}_role",
+                        f"{user_form_key}_active",
+                        f"{user_form_key}_password",
+                    ):
+                        st.session_state.pop(stale_key, None)
+                    queue_toast(f"'{updated_username}' güncellendi.", icon="✅")
                     st.rerun()
                 elif update_error:
                     st.error(update_error)
@@ -911,13 +947,125 @@ if _is_active("perms"):
                             new_value={"department_ids": sorted(new_selection)},
                         ))
                     clear_cached_queries()
-                    st.toast(
+                    # Clear stale checkbox state so the next render reads
+                    # fresh DB-derived values via `value=`.
+                    for dept, _site in all_depts:
+                        st.session_state.pop(f"perm_{selected_user_id}_{dept.id}", None)
+                    queue_toast(
                         f"Güncellendi: +{len(to_add)} eklendi, -{len(to_remove)} kaldırıldı.",
                         icon="✅",
                     )
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Hata: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# TAB — SAYIM TAKVİMİ (admin-konfigüre edilebilir pencere)
+# ---------------------------------------------------------------------------
+if _is_active("schedule"):
+    st.subheader("Sayım Takvimi")
+    st.caption(
+        "Haftanın hangi günü ve saat aralığında sayım girişinin açık "
+        "olacağını buradan yönetin. Değişiklik anında geçerli olur — "
+        "tüm kullanıcılar yeni günde/saatte veri girebilir."
+    )
+
+    with get_session() as _s:
+        current_schedule = load_schedule(_s)
+    cur_day, cur_open, cur_close = current_schedule
+
+    st.info(f"**Aktif takvim:** {format_schedule_human(current_schedule)}")
+
+    weekday_options = list(range(1, 8))  # 1=Mon..7=Sun
+    hour_options = list(range(24))
+
+    with st.form("schedule_form"):
+        sc_day = st.selectbox(
+            "Gün",
+            weekday_options,
+            index=weekday_options.index(cur_day),
+            format_func=weekday_name_tr,
+            key="schedule_day",
+        )
+        col_open, col_close = st.columns(2)
+        sc_open = col_open.selectbox(
+            "Açılış saati",
+            hour_options,
+            index=cur_open,
+            format_func=lambda h: f"{h:02d}:00",
+            key="schedule_open",
+        )
+        sc_close = col_close.selectbox(
+            "Kapanış saati",
+            list(range(1, 25)),
+            index=max(cur_close - 1, 0),
+            format_func=lambda h: f"{h:02d}:00",
+            key="schedule_close",
+        )
+        save_schedule_clicked = st.form_submit_button(
+            "Takvimi Güncelle", use_container_width=True, type="primary",
+        )
+
+    if save_schedule_clicked:
+        if sc_close <= sc_open:
+            st.error("Kapanış saati açılış saatinden büyük olmalı.")
+        elif (sc_day, sc_open, sc_close) == (cur_day, cur_open, cur_close):
+            queue_toast("Değişiklik yapılmadı — değerler zaten kayıtlı.", icon="ℹ️")
+            st.rerun()
+        else:
+            try:
+                with get_session() as s:
+                    row = s.execute(
+                        select(SubmissionSchedule).where(SubmissionSchedule.id == 1)
+                    ).scalar_one_or_none()
+                    old_value = (
+                        {
+                            "day_of_week": row.day_of_week,
+                            "open_hour": row.open_hour,
+                            "close_hour": row.close_hour,
+                        }
+                        if row is not None
+                        else {
+                            "day_of_week": DEFAULT_SCHEDULE[0],
+                            "open_hour": DEFAULT_SCHEDULE[1],
+                            "close_hour": DEFAULT_SCHEDULE[2],
+                        }
+                    )
+                    if row is None:
+                        row = SubmissionSchedule(
+                            id=1,
+                            day_of_week=int(sc_day),
+                            open_hour=int(sc_open),
+                            close_hour=int(sc_close),
+                            updated_by=admin_id,
+                        )
+                        s.add(row)
+                    else:
+                        row.day_of_week = int(sc_day)
+                        row.open_hour = int(sc_open)
+                        row.close_hour = int(sc_close)
+                        row.updated_by = admin_id
+                    s.add(AuditLog(
+                        user_id=admin_id,
+                        action="schedule_update",
+                        entity_type="submission_schedule",
+                        entity_id=1,
+                        old_value=old_value,
+                        new_value={
+                            "day_of_week": int(sc_day),
+                            "open_hour": int(sc_open),
+                            "close_hour": int(sc_close),
+                        },
+                    ))
+                clear_cached_queries()
+                queue_toast(
+                    f"Takvim güncellendi: {format_schedule_human((int(sc_day), int(sc_open), int(sc_close)))}",
+                    icon="✅",
+                )
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Hata: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -1235,11 +1383,13 @@ if _is_active("override"):
         m3.metric("Tamamlanma", f"%{completion_pct:.0f}")
         m4.metric("Geç Girilen", late_submission_count)
 
+        export_col1, export_col2 = st.columns(2)
+
         if export_rows:
             xlsx_bytes = build_week_excel(
                 export_rows, override_week, format_week_human(override_week)
             )
-            st.download_button(
+            export_col1.download_button(
                 "Seçili Haftayı Excel İndir",
                 data=xlsx_bytes,
                 file_name=f"sayim_export_{override_week}.xlsx",
@@ -1247,7 +1397,23 @@ if _is_active("override"):
                 use_container_width=True,
             )
         else:
-            st.info("Seçili hafta için indirilecek sayım kaydı yok.")
+            export_col1.info("Seçili hafta için indirilecek sayım kaydı yok.")
+
+        # Tüm haftaların verisi tek bir long-format Excel — pivot için.
+        all_weeks_rows = get_all_weeks_export_rows()
+        if all_weeks_rows:
+            today_str = now_tr().strftime("%Y-%m-%d")
+            all_xlsx_bytes = build_all_weeks_excel(all_weeks_rows)
+            export_col2.download_button(
+                f"Tüm Haftaları Excel İndir ({len(all_weeks_rows)} satır)",
+                data=all_xlsx_bytes,
+                file_name=f"sayim_export_tum_haftalar_{today_str}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                help="Tüm haftalardaki sayım kayıtlarını tek bir Excel dosyasında long-format (pivot için uygun) olarak indirir.",
+            )
+        else:
+            export_col2.info("Henüz hiç sayım kaydı yok — tüm haftalar export'u boş olur.")
 
         with st.expander("Seçili Haftanın Tüm Sayımlarını Sil", expanded=False):
             st.warning(
@@ -1373,17 +1539,23 @@ if _is_active("override"):
                 except Exception as exc:
                     st.error(f"Hata: {exc}")
 
-        with st.form("admin_override_form"):
+        # Widget keys must change when (week, department) changes — see
+        # the same fix in pages/01_sayim_girisi.py for full reasoning.
+        override_scope = f"{override_dept_id}_{override_week}"
+
+        with st.form(f"admin_override_form_{override_scope}"):
             override_tonnage = st.number_input(
                 "Gerçekleşen tonaj (ton)",
                 min_value=0.0,
                 value=float(existing_sub.actual_tonnage) if existing_sub and existing_sub.actual_tonnage else 0.0,
                 step=0.1,
                 format="%.2f",
+                key=f"override_tonnage_{override_scope}",
             )
             override_reason = st.text_area(
                 "Düzeltme nedeni",
                 placeholder="Örn. kullanıcı yanlış renk sayısı girdi",
+                key=f"override_reason_{override_scope}",
             )
 
             h1, h2, h3, h4 = st.columns([2, 1, 1, 1])
@@ -1398,21 +1570,24 @@ if _is_active("override"):
                 c1, c2, c3, c4 = st.columns([2, 1, 1, 1])
                 c1.write(color.name)
                 empty_value = c2.number_input(
-                    f"override_empty_{color.id}",
+                    f"{color.name} — Boş",
+                    key=f"override_empty_{override_scope}_{color.id}",
                     min_value=0,
                     value=previous.empty_count if previous else 0,
                     step=1,
                     label_visibility="collapsed",
                 )
                 full_value = c3.number_input(
-                    f"override_full_{color.id}",
+                    f"{color.name} — Dolu",
+                    key=f"override_full_{override_scope}_{color.id}",
                     min_value=0,
                     value=previous.full_count if previous else 0,
                     step=1,
                     label_visibility="collapsed",
                 )
                 kanban_value = c4.number_input(
-                    f"override_kanban_{color.id}",
+                    f"{color.name} — Kanban",
+                    key=f"override_kanban_{override_scope}_{color.id}",
                     min_value=0,
                     value=previous.kanban_count if previous else 0,
                     step=1,
@@ -1447,11 +1622,16 @@ if _is_active("override"):
             else:
                 try:
                     with get_session() as s:
+                        # Eski kaydı SELECT FOR UPDATE ile kilitle —
+                        # admin override ile kullanıcı submit'i çakışırsa
+                        # yarış koşulu olmasın.
                         sub = s.execute(
-                            select(CountSubmission).where(
+                            select(CountSubmission)
+                            .where(
                                 CountSubmission.department_id == override_dept_id,
                                 CountSubmission.week_iso == override_week,
                             )
+                            .with_for_update()
                         ).scalar_one_or_none()
 
                         old_value = None
@@ -1468,42 +1648,59 @@ if _is_active("override"):
                                     for detail in sub.details
                                 },
                             }
-                            for detail in list(sub.details):
-                                s.delete(detail)
-                            s.flush()
-                        else:
-                            now_value = now_tr()
-                            sub = CountSubmission(
+
+                        now_value = now_tr()
+                        new_tonnage_dec = Decimal(str(override_tonnage)).quantize(Decimal("0.01"))
+
+                        # PostgreSQL native UPSERT — atomik, race-free.
+                        sub_stmt = (
+                            pg_insert(CountSubmission.__table__)
+                            .values(
                                 department_id=override_dept_id,
                                 user_id=admin_id,
                                 week_iso=override_week,
                                 count_date=now_value.date(),
                                 count_time=now_value.time().replace(microsecond=0),
+                                actual_tonnage=new_tonnage_dec,
                                 status="submitted",
                                 submitted_at=now_value,
                             )
-                            s.add(sub)
-                            s.flush()
+                            .on_conflict_do_update(
+                                index_elements=["department_id", "week_iso"],
+                                set_={
+                                    "user_id": admin_id,
+                                    "actual_tonnage": new_tonnage_dec,
+                                    "status": "submitted",
+                                    "submitted_at": now_value,
+                                },
+                            )
+                            .returning(CountSubmission.__table__.c.id)
+                        )
+                        sub_id = s.execute(sub_stmt).scalar_one()
 
-                        sub.user_id = admin_id
-                        sub.actual_tonnage = Decimal(str(override_tonnage))
-                        sub.status = "submitted"
-                        sub.submitted_at = now_tr()
-
-                        for color_id, values in override_counts.items():
-                            s.add(CountDetail(
-                                submission_id=sub.id,
-                                color_id=color_id,
-                                empty_count=values["empty"],
-                                full_count=values["full"],
-                                kanban_count=values["kanban"],
-                            ))
+                        # Detayları replace et — atomik transaction içinde.
+                        s.execute(
+                            delete(CountDetail).where(CountDetail.submission_id == sub_id)
+                        )
+                        s.execute(
+                            CountDetail.__table__.insert(),
+                            [
+                                {
+                                    "submission_id": sub_id,
+                                    "color_id": color_id,
+                                    "empty_count": values["empty"],
+                                    "full_count": values["full"],
+                                    "kanban_count": values["kanban"],
+                                }
+                                for color_id, values in override_counts.items()
+                            ],
+                        )
 
                         s.add(AuditLog(
                             user_id=admin_id,
                             action="admin_override",
                             entity_type="count_submission",
-                            entity_id=sub.id,
+                            entity_id=sub_id,
                             old_value=old_value,
                             new_value={
                                 "week_iso": override_week,
@@ -1518,7 +1715,7 @@ if _is_active("override"):
                             },
                         ))
                     clear_cached_queries()
-                    st.toast("Admin override kaydedildi.", icon="✅")
+                    queue_toast("Admin override kaydedildi.", icon="✅")
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Hata: {exc}")
@@ -1550,10 +1747,14 @@ if _is_active("test_reset"):
         n_audit_tx = s.execute(
             select(func.count(AuditLog.id)).where(
                 AuditLog.action.in_([
-                    "count_submit", "count_update", "count_delete",
-                    "count_admin_override", "count_bulk_delete",
+                    # Sayım yaşam döngüsü
+                    "count_submit", "count_update",
+                    "admin_submission_delete", "bulk_submission_delete",
+                    "admin_override",
+                    # Geç giriş yönetimi
                     "late_window_open", "late_window_close",
                     "late_user_window_open", "late_user_window_close",
+                    # Oturum
                     "login_success", "login_failed", "logout",
                 ])
             )

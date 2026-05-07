@@ -206,7 +206,7 @@ class CountSubmission(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     week_iso: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
     count_date: Mapped[date] = mapped_column(Date, nullable=False)
-    count_time: Mapped[Optional[time]] = mapped_column(Time)
+    count_time: Mapped[time] = mapped_column(Time, nullable=False)
     actual_tonnage: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="draft", server_default="draft", index=True
@@ -333,6 +333,46 @@ class LateUserWindowOverride(Base):
         return (
             f"<LateUserWindowOverride week={self.week_iso!r} user_id={self.user_id} "
             f"department_id={self.department_id} closes_at={self.closes_at}>"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 8b. SUBMISSION SCHEDULE (admin-configurable on-time window)
+# ---------------------------------------------------------------------------
+class SubmissionSchedule(Base):
+    """Single-row table that controls when the on-time submission window
+    opens each week. Admin edits day_of_week (1=Mon..7=Sun) and the
+    inclusive open/exclusive close hours. Defaults to Monday 09:00–12:00
+    if no row exists.
+    """
+
+    __tablename__ = "submission_schedules"
+    __table_args__ = (
+        CheckConstraint("day_of_week BETWEEN 1 AND 7", name="valid_day_of_week"),
+        CheckConstraint("open_hour BETWEEN 0 AND 23", name="valid_open_hour"),
+        CheckConstraint("close_hour BETWEEN 1 AND 24", name="valid_close_hour"),
+        CheckConstraint("close_hour > open_hour", name="close_after_open"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    day_of_week: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
+    open_hour: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=9, server_default="9"
+    )
+    close_hour: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=12, server_default="12"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now()
+    )
+    updated_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"))
+
+    def __repr__(self) -> str:
+        return (
+            f"<SubmissionSchedule id={self.id} day={self.day_of_week} "
+            f"open={self.open_hour} close={self.close_hour}>"
         )
 
 

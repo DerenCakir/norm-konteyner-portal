@@ -92,6 +92,25 @@ def _drop_query_token() -> None:
         pass
 
 
+def _reset_browser_url_to_root() -> None:
+    """Push a `history.replaceState` so the URL path drops back to ``/``.
+
+    Streamlit's multipage navigation reads the URL path to select the
+    active page. When the user logs out from a non-default page (e.g.,
+    Sayım Girişi) and then logs back in, Streamlit would otherwise
+    deposit them back on the same page. Resetting the path ensures the
+    next render lands on the default (Ana Sayfa). Best-effort — failure
+    here is non-fatal.
+    """
+    try:
+        st.markdown(
+            "<script>try{history.replaceState({},'','/');}catch(e){}</script>",
+            unsafe_allow_html=True,
+        )
+    except Exception:
+        pass
+
+
 def restore_session_from_query() -> None:
     """Keep auth state and the URL token in sync.
 
@@ -243,22 +262,51 @@ def _set_session_from_user(user: User) -> None:
 
 
 def clear_auth_state() -> None:
-    """Clear local Streamlit auth state and the URL session token."""
+    """Clear local Streamlit auth state, the URL session token, and any
+    Streamlit nav state so the next render starts at the login screen
+    without remembered page or stale widget values.
+    """
     for key in _SESSION_KEYS:
         st.session_state.pop(key, None)
-    _drop_query_token()
+    # Clear all query params (token, any page-state etc.)
+    try:
+        st.query_params.clear()
+    except Exception:
+        _drop_query_token()
+    # Also wipe queued toasts and login_error so re-login is clean.
+    st.session_state.pop("pending_toasts", None)
+    st.session_state.pop("login_error", None)
+    _reset_browser_url_to_root()
+
+
+def _force_post_login_landing() -> None:
+    """Clear URL state so a fresh login lands on the default (Ana Sayfa)
+    page, regardless of which page the user logged out from.
+    """
+    try:
+        # Preserve only the just-set session token; drop any other params.
+        token = st.query_params.get(_QUERY_KEY)
+        st.query_params.clear()
+        if token:
+            st.query_params[_QUERY_KEY] = token
+    except Exception:
+        pass
+    _reset_browser_url_to_root()
 
 
 def login_user(user: User) -> None:
     """Store the user's identity in session_state and drop a signed token in
     the URL so a WebSocket reconnect mid-session can rehydrate without
-    bouncing to login.
+    bouncing to login. Also resets the browser URL to ``/`` so the next
+    render lands on the default page (Ana Sayfa) rather than whichever
+    page the user happened to log out from.
     """
     _set_session_from_user(user)
     try:
         st.query_params[_QUERY_KEY] = _make_token(user.id)
     except Exception:
         pass
+    _force_post_login_landing()
 
 
 def logout_user(session: Session) -> None:
