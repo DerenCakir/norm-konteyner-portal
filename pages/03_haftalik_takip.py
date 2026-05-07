@@ -123,7 +123,14 @@ else:
     for dept in sites_depts:
         if dept["department_id"] in sub_by_dept:
             continue
-        users = dept_users.get(dept["department_id"], [])
+        # Defansif filtre — cache stale ise pasif kullanıcılar Sorumlu
+        # sütununda gözükmesin. get_department_users zaten is_active=True
+        # filtreliyor ama Railway multi-replica senaryosunda cache farklı
+        # bir replica'da eski kalabiliyor.
+        users = [
+            u for u in dept_users.get(dept["department_id"], [])
+            if u.get("is_active", True)
+        ]
         sorumlu = ", ".join(u["full_name"] for u in users) if users else "⚠ Atanmamış"
         out_rows.append({
             "Üretim Yeri": dept["site_name"],
@@ -195,7 +202,7 @@ else:
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Tonaj (t)": st.column_config.NumberColumn("Tonaj (t)", format="%.2f"),
+            "Tonaj (t)": st.column_config.NumberColumn("Tonaj (t)", format="%d"),
         },
     )
     table_note("Hücreler: Boş / Dolu / Kanban / Hurda sırasıyla.")
@@ -245,7 +252,7 @@ with st.expander(f"✓ Sayım Giren Bölümler ({submitted})", expanded=False):
             use_container_width=True,
             hide_index=True,
             column_config={
-                "Tonaj (t)": st.column_config.NumberColumn("Tonaj (t)", format="%.2f"),
+                "Tonaj (t)": st.column_config.NumberColumn("Tonaj (t)", format="%d"),
             },
         )
 

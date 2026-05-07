@@ -97,13 +97,25 @@ a:hover { color: var(--text); }
     transform: translateX(0) !important;
     visibility: visible !important;
 }
+/* Sadece KAPATMA butonunu gizle (sidebar açıkken görünen `<` oku).
+   AÇMA butonu (stSidebarCollapsedControl — sidebar kapalıyken görünen
+   `>` oku) görünür kalsın: eğer Streamlit veya kullanıcı bir şekilde
+   sidebar'ı kapatırsa, geri açabilsin. */
 [data-testid="stSidebarCollapseButton"],
-[data-testid="stSidebarCollapsedControl"],
-[data-testid="collapsedControl"],
 [aria-label="Close sidebar"],
 [aria-label="Collapse sidebar"],
 button[kind="header"][data-testid="baseButton-header"] {
     display: none !important;
+}
+/* Aç butonu görünürlüğü güçlendir — Streamlit bazen z-index ile
+   kaybediyor. */
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="collapsedControl"] {
+    display: flex !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    z-index: 1000 !important;
+    pointer-events: auto !important;
 }
 
 /* Brand card sits at the natural top of the sidebar now that we

@@ -703,7 +703,7 @@ if _is_active("departments"):
                                 },
                             ))
                     clear_cached_queries()
-                    st.toast(f"'{clean_name}' bölümü eklendi.", icon="✅")
+                    queue_toast(f"'{clean_name}' bölümü eklendi.", icon="✅")
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Hata: {exc}")
@@ -783,7 +783,7 @@ if _is_active("departments"):
                                     },
                                 ))
                         clear_cached_queries()
-                        st.toast("Bölüm güncellendi.", icon="✅")
+                        queue_toast("Bölüm güncellendi.", icon="✅")
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Hata: {exc}")
@@ -803,7 +803,7 @@ if _is_active("departments"):
                             new_value={"is_active": False, "delete_mode": "soft"},
                         ))
                     clear_cached_queries()
-                    st.toast("Bölüm pasifleştirildi.", icon="✅")
+                    queue_toast("Bölüm pasifleştirildi.", icon="✅")
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Hata: {exc}")
@@ -1097,7 +1097,19 @@ if _is_active("late"):
     current_week = current_week_iso()
     known_weeks = _merge_week_options(_recent_week_options(12), known_weeks)
 
-    default_closes_at = now_tr() + timedelta(hours=1)
+    # Default kapanış zamanı: bu haftanın sonu (Pazar 23:59).
+    # Admin istediği gibi tarih + saat seçebilir, herhangi bir üst sınır yok.
+    _now = now_tr()
+    _days_until_sunday = (6 - _now.weekday()) % 7  # Pzt=0, Pzr=6
+    default_closes_at = (_now + timedelta(days=_days_until_sunday)).replace(
+        hour=23, minute=59, second=0, microsecond=0
+    )
+    if default_closes_at <= _now:
+        default_closes_at = _now + timedelta(hours=2)
+    st.caption(
+        "Pencere kapanış zamanını dilediğin gibi seç — tarih ve saatte "
+        "bir üst sınır yok. Default 'bu haftanın sonu' (Pazar 23:59)."
+    )
     late_scope = st.radio(
         "İzin kapsamı",
         ["Kullanıcı özel", "Hafta geneli"],
