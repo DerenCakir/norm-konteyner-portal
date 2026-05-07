@@ -244,13 +244,13 @@ def render_dashboard() -> None:
     st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
 
     if effective_status == "open":
-        current_step_label = "Adım 2 / 3 — Sayım Açık"
+        current_step_label = "Sayım Açık"
         current_step_tone = "success"
     elif effective_status == "late":
-        current_step_label = "Adım 2 / 3 — Geç Giriş"
+        current_step_label = "Geç Giriş Açık"
         current_step_tone = "warning"
     else:
-        current_step_label = "Adım 3 / 3 — Pencere Kapalı"
+        current_step_label = "Sayım Kapalı"
         current_step_tone = "info"
 
     st.markdown(
