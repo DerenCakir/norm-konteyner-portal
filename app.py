@@ -7,7 +7,6 @@ formu veya dashboard gösterilir.
 
 from __future__ import annotations
 
-from html import escape
 from pathlib import Path
 
 import streamlit as st
@@ -90,15 +89,6 @@ def render_login_form() -> None:
             f'</div>',
             unsafe_allow_html=True,
         )
-
-        if pending_error:
-            st.markdown(
-                f'<div class="login-error-banner" role="alert">'
-                f'  <span class="login-error-icon">⚠️</span>'
-                f'  <span class="login-error-text">{escape(pending_error)}</span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
 
         with st.form("login_form", clear_on_submit=False):
             username = st.text_input("Kullanıcı adı", placeholder="kullanici_adi")
