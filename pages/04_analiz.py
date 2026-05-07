@@ -154,7 +154,7 @@ primary_cards = [
     kpi_card("Dolu Konteyner", _fmt_tr(total_full), sub="Ürün / yarı mamul taşıyan"),
     kpi_card("Boş Konteyner", _fmt_tr(total_empty), sub="Kullanılabilir kasa"),
     kpi_card("Kanban", _fmt_tr(total_kanban), sub="Dolu konteynerin alt kümesi"),
-    kpi_card("Hurda", _fmt_tr(total_scrap), sub="Artık kullanılmayacak"),
+    kpi_card("Hurdaya Ayrılacak", _fmt_tr(total_scrap), sub="Artık kullanılmayacak"),
 ]
 render_kpis(primary_cards)
 

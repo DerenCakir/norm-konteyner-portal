@@ -169,14 +169,11 @@ else:
     matrix_rows: list[dict[str, object]] = []
     for dept in sites_depts:
         sub = sub_by_dept.get(dept["department_id"])
+        # Durum sütununu kaldırdık — kullanıcılar zaten satırların
+        # dolu/boş olmasından girdi/girmedi olduğunu anlıyor.
         row: dict[str, object] = {
             "Üretim Yeri": dept["site_name"],
             "Bölüm": dept["department_name"],
-            "Durum": (
-                "-" if sub is None else
-                ("Girdi" if sub["status"] == "submitted" else
-                 ("Geç" if sub["status"] == "late_submitted" else "Taslak"))
-            ),
         }
 
         for color in active_colors:
@@ -194,18 +191,31 @@ else:
                     f"/{detail['kanban_count']}/{detail.get('scrap_count', 0)}"
                 )
 
-        row["Tonaj (t)"] = sub["actual_tonnage"] if sub else None
+        row["Tonaj"] = sub["actual_tonnage"] if sub else None
         matrix_rows.append(row)
 
+    # Sütun genişliklerini açıkça small/medium yapalım — tonaj sağda
+    # gizlenip kaydırma çubuğu arkasında kalmasın, hepsi tek bakışta okusun.
+    color_col_config = {
+        f"{color['name']} (B/D/K/H)": st.column_config.TextColumn(
+            f"{color['name']} (B/D/K/H)", width="small"
+        )
+        for color in active_colors
+    }
     st.dataframe(
         pd.DataFrame(matrix_rows),
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Tonaj (t)": st.column_config.NumberColumn("Tonaj (t)", format="%d"),
+            "Üretim Yeri": st.column_config.TextColumn("Üretim Yeri", width="small"),
+            "Bölüm": st.column_config.TextColumn("Bölüm", width="small"),
+            **color_col_config,
+            "Tonaj": st.column_config.NumberColumn("Tonaj", format="%d", width="small"),
         },
     )
-    table_note("Hücreler: Boş / Dolu / Kanban / Hurda sırasıyla.")
+    table_note(
+        "Her renk hücresi: Boş / Dolu / Kanban / Hurdaya Ayrılacak sırasıyla."
+    )
 
 
 st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
