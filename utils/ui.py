@@ -86,42 +86,19 @@ a:hover { color: var(--text); }
     display: none !important;
 }
 
-/* Sidebar'ı sabit aç tut — gizleme butonu yok. Kullanıcılar kapatıp
-   açamasın, hep aynı yerde kalsın. Login ekranı bu kuralları kendi
-   stil bloğuyla daha sonra ezerek sidebar'ı gizliyor (app.py login). */
-[data-testid="stSidebar"],
-[data-testid="stSidebar"][aria-expanded="false"],
-[data-testid="stSidebar"][data-collapsed="true"],
-section[data-testid="stSidebar"] {
-    min-width: 230px !important;
-    max-width: 230px !important;
-    width: 230px !important;
+/* Sidebar her zaman açık. Login ekranı bu kuralları kendi stil
+   bloğuyla daha sonra ezerek (transform translateX) gizliyor. Burada
+   minimum ama yeterli kuralları tutuyoruz; aşırı agresif overrides
+   Streamlit'in iç layout'uyla çatışıyordu. */
+[data-testid="stSidebar"] {
     transform: none !important;
-    margin-left: 0 !important;
-    left: 0 !important;
     visibility: visible !important;
-    opacity: 1 !important;
-    pointer-events: auto !important;
-    transition: none !important;
 }
-/* Streamlit, daraltılmış durumda sidebar'a inline transform/translate
-   uygulayabiliyor; attribute selector ile yakalayıp eziyoruz. */
-[data-testid="stSidebar"][style*="translateX"],
-[data-testid="stSidebar"][style*="translate("],
-[data-testid="stSidebar"][style*="display: none"] {
-    transform: none !important;
-    display: block !important;
-}
+/* Daraltma butonlarını gizle — kullanıcı kapatamasın. */
 [data-testid="stSidebarCollapseButton"],
 [data-testid="stSidebarCollapsedControl"],
-[data-testid="collapsedControl"],
-[data-testid="stSidebar"] button[kind="header"],
-[aria-label="Close sidebar"],
-[aria-label="Collapse sidebar"],
-button[kind="header"][data-testid="baseButton-header"] {
+[data-testid="collapsedControl"] {
     display: none !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
 }
 
 /* Brand card sits at the natural top of the sidebar now that we

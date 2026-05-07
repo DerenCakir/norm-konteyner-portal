@@ -332,8 +332,8 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
     st.markdown(
         '<div class="color-table-caption">'
         'Her renk için <strong>boş</strong>, <strong>dolu</strong>, '
-        '<strong>doluların kaçı</strong> kanban ve <strong>hurda</strong> '
-        '— sırayla yazın.'
+        '<strong>doluların kaçı</strong> kanban ve '
+        '<strong>hurdaya ayrılacak</strong> — sırayla yazın.'
         '<div class="example-grid">'
 
         # --- Birinci örnek: Boş / Dolu / Kanban ---
@@ -342,7 +342,7 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
         '      <span class="ex-label">Örnek</span>'
         '      <span class="ex-cell"><b>100</b><small>boş</small></span>'
         '      <span class="ex-cell"><b>500</b><small>dolu (toplam)</small></span>'
-        '      <span class="ex-cell"><b>100</b><small>bunlardan kanban</small></span>'
+        '      <span class="ex-cell"><b>100</b><small>kanban</small></span>'
         '    </div>'
         '    <div class="example-note example-note--include">'
         '      ✓ Kanban (100), doluya (500) <strong>dahildir</strong>; doludan büyük olamaz.'
@@ -353,10 +353,10 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
         '  <div class="example-block">'
         '    <div class="example-row">'
         '      <span class="ex-label">Örnek</span>'
-        '      <span class="ex-cell"><b>5</b><small>hurda</small></span>'
+        '      <span class="ex-cell"><b>5</b><small>hurdaya ayrılacak</small></span>'
         '    </div>'
         '    <div class="example-note example-note--exclude">'
-        '      ✕ Hurda — artık kullanılmayacak konteynerler (ayağı kırık vs). '
+        '      ✕ Hurdaya ayrılacak — artık kullanılmayacak konteynerler (ayağı kırık vs). '
         'Boş ve dolu sayılarına <strong>dahil değildir</strong>, ayrı sayılır.'
         '    </div>'
         '  </div>'
@@ -368,12 +368,12 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
     color_inputs: dict[int, dict[str, int]] = {}
     color_warnings: list[str] = []
 
-    h1, h2, h3, h4, h5 = st.columns([2, 1, 1, 1.4, 1])
+    h1, h2, h3, h4, h5 = st.columns([2, 1, 1, 1.2, 1.4])
     h1.markdown('<div class="color-table-head">Renk</div>', unsafe_allow_html=True)
     h2.markdown('<div class="color-table-head">Boş</div>', unsafe_allow_html=True)
     h3.markdown('<div class="color-table-head">Dolu (toplam)</div>', unsafe_allow_html=True)
-    h4.markdown('<div class="color-table-head">Bunlardan Kanban</div>', unsafe_allow_html=True)
-    h5.markdown('<div class="color-table-head">Hurda</div>', unsafe_allow_html=True)
+    h4.markdown('<div class="color-table-head">Kanban</div>', unsafe_allow_html=True)
+    h5.markdown('<div class="color-table-head">Hurdaya Ayrılacak</div>', unsafe_allow_html=True)
 
     for color in active_colors:
         prev = existing_details.get(color.id)
@@ -385,7 +385,7 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
         prev_kanban = prev.kanban_count if prev is not None else None
         prev_scrap = prev.scrap_count if prev is not None else None
 
-        c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1.4, 1])
+        c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1.2, 1.4])
         c1.markdown(
             f'<div style="padding-top:0.7rem; font-weight:500;">{color.name}</div>',
             unsafe_allow_html=True,
@@ -412,7 +412,7 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
             placeholder="0",
         )
         scrap_v = c5.number_input(
-            f"{color.name} — Hurda",
+            f"{color.name} — Hurdaya Ayrılacak",
             key=f"sayim_scrap_{form_scope}_{color.id}",
             value=prev_scrap, min_value=0, step=1,
             label_visibility="collapsed", disabled=not can_submit,

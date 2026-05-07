@@ -52,12 +52,13 @@ def render_login_form() -> None:
     st.markdown(
         """
         <style>
+        /* Login ekranında sidebar'ı tamamen gizle — sadece transform +
+           visibility, width override etme. Width = 0 yaptığımızda
+           bazı Streamlit sürümlerinde child elementler de yok oluyor;
+           login'den çıkıldıktan sonra sidebar geri gelmiyordu. */
         [data-testid="stSidebar"] {
             transform: translateX(-100%) !important;
             visibility: hidden !important;
-            min-width: 0 !important;
-            max-width: 0 !important;
-            width: 0 !important;
             pointer-events: none !important;
         }
         [data-testid="stAppViewContainer"] { margin-left: 0 !important; }
