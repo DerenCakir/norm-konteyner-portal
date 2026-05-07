@@ -335,18 +335,32 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
         '<strong>doluların kaçı</strong> kanban ve <strong>hurda</strong> '
         '— sırayla yazın.'
         '<div class="example-grid">'
-        '  <div class="example-row">'
-        '    <span class="ex-label">Örnek</span>'
-        '    <span class="ex-cell"><b>100</b><small>boş</small></span>'
-        '    <span class="ex-cell"><b>500</b><small>dolu (toplam)</small></span>'
-        '    <span class="ex-cell"><b>100</b><small>bunlardan kanban</small></span>'
-        '    <span class="ex-cell"><b>5</b><small>hurda</small></span>'
+
+        # --- Birinci örnek: Boş / Dolu / Kanban ---
+        '  <div class="example-block">'
+        '    <div class="example-row">'
+        '      <span class="ex-label">Örnek</span>'
+        '      <span class="ex-cell"><b>100</b><small>boş</small></span>'
+        '      <span class="ex-cell"><b>500</b><small>dolu (toplam)</small></span>'
+        '      <span class="ex-cell"><b>100</b><small>bunlardan kanban</small></span>'
+        '    </div>'
+        '    <div class="example-note example-note--include">'
+        '      ✓ Kanban (100), doluya (500) <strong>dahildir</strong>; doludan büyük olamaz.'
+        '    </div>'
         '  </div>'
-        '  <div class="example-note">Kanban (100), doluya (500) <strong>dahildir</strong>; '
-        'doludan büyük olamaz.</div>'
-        '  <div class="example-note">Hurda — artık kullanılmayacak konteynerler '
-        '(ayağı kırık, vs). Boş ve dolu sayılarına <strong>dahil değildir</strong>, '
-        'ayrı sayılır.</div>'
+
+        # --- İkinci örnek: Hurda ---
+        '  <div class="example-block">'
+        '    <div class="example-row">'
+        '      <span class="ex-label">Örnek</span>'
+        '      <span class="ex-cell"><b>5</b><small>hurda</small></span>'
+        '    </div>'
+        '    <div class="example-note example-note--exclude">'
+        '      ✕ Hurda — artık kullanılmayacak konteynerler (ayağı kırık vs). '
+        'Boş ve dolu sayılarına <strong>dahil değildir</strong>, ayrı sayılır.'
+        '    </div>'
+        '  </div>'
+
         '</div>'
         '</div>',
         unsafe_allow_html=True,

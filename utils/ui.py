@@ -280,36 +280,59 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
     margin-top: 0.75rem;
     padding-top: 0.75rem;
     border-top: 1px solid var(--border-soft);
+    display: flex; flex-direction: column; gap: 0.85rem;
+}
+/* Her örnek (satır + açıklama) ayrı bir blok */
+.example-block {
+    background: var(--surface);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-sm);
+    padding: 0.7rem 0.85rem;
 }
 .example-row {
-    display: grid;
-    grid-template-columns: 0.55fr 1fr 1fr 1fr;
-    gap: 0.6rem;
+    display: flex; flex-wrap: wrap; gap: 0.5rem;
     align-items: center;
 }
 .example-row .ex-label {
     color: var(--primary); font-size: 0.7rem; font-weight: 700;
     letter-spacing: 0.12em; text-transform: uppercase;
+    margin-right: 0.4rem;
 }
 .example-row .ex-cell {
-    background: var(--surface);
+    background: var(--surface-2);
     border: 1px solid var(--border-soft);
     border-radius: var(--radius-sm);
-    padding: 0.5rem 0.7rem;
+    padding: 0.4rem 0.7rem;
     display: flex; flex-direction: column; gap: 0.1rem;
     text-align: center;
+    min-width: 80px;
 }
 .example-row .ex-cell b {
-    color: var(--text); font-size: 1.1rem; font-weight: 700;
+    color: var(--text); font-size: 1.05rem; font-weight: 700;
 }
 .example-row .ex-cell small {
     color: var(--text-muted); font-size: 0.7rem;
 }
 .example-note {
-    margin-top: 0.6rem;
-    color: var(--text-muted); font-size: 0.8rem;
+    margin-top: 0.55rem;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    padding: 0.5rem 0.7rem;
+    border-radius: var(--radius-sm);
+    border-left: 3px solid;
 }
-.example-note strong { color: var(--success); }
+.example-note--include {
+    background: var(--success-soft);
+    border-left-color: var(--success);
+    color: #065F46;
+}
+.example-note--include strong { color: var(--success); font-weight: 700; }
+.example-note--exclude {
+    background: var(--danger-soft);
+    border-left-color: var(--danger);
+    color: #991B1B;
+}
+.example-note--exclude strong { color: var(--danger); font-weight: 700; }
 .color-table-head {
     color: var(--text-muted) !important;
     font-size: 0.78rem !important;
