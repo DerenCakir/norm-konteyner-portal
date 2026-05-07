@@ -309,6 +309,29 @@ if existing is not None:
     # (selected_dept_id, week_iso).
 form_scope = f"{selected_dept_id}_{week_iso}"
 
+# Tonaj boş bırakılıp kaydedilmek istendiyse, bayrak bir önceki rerun'da
+# kuruldu. Tonaj kutusunu kırmızı pulse ile işaretlemek için inline CSS
+# enjekte ediyoruz; kullanıcı değer girip başarılı submit yapınca bayrak
+# temizleniyor (aşağıda submit handler'da).
+if st.session_state.get(f"tonnage_missing_{form_scope}"):
+    st.markdown(
+        """
+        <style>
+        [data-testid="stForm"] .stNumberInput:has(input[aria-label*="tonaj"]) [data-baseweb="input"] > div,
+        [data-testid="stForm"] .stNumberInput:has(input[aria-label*="Tonaj"]) [data-baseweb="input"] > div {
+            border-color: var(--danger) !important;
+            background: rgba(220, 38, 38, 0.06) !important;
+            animation: tonnage-required-pulse 0.7s ease-in-out 2;
+        }
+        @keyframes tonnage-required-pulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+            50%      { box-shadow: 0 0 0 6px rgba(220, 38, 38, 0.30); }
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
     # Tarih ve saat müdahaleye kapalı — kayıt anında otomatik atanır.
     # Sadece tonaj girişi alıyoruz; üstte küçük bir bilgi satırı.
@@ -435,8 +458,19 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
 # Submit handling
 # ---------------------------------------------------------------------------
 if submit_clicked and can_submit:
-    # Frontend validation: kanban <= full
+    # Frontend validation
     errors: list[str] = []
+
+    # Tonaj zorunlu — boş bırakılırsa kayıt yapılmaz.
+    if tonnage is None:
+        errors.append(
+            "**Yarı mamül tonajı (toplam)** alanı boş — kaydetmeden önce doldurmalısın."
+        )
+        # Bayrak kur — bir sonraki render'da CSS bu kutuyu kırmızı
+        # pulse animasyonu ile işaretlesin.
+        st.session_state[f"tonnage_missing_{form_scope}"] = True
+
+    # Kanban dolu'yu aşmamalı
     for cid, vals in color_inputs.items():
         if vals["kanban"] > vals["full"]:
             color_name = next(c.name for c in active_colors if c.id == cid)
@@ -445,6 +479,8 @@ if submit_clicked and can_submit:
     if errors:
         for e in errors:
             st.error(e)
+        if tonnage is None:
+            st.toast("Tonaj alanı zorunlu — lütfen değer giriniz.", icon="⚠️")
     else:
         # Tarih/saat müdahaleye kapalı; her kayıt/güncellemede şu anki
         # TR zamanı yazılır.
@@ -607,6 +643,8 @@ if submit_clicked and can_submit:
             ))
 
         clear_cached_queries()
+        # Başarılı kayıt — tonaj-eksik bayrağını temizle
+        st.session_state.pop(f"tonnage_missing_{form_scope}", None)
         success_text = "Sayım güncellendi." if audit_action == "count_update" else "Sayım kaydedildi."
         queue_toast(success_text, icon="✅")
         timer.finish()
