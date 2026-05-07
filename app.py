@@ -92,8 +92,21 @@ def render_login_form() -> None:
         )
 
         with st.form("login_form", clear_on_submit=False):
-            username = st.text_input("Kullanıcı adı", placeholder="kullanici_adi")
-            password = st.text_input("Şifre", type="password", placeholder="••••••••")
+            # Explicit key'ler — tarayıcı autofill'i + Streamlit widget
+            # state'i tutarlı olsun. Eskiden ilk submit'te şifre boş ya
+            # da yanlış değerle gönderilebiliyordu (autofill change-event
+            # zamanlaması), ikinci submit'te düzeliyordu.
+            username = st.text_input(
+                "Kullanıcı adı",
+                placeholder="kullanici_adi",
+                key="login_username_input",
+            )
+            password = st.text_input(
+                "Şifre",
+                type="password",
+                placeholder="••••••••",
+                key="login_password_input",
+            )
             submitted = st.form_submit_button(
                 "Giriş Yap", use_container_width=True, type="primary",
             )
