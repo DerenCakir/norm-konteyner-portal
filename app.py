@@ -17,13 +17,28 @@ from utils.auth import (
     authenticate,
     is_authenticated,
     login_user,
+    require_auth,
     restore_session_from_query,
 )
 from utils.performance import page_timer
 from utils.ui import (
     _logo_data_uri,
+    flush_pending_toasts,
     inject_css,
+    page_header,
+    process_diagram,
+    quick_action_card,
     render_sidebar_brand,
+    render_sidebar_user,
+    section_header,
+    status_panel,
+)
+from utils.week import (
+    current_week_iso,
+    format_schedule_human,
+    format_week_human,
+    get_submission_status,
+    load_schedule,
 )
 
 
@@ -45,17 +60,19 @@ inject_css()
 def render_login_form() -> None:
     """Stilize login formu — ortalanmış kart."""
     timer = page_timer("login")
-    # Sidebar'ı login ekranında gizle
-    # Login ekranında sidebar'ı gizle ama collapsedControl'a (geri açma oku)
-    # dokunma — daha önceki sürümde onu da display:none yapınca kullanıcılar
-    # sidebar'ı bir kez kapattıktan sonra geri açamıyordu.
-    # Login ekranında sidebar'ı CSS ile gizlemiyoruz artık — bu rule
-    # bazı durumlarda authenticated sayfalara sızıp sidebar'ı orada da
-    # gizliyordu. Sidebar boş kabuk olarak görünmeye devam edebilir,
-    # bu kabul edilebilir bir kayıp.
+    # Login ekranında sidebar'ı gizle. Eski sürümde width:0 + min/max-width
+    # yapıyorduk, bunlar authenticated sayfalara sızıp orada da sidebar'ı
+    # boş bırakıyordu. Şimdi sadece transform + visibility — daha temiz
+    # ve session-state üzerinde kalıcı etki bırakmıyor.
     st.markdown(
         """
         <style>
+        [data-testid="stSidebar"] {
+            transform: translateX(-100%) !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+        }
+        [data-testid="stAppViewContainer"] { margin-left: 0 !important; }
         .block-container { max-width: 1180px !important; padding-top: 2.5rem !important; }
         </style>
         """,
@@ -67,13 +84,10 @@ def render_login_form() -> None:
         f'<img src="{data_uri}" alt="Norm Fasteners"/>' if data_uri else ""
     )
 
-    # Önceki rerun'dan kalan hata mesajını al — formun üstünde belirgin
-    # bir kutuda göstereceğiz, ayrıca toast ile de bildireceğiz.
     pending_error = st.session_state.pop("login_error", None)
     if pending_error:
         st.toast(f"⚠️ {pending_error}", icon="🚫")
 
-    # Tek kolon — marka bloğu üstte, form altta, hepsi ortada
     _, mid, _ = st.columns([1, 1.2, 1])
     with mid:
         st.markdown(
@@ -86,10 +100,6 @@ def render_login_form() -> None:
         )
 
         with st.form("login_form", clear_on_submit=False):
-            # Explicit key'ler — tarayıcı autofill'i + Streamlit widget
-            # state'i tutarlı olsun. Eskiden ilk submit'te şifre boş ya
-            # da yanlış değerle gönderilebiliyordu (autofill change-event
-            # zamanlaması), ikinci submit'te düzeliyordu.
             username = st.text_input(
                 "Kullanıcı adı",
                 placeholder="kullanici_adi",
@@ -138,20 +148,118 @@ def render_login_form() -> None:
     if error_msg:
         st.session_state["login_error"] = error_msg
     timer.finish()
-    # Başarılı login → rerun → is_authenticated True → st.navigation
-    # default page (Ana Sayfa) çalışır. st.switch_page kullanmıyoruz —
-    # URL path'i değiştirip Streamlit'in _stcore health endpoint'lerini
-    # yanlış subpath'ten istemesine neden oluyordu (404), websocket
-    # kopuyor, sidebar dahil bütün UI bozuluyordu.
     st.rerun()
 
 
 # ---------------------------------------------------------------------------
-# (Eski render_dashboard / render_sidebar callable'ları silindi —
-#  ana sayfa artık pages/00_ana_sayfa.py içinde; st.switch_page ile
-#  güvenli yönlendirme için bu zorunluydu. JS history hack'ı da
-#  utils/auth.py'den temizlendi.)
+# Dashboard (callable Page — file-tabanlı sayfa kullanmıyoruz çünkü
+# st.switch_page'in yan etkileri var, manuel page_link listesi ile
+# kontrol etmek istiyoruz)
 # ---------------------------------------------------------------------------
+def render_dashboard() -> None:
+    timer = page_timer("ana_sayfa")
+    flush_pending_toasts()
+
+    full_name = st.session_state.get("full_name", "")
+    role = st.session_state.get("role", "user")
+    me_id = st.session_state.get("user_id")
+    render_sidebar_user(full_name, role)
+
+    week_iso = current_week_iso()
+    week_human = format_week_human(week_iso)
+
+    try:
+        with get_session() as session:
+            status = get_submission_status(week_iso, session, user_id=me_id)
+            active_schedule = load_schedule(session)
+    except SQLAlchemyError:
+        st.error("Sayım durumu okunamadı (veritabanı hatası).")
+        timer.finish()
+        return
+
+    is_admin_view = role == "admin"
+    schedule_human = format_schedule_human(active_schedule)
+    effective_status = status if is_admin_view else ("open" if status == "late" else status)
+
+    status_label = {"open": "Açık", "late": "Geç giriş", "locked": "Kapalı"}[effective_status]
+    status_kind = {"open": "success", "late": "warning", "locked": "info"}[effective_status]
+
+    page_header(
+        title=f"Hoş geldin, {full_name.split()[0] if full_name else ''}".strip(),
+        subtitle=f"{week_human} · sayım penceresi {status_label.lower()}",
+    )
+
+    if effective_status == "open":
+        status_title = "Sayım girişi şu an açık"
+        status_text = f"{week_human} haftası için yetkili olduğunuz bölümlerde sayım girişi yapabilirsiniz."
+        status_meta = "Aktif pencere"
+    elif effective_status == "late":
+        status_title = "Geç giriş penceresi açık"
+        status_text = f"{week_human} haftası için manuel geç giriş açtınız."
+        status_meta = "Admin onaylı"
+    else:
+        status_title = "Sayım girişi şu an kapalı"
+        status_text = f"Bir sonraki giriş penceresi {schedule_human} arasında açılır."
+        status_meta = "Takip modu"
+
+    st.markdown(
+        status_panel(
+            status=status_kind,
+            title=status_title,
+            body=status_text,
+            meta=status_meta,
+            cta_label="Sayım ekranına git",
+            cta_href="sayim_girisi",
+        ),
+        unsafe_allow_html=True,
+    )
+
+    st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
+
+    if effective_status == "open":
+        current_step_label = "Sayım Açık"
+        current_step_tone = "success"
+    elif effective_status == "late":
+        current_step_label = "Geç Giriş Açık"
+        current_step_tone = "warning"
+    else:
+        current_step_label = "Sayım Kapalı"
+        current_step_tone = "info"
+
+    st.markdown(
+        f'<div class="process-header">'
+        f'  <div class="process-header-titles">'
+        f'    <div class="section-header-title">Sayım Süreci</div>'
+        f'    <div class="section-header-sub">Bu hafta hangi adımdayız</div>'
+        f'  </div>'
+        f'  <div class="process-current-step process-current-step--{current_step_tone}">'
+        f'    📍 {current_step_label}'
+        f'  </div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(process_diagram(effective_status, schedule_human), unsafe_allow_html=True)
+
+    st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
+    section_header("Hızlı Erişim")
+    if is_admin_view:
+        qa1, qa2, qa3 = st.columns(3)
+    else:
+        qa1, qa2 = st.columns(2)
+    qa1.markdown(
+        quick_action_card("", "Sayım Girişi", "Haftalık sayımı girin", "sayim_girisi"),
+        unsafe_allow_html=True,
+    )
+    qa2.markdown(
+        quick_action_card("", "Haftalık Durum", "Giren/eksik bölümler + matris", "haftalik_takip"),
+        unsafe_allow_html=True,
+    )
+    if is_admin_view:
+        qa3.markdown(
+            quick_action_card("", "Analiz", "Trend ve sapma analizi", "analiz"),
+            unsafe_allow_html=True,
+        )
+    timer.finish()
 
 
 # ---------------------------------------------------------------------------
@@ -161,29 +269,29 @@ restore_session_from_query()
 
 if is_authenticated():
     pages = [
-        st.Page("pages/00_ana_sayfa.py", title="Ana Sayfa", default=True),
+        st.Page(render_dashboard, title="Ana Sayfa", default=True),
         st.Page("pages/01_sayim_girisi.py", title="Sayım Girişi"),
         st.Page("pages/03_haftalik_takip.py", title="Haftalık Durum"),
         st.Page("pages/05_yetkililer.py", title="Yetkililer"),
     ]
-    # Analiz ve admin paneli sadece adminlere açıktır.
     if st.session_state.get("role") == "admin":
         pages.insert(3, st.Page("pages/04_analiz.py", title="Analiz"))
         pages.append(st.Page("pages/99_admin.py", title="Admin Paneli"))
 
-    # st.navigation hem routing yapıyor hem sidebar'a kendi nav listesini
-    # otomatik çiziyor. position="sidebar" explicit veriyoruz çünkü bazı
-    # Streamlit sürümlerinde default davranış değişiyor. Brand hemen
-    # üstüne, user card + logout sayfanın kendi içinde.
-    selected_page = st.navigation(pages, position="sidebar")
-    # Sidebar element'inin DOM'da kesinlikle yaratılmasını garantilemek
-    # için bir görünmez işaretleyici. Streamlit, sidebar'a hiçbir öğe
-    # eklenmediğinde bazen elementi gizliyor.
-    st.sidebar.markdown(
-        '<div style="height:0;overflow:hidden;">·</div>',
-        unsafe_allow_html=True,
-    )
+    # st.navigation routing yapsın — otomatik çizdiği sidebar nav'ı CSS ile
+    # gizleyip yerine kendi page_link listesini elle çiziyoruz: brand
+    # üstte, sayfa linkleri ortada, kullanıcı kart + logout altta. Bu
+    # yapı orijinal çalışan tasarım; her render'da sidebar dolu olduğu
+    # için Streamlit "boş sidebar" diye gizlemiyor.
+    selected_page = st.navigation(pages)
+
     render_sidebar_brand(_LOGO_PATH)
+    with st.sidebar:
+        st.markdown('<div class="sidebar-nav-section">', unsafe_allow_html=True)
+        for page in pages:
+            st.page_link(page, label=page.title)
+        st.markdown('</div>', unsafe_allow_html=True)
+
     selected_page.run()
 else:
     render_login_form()
