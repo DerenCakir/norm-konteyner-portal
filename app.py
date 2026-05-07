@@ -49,19 +49,13 @@ def render_login_form() -> None:
     # Login ekranında sidebar'ı gizle ama collapsedControl'a (geri açma oku)
     # dokunma — daha önceki sürümde onu da display:none yapınca kullanıcılar
     # sidebar'ı bir kez kapattıktan sonra geri açamıyordu.
+    # Login ekranında sidebar'ı CSS ile gizlemiyoruz artık — bu rule
+    # bazı durumlarda authenticated sayfalara sızıp sidebar'ı orada da
+    # gizliyordu. Sidebar boş kabuk olarak görünmeye devam edebilir,
+    # bu kabul edilebilir bir kayıp.
     st.markdown(
         """
         <style>
-        /* Login ekranında sidebar'ı tamamen gizle — sadece transform +
-           visibility, width override etme. Width = 0 yaptığımızda
-           bazı Streamlit sürümlerinde child elementler de yok oluyor;
-           login'den çıkıldıktan sonra sidebar geri gelmiyordu. */
-        [data-testid="stSidebar"] {
-            transform: translateX(-100%) !important;
-            visibility: hidden !important;
-            pointer-events: none !important;
-        }
-        [data-testid="stAppViewContainer"] { margin-left: 0 !important; }
         .block-container { max-width: 1180px !important; padding-top: 2.5rem !important; }
         </style>
         """,
