@@ -78,16 +78,22 @@ CREATE TABLE count_submissions (
 );
 
 -- 7. RENK BAZLI SAYIM DETAYI
+-- empty/full/kanban/scrap dört bağımsız sayımdır.
+-- kanban dolu'nun alt kümesidir (kanban_count <= full_count).
+-- scrap (hurda) artık kullanılmayacak konteynerlerdir; boş/dolu'ya
+-- DAHIL EDILMEZ, ayrı sayılır.
 CREATE TABLE count_details (
     id SERIAL PRIMARY KEY,
     submission_id INTEGER NOT NULL REFERENCES count_submissions(id) ON DELETE CASCADE,
     color_id INTEGER NOT NULL REFERENCES colors(id),
-    empty_count INTEGER DEFAULT 0,
-    full_count INTEGER DEFAULT 0,
-    kanban_count INTEGER DEFAULT 0,
+    empty_count INTEGER NOT NULL DEFAULT 0,
+    full_count INTEGER NOT NULL DEFAULT 0,
+    kanban_count INTEGER NOT NULL DEFAULT 0,
+    scrap_count INTEGER NOT NULL DEFAULT 0,
     UNIQUE(submission_id, color_id),
     CONSTRAINT non_negative CHECK (
-        empty_count >= 0 AND full_count >= 0 AND kanban_count >= 0
+        empty_count >= 0 AND full_count >= 0
+        AND kanban_count >= 0 AND scrap_count >= 0
     ),
     CONSTRAINT kanban_le_full CHECK (kanban_count <= full_count)
 );

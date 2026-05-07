@@ -22,8 +22,9 @@ Bu dosya, projede çalışan AI ajanları için kalıcı bağlamdır. Her oturum
 - **Hiyerarşi:** Production Site → Department. Aynı bölüm adı farklı sitelerde tekrarlanabilir; unique key `(production_site_id, name)`.
 - **Production Sites portaldan yönetilmez.** 11 site sabit; admin paneline "üretim yeri ekle" butonu KOYMA. Yeni site gerekirse SQL ile eklenir.
 - **Colors tablosu:** Mavi, Turuncu, Yeşil, Gri, MS Vida, Sarı (seed). UI'da "Renk" olarak gösterilir. "MS Vida" diğer renklerle aynı kategoride — ayrı tip değil. Renkler asla silinmez, `is_active=false` yapılır.
-- **Sayım kaydı:** `count_submissions` (bölüm × hafta) + `count_details` (her aktif renk için boş/dolu/kanban).
+- **Sayım kaydı:** `count_submissions` (bölüm × hafta) + `count_details` (her aktif renk için boş/dolu/kanban/hurda).
 - **Kanban:** Dolu konteynerlerin alt kümesi. DB constraint: `kanban_count <= full_count`. Frontend de önceden uyarmalı.
+- **Hurda (`scrap_count`):** Artık kullanılmayacak konteynerler (ayağı kırık vb). Boş/dolu/kanban'dan **bağımsız** sayılır — boş ya da dolu sayılarına dahil edilmez. Kısıt yok (sadece >= 0).
 - **Tonaj sapması:** `(actual_tonnage - weekly_tonnage_target) / weekly_tonnage_target`. Yüksek sapma = ekstra konteyner sinyali.
 
 ## Roller

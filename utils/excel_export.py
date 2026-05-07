@@ -64,6 +64,7 @@ def build_week_excel(rows: list[dict[str, Any]], week_iso: str, week_human: str)
         "Boş",
         "Dolu",
         "Kanban",
+        "Hurda",
         "Gerçekleşen Tonaj (t)",
         "Durum",
         "Giren Kullanıcı",
@@ -93,6 +94,7 @@ def build_week_excel(rows: list[dict[str, Any]], week_iso: str, week_human: str)
             row.get("Boş"),
             row.get("Dolu"),
             row.get("Kanban"),
+            row.get("Hurda"),
             row.get("Gerçekleşen Tonaj"),
             _STATUS_LABEL.get(row.get("Durum"), row.get("Durum", "")),
             row.get("Giren Kullanıcı", ""),
@@ -107,13 +109,13 @@ def build_week_excel(rows: list[dict[str, Any]], week_iso: str, week_human: str)
             cell.border = _BORDER
             if fill:
                 cell.fill = fill
-            if col_idx in (4, 5, 6):  # numeric counts
+            if col_idx in (4, 5, 6, 7):  # numeric counts (Boş/Dolu/Kanban/Hurda)
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 7:  # tonnage
+            elif col_idx == 8:  # tonnage
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0.00"
-            elif col_idx == 8:  # status
+            elif col_idx == 9:  # status
                 cell.alignment = _CENTER
                 if is_late:
                     cell.font = Font(bold=True, color="92400E")
@@ -132,6 +134,7 @@ def build_week_excel(rows: list[dict[str, Any]], week_iso: str, week_human: str)
         "Toplam Boş",
         "Toplam Dolu",
         "Toplam Kanban",
+        "Toplam Hurda",
         "Tonaj (t)",
         "Durum",
         "Giren Kullanıcı",
@@ -150,7 +153,7 @@ def build_week_excel(rows: list[dict[str, Any]], week_iso: str, week_human: str)
     for row in rows:
         key = (row.get("Üretim Yeri", ""), row.get("Bölüm", ""))
         agg = aggregates.setdefault(key, {
-            "empty": 0, "full": 0, "kanban": 0,
+            "empty": 0, "full": 0, "kanban": 0, "scrap": 0,
             "tonnage": row.get("Gerçekleşen Tonaj"),
             "status": row.get("Durum"),
             "user": row.get("Giren Kullanıcı", ""),
@@ -159,13 +162,14 @@ def build_week_excel(rows: list[dict[str, Any]], week_iso: str, week_human: str)
         agg["empty"] += int(row.get("Boş") or 0)
         agg["full"] += int(row.get("Dolu") or 0)
         agg["kanban"] += int(row.get("Kanban") or 0)
+        agg["scrap"] += int(row.get("Hurda") or 0)
 
     for idx, ((site, dept), agg) in enumerate(sorted(aggregates.items()), start=2):
         is_late = agg["status"] == "late_submitted"
         fill = _LATE_FILL if is_late else (_ZEBRA_FILL if idx % 2 == 0 else None)
         values = [
             site, dept,
-            agg["empty"], agg["full"], agg["kanban"],
+            agg["empty"], agg["full"], agg["kanban"], agg["scrap"],
             agg["tonnage"],
             _STATUS_LABEL.get(agg["status"], agg["status"] or ""),
             agg["user"],
@@ -177,13 +181,13 @@ def build_week_excel(rows: list[dict[str, Any]], week_iso: str, week_human: str)
             cell.border = _BORDER
             if fill:
                 cell.fill = fill
-            if col_idx in (3, 4, 5):
+            if col_idx in (3, 4, 5, 6):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 6:
+            elif col_idx == 7:
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0.00"
-            elif col_idx == 7:
+            elif col_idx == 8:
                 cell.alignment = _CENTER
                 if is_late:
                     cell.font = Font(bold=True, color="92400E")
@@ -284,6 +288,7 @@ def build_all_weeks_excel(rows: list[dict[str, Any]]) -> bytes:
         "Boş",
         "Dolu",
         "Kanban",
+        "Hurda",
         "Gerçekleşen Tonaj (t)",
         "Durum",
         "Giren Kullanıcı",
@@ -319,6 +324,7 @@ def build_all_weeks_excel(rows: list[dict[str, Any]]) -> bytes:
             row.get("Boş"),
             row.get("Dolu"),
             row.get("Kanban"),
+            row.get("Hurda"),
             row.get("Gerçekleşen Tonaj"),
             _STATUS_LABEL.get(row.get("Durum"), row.get("Durum", "")),
             row.get("Giren Kullanıcı", ""),
@@ -333,13 +339,13 @@ def build_all_weeks_excel(rows: list[dict[str, Any]]) -> bytes:
             cell.border = _BORDER
             if fill:
                 cell.fill = fill
-            if col_idx in (8, 9, 10):  # Boş / Dolu / Kanban
+            if col_idx in (8, 9, 10, 11):  # Boş / Dolu / Kanban / Hurda
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 11:  # Tonaj
+            elif col_idx == 12:  # Tonaj
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0.00"
-            elif col_idx == 12:  # Durum
+            elif col_idx == 13:  # Durum
                 cell.alignment = _CENTER
                 if is_late:
                     cell.font = Font(bold=True, color="92400E")

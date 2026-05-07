@@ -173,17 +173,18 @@ else:
         }
 
         for color in active_colors:
-            column_name = f"{color['name']} (B/D/K)"
+            column_name = f"{color['name']} (B/D/K/H)"
             if sub is None:
                 row[column_name] = "-"
                 continue
 
             detail = detail_map.get((sub["submission_id"], color["color_id"]))
             if detail is None:
-                row[column_name] = "0/0/0"
+                row[column_name] = "0/0/0/0"
             else:
                 row[column_name] = (
-                    f"{detail['empty_count']}/{detail['full_count']}/{detail['kanban_count']}"
+                    f"{detail['empty_count']}/{detail['full_count']}"
+                    f"/{detail['kanban_count']}/{detail.get('scrap_count', 0)}"
                 )
 
         row["Tonaj (t)"] = sub["actual_tonnage"] if sub else None
@@ -197,7 +198,7 @@ else:
             "Tonaj (t)": st.column_config.NumberColumn("Tonaj (t)", format="%.2f"),
         },
     )
-    table_note("Hücreler: Boş / Dolu / Kanban sırasıyla.")
+    table_note("Hücreler: Boş / Dolu / Kanban / Hurda sırasıyla.")
 
 
 st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)

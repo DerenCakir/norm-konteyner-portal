@@ -131,6 +131,7 @@ df_week = df[df["week_iso"] == selected_week].copy()
 total_empty = int(df_week["empty_count"].sum())
 total_full = int(df_week["full_count"].sum())
 total_kanban = int(df_week["kanban_count"].sum())
+total_scrap = int(df_week["scrap_count"].sum()) if "scrap_count" in df_week.columns else 0
 
 # Tonaj — submission başına bir kez (renkler aynı tonajı tekrar etmesin)
 sub_unique = df_week.drop_duplicates(subset=["submission_id"])
@@ -149,10 +150,11 @@ completion_pct = (submitted_dept_count / total_dept_count * 100) if total_dept_c
 kanban_rate = (total_kanban / total_full * 100) if total_full else 0
 
 primary_cards = [
-    kpi_card("Toplam Konteyner", _fmt_tr(total_containers), sub="Boş + dolu"),
+    kpi_card("Toplam Konteyner", _fmt_tr(total_containers), sub="Boş + dolu (hurda dahil değil)"),
     kpi_card("Dolu Konteyner", _fmt_tr(total_full), sub="Ürün / yarı mamul taşıyan"),
     kpi_card("Boş Konteyner", _fmt_tr(total_empty), sub="Kullanılabilir kasa"),
     kpi_card("Kanban", _fmt_tr(total_kanban), sub="Dolu konteynerin alt kümesi"),
+    kpi_card("Hurda", _fmt_tr(total_scrap), sub="Artık kullanılmayacak"),
 ]
 render_kpis(primary_cards)
 
