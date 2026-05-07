@@ -178,10 +178,17 @@ if is_authenticated():
         pages.append(st.Page("pages/99_admin.py", title="Admin Paneli"))
 
     # st.navigation hem routing yapıyor hem sidebar'a kendi nav listesini
-    # otomatik çiziyor. Manuel page_link listesini kaldırdık; üstüne
-    # sadece brand ekliyoruz, sayfanın kendisi user card + logout'u
-    # ekliyor. Streamlit ile çatışma yok.
-    selected_page = st.navigation(pages)
+    # otomatik çiziyor. position="sidebar" explicit veriyoruz çünkü bazı
+    # Streamlit sürümlerinde default davranış değişiyor. Brand hemen
+    # üstüne, user card + logout sayfanın kendi içinde.
+    selected_page = st.navigation(pages, position="sidebar")
+    # Sidebar element'inin DOM'da kesinlikle yaratılmasını garantilemek
+    # için bir görünmez işaretleyici. Streamlit, sidebar'a hiçbir öğe
+    # eklenmediğinde bazen elementi gizliyor.
+    st.sidebar.markdown(
+        '<div style="height:0;overflow:hidden;">·</div>',
+        unsafe_allow_html=True,
+    )
     render_sidebar_brand(_LOGO_PATH)
     selected_page.run()
 else:
