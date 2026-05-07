@@ -238,9 +238,33 @@ def render_dashboard() -> None:
         unsafe_allow_html=True,
     )
 
-    # Süreç diyagramı — herkesin nerede olduğunu net görsün
+    # Süreç diyagramı — herkesin nerede olduğunu net görsün.
+    # Sağ üstte kullanıcı hangi adımda olduğunu tek bakışta görsün diye
+    # küçük bir "şu an" badge'i çıkarıyoruz.
     st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
-    section_header("Sayım Süreci", "Bu hafta hangi adımdayız")
+
+    if effective_status == "open":
+        current_step_label = "Adım 2 / 3 — Sayım Açık"
+        current_step_tone = "success"
+    elif effective_status == "late":
+        current_step_label = "Adım 2 / 3 — Geç Giriş"
+        current_step_tone = "warning"
+    else:
+        current_step_label = "Adım 3 / 3 — Pencere Kapalı"
+        current_step_tone = "info"
+
+    st.markdown(
+        f'<div class="process-header">'
+        f'  <div class="process-header-titles">'
+        f'    <div class="section-header-title">Sayım Süreci</div>'
+        f'    <div class="section-header-sub">Bu hafta hangi adımdayız</div>'
+        f'  </div>'
+        f'  <div class="process-current-step process-current-step--{current_step_tone}">'
+        f'    📍 {current_step_label}'
+        f'  </div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
     st.markdown(process_diagram(effective_status, schedule_human), unsafe_allow_html=True)
 
     # Hızlı erişim — kısayollar (Analiz sadece adminlere)

@@ -226,42 +226,30 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 .stNumberInput [data-testid="stNumberInputStepUp"] {
     display: none !important;
 }
+/* Sade dikdörtgen kutu — temiz çerçeve, ortalanmış rakam, hafif focus
+   ringi. Karmaşık gölge / kalın çerçeve yok. */
 .stNumberInput input,
 .stNumberInput [data-baseweb="input"] > div {
-    border-width: 2px !important;
-    border-color: var(--text-faint) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-sm) !important;
     background: var(--surface) !important;
-    font-size: 1.05rem !important;
-    font-weight: 600 !important;
+    font-size: 1rem !important;
     text-align: center !important;
-    padding: 0.65rem 0.8rem !important;
+    padding: 0.5rem 0.65rem !important;
     color: var(--text) !important;
-    box-shadow: inset 0 1px 0 rgba(15, 23, 42, 0.04);
 }
 .stNumberInput [data-baseweb="input"] {
     width: 100% !important;
 }
-.stNumberInput:hover input,
-.stNumberInput:hover [data-baseweb="input"] > div {
-    border-color: var(--text-muted) !important;
-}
 .stNumberInput:focus-within input,
 .stNumberInput:focus-within [data-baseweb="input"] > div {
     border-color: var(--primary) !important;
-    border-width: 2.5px !important;
-    box-shadow:
-        0 0 0 4px var(--primary-soft),
-        inset 0 1px 0 rgba(37, 99, 235, 0.06) !important;
-    background: #FAFCFF !important;
+    box-shadow: 0 0 0 2px var(--primary-soft) !important;
 }
-/* Disabled (form kapalı) kutular — daha soluk göster ki açık olanlarla
-   karışmasın. */
 .stNumberInput input:disabled,
 .stNumberInput [data-baseweb="input"][aria-disabled="true"] > div {
     background: var(--surface-2) !important;
-    border-color: var(--border-soft) !important;
     color: var(--text-faint) !important;
-    box-shadow: none !important;
 }
 
 /* Sayım sayfasındaki bilgi satırı (tonaj hedefi + yetkili notu) */
@@ -831,6 +819,39 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 }
 .login-form-foot .badge::before {
     content: "🔒"; filter: grayscale(0.5);
+}
+
+/* Süreç diyagramı başlığı + sağ üstte "şu an X. adım" badge'i */
+.process-header {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    gap: 1rem; margin-bottom: 0.85rem;
+}
+.process-header-titles { display: flex; flex-direction: column; gap: 0.15rem; }
+.process-header-titles .section-header-title {
+    font-size: 1.05rem; font-weight: 700; color: var(--text);
+}
+.process-header-titles .section-header-sub {
+    font-size: 0.82rem; color: var(--text-muted);
+}
+.process-current-step {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.5rem 0.85rem;
+    border-radius: 999px;
+    font-size: 0.85rem; font-weight: 600;
+    border: 1.5px solid;
+    white-space: nowrap;
+}
+.process-current-step--success {
+    background: var(--success-soft); color: var(--success);
+    border-color: var(--success);
+}
+.process-current-step--warning {
+    background: var(--warning-soft); color: var(--warning);
+    border-color: var(--warning);
+}
+.process-current-step--info {
+    background: var(--surface-2); color: var(--text-muted);
+    border-color: var(--border);
 }
 
 /* Login error banner — formun üstünde, dikkat çekici kırmızı kart */
