@@ -147,19 +147,12 @@ def render_login_form() -> None:
 
     if error_msg:
         st.session_state["login_error"] = error_msg
-        timer.finish()
-        st.rerun()
-    else:
-        # Başarılı login → URL'i kök '/' olarak sıfırla ki kullanıcı
-        # logout'tan önceki sayfada değil, Ana Sayfa'da açılsın.
-        # st.switch_page("app.py") entrypoint script'ine dönüp st.navigation
-        # default page'ini (Ana Sayfa) seçtirir; URL "/" kalır,
-        # _stcore subpath sorununu yaşamayız.
-        timer.finish()
-        try:
-            st.switch_page("app.py")
-        except Exception:
-            st.rerun()
+    timer.finish()
+    # st.rerun() — st.switch_page("app.py") entrypoint için desteklenmiyor
+    # ve login'i tamamen kırıyordu. Trade-off: logout sonrası tekrar
+    # girişte URL'in işaret ettiği sayfa açılabilir; ama login en azından
+    # çalışıyor. "Always home" özelliği için ayrı bir yaklaşım gerekiyor.
+    st.rerun()
 
 
 # ---------------------------------------------------------------------------
