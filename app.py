@@ -130,14 +130,13 @@ def render_login_form() -> None:
 
     if error_msg:
         st.session_state["login_error"] = error_msg
-        timer.finish()
-        st.rerun()
-    else:
-        # Başarılı login — kullanıcıyı her zaman ana sayfaya götür.
-        # st.switch_page Streamlit'in kendi nav state'ini doğru tutuyor;
-        # eski JS history.replaceState hack'ine gerek yok.
-        timer.finish()
-        st.switch_page("pages/00_ana_sayfa.py")
+    timer.finish()
+    # Başarılı login → rerun → is_authenticated True → st.navigation
+    # default page (Ana Sayfa) çalışır. st.switch_page kullanmıyoruz —
+    # URL path'i değiştirip Streamlit'in _stcore health endpoint'lerini
+    # yanlış subpath'ten istemesine neden oluyordu (404), websocket
+    # kopuyor, sidebar dahil bütün UI bozuluyordu.
+    st.rerun()
 
 
 # ---------------------------------------------------------------------------
