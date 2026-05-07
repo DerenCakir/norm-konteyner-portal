@@ -79,12 +79,11 @@ a:hover { color: var(--text); }
 }
 [data-testid="stSidebar"] * { color: var(--text); }
 
-/* Streamlit'in otomatik (pages/ klasör tabanlı) sidebar nav'ını gizle.
-   st.navigation hâlâ routing yapıyor, biz aşağıda elle st.page_link
-   listesi çiziyoruz; aynı linklerin iki kez görünmesini engelliyoruz. */
-[data-testid="stSidebar"] [data-testid="stSidebarNav"] {
-    display: none !important;
-}
+/* Streamlit'in otomatik nav'ını gizlemiyoruz artık — st.navigation'un
+   kendi çizdiği nav listesini olduğu gibi kullanıyoruz. Eskiden manuel
+   page_link listesi çiziyorduk + Streamlit'in kendi nav'ını gizliyorduk;
+   o yaklaşım iki tarafın aynı sidebar üzerinde rekabet etmesine sebep
+   olduğundan render bozulmaları yaşandı. */
 
 /* Sidebar default'u Streamlit'e bırakıyoruz — width / transform /
    state tamamen onun. Sadece login ekranı sidebar'ı kasten gizliyor
