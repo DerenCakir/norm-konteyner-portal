@@ -7,6 +7,7 @@ formu veya dashboard gösterilir.
 
 from __future__ import annotations
 
+from html import escape
 from pathlib import Path
 
 import streamlit as st
