@@ -23,6 +23,7 @@ from utils.performance import page_timer
 from utils.ui import (
     _logo_data_uri,
     inject_css,
+    inject_sidebar_keepalive,
     render_sidebar_brand,
 )
 
@@ -154,6 +155,7 @@ def render_login_form() -> None:
 restore_session_from_query()
 
 if is_authenticated():
+    inject_sidebar_keepalive()
     pages = [
         st.Page("pages/00_ana_sayfa.py", title="Ana Sayfa", default=True),
         st.Page("pages/01_sayim_girisi.py", title="Sayım Girişi"),
