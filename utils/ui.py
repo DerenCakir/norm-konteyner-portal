@@ -821,7 +821,51 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
     content: "🔒"; filter: grayscale(0.5);
 }
 
+/* Tonaj giriş alanı — sayım formundaki tek-değer kritik input.
+   İçindeki number_input'u dikkat çeken kutuyla sarıyoruz. */
+.tonnage-field {
+    background: var(--primary-soft);
+    border: 2px solid var(--primary);
+    border-radius: var(--radius);
+    padding: 1rem 1.1rem 0.85rem;
+    margin: 0.6rem 0 1rem;
+    box-shadow: 0 4px 14px rgba(37, 99, 235, 0.10);
+}
+/* Container içindeki number_input'a özel stiller — daha büyük rakam,
+   formdaki diğer küçük kutulardan ayrışsın. */
+.tonnage-field + div .stNumberInput input,
+.tonnage-field ~ div .stNumberInput input {
+    /* Streamlit DOM yapısı tonnage-field div'ini tek başına bırakıp
+       input'u sonraki sibling'e koyuyor; bu yüzden bu güvenli olmaz. */
+}
+/* Daha sağlam yöntem: tonnage-field DIV'inden hemen sonraki
+   stNumberInput'u yakalamak yerine, label metnini hedeflemek lazım.
+   Pratik olarak: tonnage container'ının kendi içindeki kutuyu
+   "tonnage" key'i ile dolu form_field olarak özel sınıflıyoruz. */
+[data-testid="stForm"] .stNumberInput:has(input[aria-label*="tonaj"]) input,
+[data-testid="stForm"] .stNumberInput:has(input[aria-label*="Tonaj"]) input {
+    border-width: 2px !important;
+    font-size: 1.35rem !important;
+    font-weight: 700 !important;
+    padding: 0.85rem 1rem !important;
+    background: var(--surface) !important;
+    border-color: var(--primary) !important;
+}
+[data-testid="stForm"] .stNumberInput:has(input[aria-label*="tonaj"]) label,
+[data-testid="stForm"] .stNumberInput:has(input[aria-label*="Tonaj"]) label {
+    font-size: 0.95rem !important;
+    font-weight: 600 !important;
+    color: var(--primary) !important;
+    margin-bottom: 0.4rem !important;
+}
+
 /* Süreç diyagramı başlığı + sağ üstte "şu an X. adım" badge'i */
+/* İki durumlu (Sayım Açık / Sayım Kapalı) diyagramda ortalı + yan yana */
+.process-diagram--two-state {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
 .process-header {
     display: flex; align-items: flex-end; justify-content: space-between;
     gap: 1rem; margin-bottom: 0.85rem;
@@ -1113,48 +1157,32 @@ def timeline_panel(steps: list[tuple[str, str, str]]) -> str:
 
 
 def process_diagram(status: str, schedule_human: str = "") -> str:
-    """3-step horizontal process diagram for the weekly submission cycle.
+    """2-state horizontal indicator for the weekly submission cycle.
 
-    The current step is highlighted prominently; past steps are muted;
-    future steps are outlined. Designed to be read at a glance, including
-    by users who are not desk workers.
+    Just the two states that matter to the user: **Sayım Açık** vs
+    **Sayım Kapalı**. The current state is highlighted; the other is
+    muted. Late state (admin-opened) is treated as "Açık" here — the
+    user-facing diagram does not surface the late distinction.
 
     ``status`` values: ``"open"``, ``"late"``, ``"locked"``.
     ``schedule_human`` (optional) such as ``"Pazartesi 09:00–12:00"``;
     falls back to a generic label when empty.
     """
-    # Hangi adımdayız? open/late = adım 2 (sayım açık), locked = adım 3 (kapalı)
-    # Step 1 = "henüz açılmadı" durumu, locked olduğunda da step 3 (kapandı)
-    # gösterilebilir. Pencere öncesi mi sonrası mı bilemediğimiz için
-    # locked'ı her zaman "kapalı" olarak step 3'e koyuyoruz.
-    cls_step1 = "process-step is-done"
-    cls_step2 = "process-step is-future"
-    cls_step3 = "process-step is-future"
-    badge_step1 = "Tamamlandı"
-    badge_step2 = ""
-    badge_step3 = "Sonraki"
+    if status in ("open", "late"):
+        cls_open = "process-step is-active"
+        cls_closed = "process-step is-future"
+        badge_open = "Şu an"
+        badge_closed = ""
+    else:  # locked
+        cls_open = "process-step is-future"
+        cls_closed = "process-step is-active"
+        badge_open = ""
+        badge_closed = "Şu an"
 
-    if status == "open":
-        cls_step1 = "process-step is-done"
-        cls_step2 = "process-step is-active"
-        cls_step3 = "process-step is-future"
-        badge_step1 = "Tamamlandı"
-        badge_step2 = "Şu an"
-        badge_step3 = "Sonraki"
-    elif status == "late":
-        cls_step1 = "process-step is-done"
-        cls_step2 = "process-step is-active is-late"
-        cls_step3 = "process-step is-future"
-        badge_step1 = "Tamamlandı"
-        badge_step2 = "Geç giriş"
-        badge_step3 = "Sonraki"
-    elif status == "locked":
-        cls_step1 = "process-step is-done"
-        cls_step2 = "process-step is-done"
-        cls_step3 = "process-step is-active"
-        badge_step1 = "Tamamlandı"
-        badge_step2 = "Tamamlandı"
-        badge_step3 = "Şu an"
+    when_open = schedule_human if schedule_human else "Pencere içinde"
+    when_closed = (
+        f"{schedule_human} dışında" if schedule_human else "Pencere dışında"
+    )
 
     def _step(cls: str, icon: str, label: str, when: str, badge: str) -> str:
         badge_html = f'<span class="badge">{_esc(badge)}</span>' if badge else ""
@@ -1167,22 +1195,10 @@ def process_diagram(status: str, schedule_human: str = "") -> str:
             f'</div>'
         )
 
-    if schedule_human:
-        when_open = schedule_human
-        when_before = f"{schedule_human} öncesi"
-        when_after = f"{schedule_human} sonrası"
-    else:
-        when_open = "Pencere"
-        when_before = "Pencere öncesi"
-        when_after = "Pencere sonrası"
-
     return (
-        f'<div class="process-diagram">'
-        f'  {_step(cls_step1, "1", "Bekleme", when_before, badge_step1)}'
-        f'  <div class="process-arrow">→</div>'
-        f'  {_step(cls_step2, "2", "Sayım Açık", when_open, badge_step2)}'
-        f'  <div class="process-arrow">→</div>'
-        f'  {_step(cls_step3, "3", "Kapalı", when_after, badge_step3)}'
+        f'<div class="process-diagram process-diagram--two-state">'
+        f'  {_step(cls_open, "✓", "Sayım Açık", when_open, badge_open)}'
+        f'  {_step(cls_closed, "✕", "Sayım Kapalı", when_closed, badge_closed)}'
         f'</div>'
     )
 
