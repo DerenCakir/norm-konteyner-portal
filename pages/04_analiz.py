@@ -178,6 +178,7 @@ site_signal = (
         Dolu=("full_count", "sum"),
         Boş=("empty_count", "sum"),
         Kanban=("kanban_count", "sum"),
+        **({"Hurdaya_Ayrılacak": ("scrap_count", "sum")} if "scrap_count" in df_week.columns else {}),
         Giren_Bölüm=("department_id", "nunique"),
     )
     .reset_index()
@@ -188,16 +189,18 @@ if not site_signal.empty:
         site_signal["Kanban"] / site_signal["Dolu"].replace(0, pd.NA) * 100
     ).fillna(0)
     data_panel("Öne Çıkan Üretim Yerleri", "Dolu konteyner ve toplam yoğunluğa göre ilk üretim yerleri.")
+    cols = ["Üretim Yeri", "Toplam", "Dolu", "Boş", "Kanban"]
+    if "Hurdaya_Ayrılacak" in site_signal.columns:
+        cols.append("Hurdaya Ayrılacak")
+    cols.extend(["Kanban Oranı (%)", "Giren Bölüm"])
     st.dataframe(
         site_signal.sort_values(["Dolu", "Toplam"], ascending=False)
         .head(8)
         .rename(columns={
             "site": "Üretim Yeri",
             "Giren_Bölüm": "Giren Bölüm",
-        })[[
-            "Üretim Yeri", "Toplam", "Dolu", "Boş", "Kanban",
-            "Kanban Oranı (%)", "Giren Bölüm",
-        ]]
+            "Hurdaya_Ayrılacak": "Hurdaya Ayrılacak",
+        })[cols]
         .style.format({"Kanban Oranı (%)": "{:.1f}"}),
         use_container_width=True,
         hide_index=True,
@@ -325,13 +328,17 @@ st.divider()
 st.subheader("Bölüm Özeti (seçili hafta)")
 data_panel("Bölüm Özeti", "Seçili haftada bölüm bazında konteyner, kanban ve tonaj sapması.")
 
+_dept_agg_kwargs = dict(
+    boş=("empty_count", "sum"),
+    dolu=("full_count", "sum"),
+    kanban=("kanban_count", "sum"),
+)
+if "scrap_count" in df_week.columns:
+    _dept_agg_kwargs["hurda"] = ("scrap_count", "sum")
+
 dept_summary = (
     df_week.groupby(["site", "department", "department_id", "weekly_tonnage_target"], dropna=False)
-    .agg(
-        boş=("empty_count", "sum"),
-        dolu=("full_count", "sum"),
-        kanban=("kanban_count", "sum"),
-    )
+    .agg(**_dept_agg_kwargs)
     .reset_index()
 )
 # Tonajı submission'dan al
@@ -343,42 +350,40 @@ dept_summary["target"] = dept_summary["weekly_tonnage_target"]
 dept_summary["sapma"] = dept_summary["actual"] - dept_summary["target"]
 
 
-def highlight_excess(row):
-    color = ""
-    sapma_val = row.get("Sapma (t)")
-    if pd.notna(sapma_val) and sapma_val > 0:
-        color = "background-color: #5a1f1f"  # koyu kırmızı
-    return [color] * len(row)
+# Bölüm Özeti — kırmızı satır boyaması KALDIRILDI (talep). Sapma sütunu
+# zaten +/- işaretiyle aşımı gösteriyor; satır boyama görsel kirlilik.
 
+_summary_cols = ["site", "department", "boş", "dolu", "kanban"]
+if "hurda" in dept_summary.columns:
+    _summary_cols.append("hurda")
+_summary_cols.extend(["actual", "target", "sapma"])
 
 st.dataframe(
-    dept_summary[["site", "department", "boş", "dolu", "kanban", "actual", "target", "sapma"]]
+    dept_summary[_summary_cols]
     .rename(columns={
         "site": "Üretim Yeri", "department": "Bölüm",
         "boş": "Boş", "dolu": "Dolu", "kanban": "Kanban",
+        "hurda": "Hurdaya Ayrılacak",
         "actual": "Gerçekleşen (t)", "target": "Hedef (t)", "sapma": "Sapma (t)",
     })
-    .style.apply(highlight_excess, axis=1)
-    .format({"Gerçekleşen (t)": "{:.2f}", "Hedef (t)": "{:.2f}", "Sapma (t)": "{:+.2f}"}, na_rep="—"),
+    .style.format({"Gerçekleşen (t)": "{:.2f}", "Hedef (t)": "{:.2f}", "Sapma (t)": "{:+.2f}"}, na_rep="—"),
     use_container_width=True,
     hide_index=True,
 )
-st.caption("Kırmızı satır: gerçekleşen tonaj hedefi aşmış (fazla üretim).")
 
 
 # ---------------------------------------------------------------------------
 # Section 3 — Üretim yeri kırılımı
 # ---------------------------------------------------------------------------
 with st.expander("Üretim Yeri Kırılımı", expanded=False):
-    site_summary = (
-        df_week.groupby("site")
-        .agg(
-            boş=("empty_count", "sum"),
-            dolu=("full_count", "sum"),
-            kanban=("kanban_count", "sum"),
-        )
-        .reset_index()
+    _site_agg = dict(
+        boş=("empty_count", "sum"),
+        dolu=("full_count", "sum"),
+        kanban=("kanban_count", "sum"),
     )
+    if "scrap_count" in df_week.columns:
+        _site_agg["hurda"] = ("scrap_count", "sum")
+    site_summary = df_week.groupby("site").agg(**_site_agg).reset_index()
     site_tonnage = (
         sub_unique.groupby("site")
         .agg(
@@ -392,14 +397,19 @@ with st.expander("Üretim Yeri Kırılımı", expanded=False):
     site_summary["bölüm_sayısı"] = (
         df_week.groupby("site")["department_id"].nunique().values
     )
+    rename_map = {
+        "site": "Üretim Yeri",
+        "boş": "Boş", "dolu": "Dolu", "kanban": "Kanban",
+        "hurda": "Hurdaya Ayrılacak",
+        "actual": "Gerçekleşen (t)", "target": "Hedef (t)", "sapma": "Sapma (t)",
+        "bölüm_sayısı": "Giren Bölüm",
+    }
     st.dataframe(
-        site_summary.rename(columns={
-            "site": "Üretim Yeri",
-            "boş": "Boş", "dolu": "Dolu", "kanban": "Kanban",
-            "actual": "Gerçekleşen (t)", "target": "Hedef (t)", "sapma": "Sapma (t)",
-            "bölüm_sayısı": "Giren Bölüm",
-        }).style.apply(highlight_excess, axis=1)
-        .format({"Gerçekleşen (t)": "{:.2f}", "Hedef (t)": "{:.2f}", "Sapma (t)": "{:+.2f}"}, na_rep="—"),
+        site_summary.rename(columns=rename_map)
+        .style.format(
+            {"Gerçekleşen (t)": "{:.2f}", "Hedef (t)": "{:.2f}", "Sapma (t)": "{:+.2f}"},
+            na_rep="—",
+        ),
         use_container_width=True, hide_index=True,
     )
 
@@ -408,21 +418,22 @@ with st.expander("Üretim Yeri Kırılımı", expanded=False):
 # Section 4 — Renk kırılımı
 # ---------------------------------------------------------------------------
 with st.expander("Renk Kırılımı", expanded=False):
-    color_summary = (
-        df_week.groupby("color")
-        .agg(
-            boş=("empty_count", "sum"),
-            dolu=("full_count", "sum"),
-            kanban=("kanban_count", "sum"),
-        )
-        .reset_index()
+    _color_agg = dict(
+        boş=("empty_count", "sum"),
+        dolu=("full_count", "sum"),
+        kanban=("kanban_count", "sum"),
     )
+    if "scrap_count" in df_week.columns:
+        _color_agg["hurda"] = ("scrap_count", "sum")
+    color_summary = df_week.groupby("color").agg(**_color_agg).reset_index()
     color_summary["toplam"] = color_summary["boş"] + color_summary["dolu"]
+    rename_map = {
+        "color": "Renk", "boş": "Boş", "dolu": "Dolu",
+        "kanban": "Kanban", "hurda": "Hurdaya Ayrılacak",
+        "toplam": "Toplam (B+D)",
+    }
     st.dataframe(
-        color_summary.rename(columns={
-            "color": "Renk", "boş": "Boş", "dolu": "Dolu",
-            "kanban": "Kanban", "toplam": "Toplam (B+D)",
-        }),
+        color_summary.rename(columns=rename_map),
         use_container_width=True, hide_index=True,
     )
 
@@ -526,15 +537,16 @@ with st.expander("Üretim Yeri Trend Sapma", expanded=False):
     site_df = df[df["site"] == selected_site]
     site_sub_unique = site_df.drop_duplicates(subset=["submission_id"])
 
-    site_weekly = (
-        site_df.groupby("week_iso")
-        .agg(
-            Boş=("empty_count", "sum"),
-            Dolu=("full_count", "sum"),
-            Kanban=("kanban_count", "sum"),
-        )
-        .reset_index()
+    _sw_agg = dict(
+        Boş=("empty_count", "sum"),
+        Dolu=("full_count", "sum"),
+        Kanban=("kanban_count", "sum"),
     )
+    if "scrap_count" in site_df.columns:
+        _sw_agg["Hurdaya_Ayrılacak"] = ("scrap_count", "sum")
+    site_weekly = site_df.groupby("week_iso").agg(**_sw_agg).reset_index()
+    if "Hurdaya_Ayrılacak" in site_weekly.columns:
+        site_weekly = site_weekly.rename(columns={"Hurdaya_Ayrılacak": "Hurdaya Ayrılacak"})
     site_tonnage_weekly = (
         site_sub_unique.groupby("week_iso")
         .agg(
@@ -570,16 +582,22 @@ with st.expander("Üretim Yeri Trend Sapma", expanded=False):
         on="week_iso",
         how="left",
     ).sort_values("week_iso")
-    for col in ["Boş", "Dolu", "Kanban", "Toplam", "Gerçekleşen", "Hedef", "Fazla"]:
+    diff_cols = ["Boş", "Dolu", "Kanban", "Toplam", "Gerçekleşen", "Hedef", "Fazla"]
+    if "Hurdaya Ayrılacak" in site_change.columns:
+        diff_cols.append("Hurdaya Ayrılacak")
+    for col in diff_cols:
         site_change[f"{col} Δ"] = site_change[col].diff()
 
     st.markdown("**Haftalık değişim tablosu**")
+    table_cols = [
+        "week_iso", "Boş", "Boş Δ", "Dolu", "Dolu Δ",
+        "Kanban", "Kanban Δ", "Kanban Oranı (%)",
+    ]
+    if "Hurdaya Ayrılacak" in site_change.columns:
+        table_cols.extend(["Hurdaya Ayrılacak", "Hurdaya Ayrılacak Δ"])
+    table_cols.extend(["Toplam", "Toplam Δ", "Gerçekleşen", "Hedef", "Fazla"])
     st.dataframe(
-        site_change[[
-            "week_iso", "Boş", "Boş Δ", "Dolu", "Dolu Δ",
-            "Kanban", "Kanban Δ", "Kanban Oranı (%)",
-            "Toplam", "Toplam Δ", "Gerçekleşen", "Hedef", "Fazla",
-        ]].rename(columns={
+        site_change[table_cols].rename(columns={
             "week_iso": "Hafta",
             "Boş Δ": "Boş Değişim",
             "Dolu Δ": "Dolu Değişim",
