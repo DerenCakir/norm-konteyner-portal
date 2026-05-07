@@ -86,42 +86,19 @@ a:hover { color: var(--text); }
     display: none !important;
 }
 
-/* Sidebar'ı sabit aç tut — gizleme butonu yok. Kullanıcılar kapatıp
-   açamasın, hep aynı yerde kalsın. Login ekranı bu kuralları kendi
-   stil bloğuyla daha sonra ezerek sidebar'ı gizliyor (app.py login). */
-[data-testid="stSidebar"],
-[data-testid="stSidebar"][aria-expanded="false"],
-[data-testid="stSidebar"][data-collapsed="true"],
-section[data-testid="stSidebar"] {
-    min-width: 230px !important;
-    max-width: 230px !important;
-    width: 230px !important;
+/* Sidebar her zaman açık. Login ekranı bu kuralları kendi stil
+   bloğuyla daha sonra ezerek (transform translateX) gizliyor. Burada
+   minimum ama yeterli kuralları tutuyoruz; aşırı agresif overrides
+   Streamlit'in iç layout'uyla çatışıyordu. */
+[data-testid="stSidebar"] {
     transform: none !important;
-    margin-left: 0 !important;
-    left: 0 !important;
     visibility: visible !important;
-    opacity: 1 !important;
-    pointer-events: auto !important;
-    transition: none !important;
 }
-/* Streamlit, daraltılmış durumda sidebar'a inline transform/translate
-   uygulayabiliyor; attribute selector ile yakalayıp eziyoruz. */
-[data-testid="stSidebar"][style*="translateX"],
-[data-testid="stSidebar"][style*="translate("],
-[data-testid="stSidebar"][style*="display: none"] {
-    transform: none !important;
-    display: block !important;
-}
+/* Daraltma butonlarını gizle — kullanıcı kapatamasın. */
 [data-testid="stSidebarCollapseButton"],
 [data-testid="stSidebarCollapsedControl"],
-[data-testid="collapsedControl"],
-[data-testid="stSidebar"] button[kind="header"],
-[aria-label="Close sidebar"],
-[aria-label="Collapse sidebar"],
-button[kind="header"][data-testid="baseButton-header"] {
+[data-testid="collapsedControl"] {
     display: none !important;
-    visibility: hidden !important;
-    pointer-events: none !important;
 }
 
 /* Brand card sits at the natural top of the sidebar now that we
@@ -995,6 +972,94 @@ def _with_session_token(href: str) -> str:
 def inject_css() -> None:
     """Inject the global design system stylesheet."""
     st.markdown(_GLOBAL_CSS, unsafe_allow_html=True)
+
+
+# Sidebar bekçisi — JS, DOM'u izleyip Streamlit'in kapatma girişimini
+# anında geri alıyor. Login ekranında çağrılmamalı (login sidebar'ı
+# bilerek gizliyor). Yetkilendirilmiş sayfalarda inject_sidebar_keepalive()
+# çağrısı yapılmalı.
+_SIDEBAR_KEEPALIVE_JS = """
+<script>
+(function() {
+  // Streamlit'in localStorage'da tuttuğu collapsed state'i temizle —
+  // bir sonraki sayfa yüklemesinde "expanded" olarak başlasın.
+  try {
+    Object.keys(localStorage).forEach(function(key) {
+      if (key.indexOf('sidebar') !== -1 || key.indexOf('Sidebar') !== -1) {
+        const val = localStorage.getItem(key);
+        if (val && (val.indexOf('collapsed') !== -1 || val === 'true')) {
+          localStorage.removeItem(key);
+        }
+      }
+    });
+  } catch (e) {}
+
+  function forceOpen(sidebar) {
+    if (!sidebar) return;
+    // Streamlit'in collapsed state'ini geri al — birkaç farklı şekilde
+    // işaretliyor olabilir, hepsini hedefliyoruz.
+    if (sidebar.getAttribute('aria-expanded') === 'false') {
+      sidebar.setAttribute('aria-expanded', 'true');
+    }
+    if (sidebar.hasAttribute('data-collapsed')) {
+      sidebar.removeAttribute('data-collapsed');
+    }
+    // Inline transform / display none varsa temizle.
+    if (sidebar.style.transform && sidebar.style.transform.indexOf('translateX(-') !== -1) {
+      sidebar.style.transform = '';
+    }
+    if (sidebar.style.display === 'none') {
+      sidebar.style.display = '';
+    }
+    if (sidebar.style.visibility === 'hidden') {
+      sidebar.style.visibility = '';
+    }
+    // "Sidebar kapalı" göstergeci varsa görünür kıl ve programatik
+    // olarak tıkla — Streamlit'in kendi yöntemiyle yeniden açılır.
+    var expandBtn = document.querySelector('[data-testid="stSidebarCollapsedControl"]');
+    if (expandBtn && expandBtn.offsetParent !== null) {
+      expandBtn.click();
+    }
+  }
+
+  function ensureOpen() {
+    var sidebar = document.querySelector('[data-testid="stSidebar"]');
+    forceOpen(sidebar);
+  }
+
+  // İlk yüklemede + sonrasındaki her DOM değişiminde kontrol et.
+  ensureOpen();
+  setTimeout(ensureOpen, 100);
+  setTimeout(ensureOpen, 500);
+
+  var observer = new MutationObserver(function(mutations) {
+    for (var i = 0; i < mutations.length; i++) {
+      var m = mutations[i];
+      if (m.type === 'attributes' && m.target &&
+          m.target.matches && m.target.matches('[data-testid="stSidebar"]')) {
+        forceOpen(m.target);
+      }
+    }
+    ensureOpen();
+  });
+  observer.observe(document.body, {
+    attributes: true,
+    childList: true,
+    subtree: true,
+    attributeFilter: ['aria-expanded', 'data-collapsed', 'class', 'style'],
+  });
+})();
+</script>
+"""
+
+
+def inject_sidebar_keepalive() -> None:
+    """Authenticated sayfalarda çağır — sidebar Streamlit tarafından
+    kapatıldığında JavaScript MutationObserver onu anında geri açar.
+
+    Login ekranında ÇAĞIRMA. Login sidebar'ı kasten gizliyor.
+    """
+    st.markdown(_SIDEBAR_KEEPALIVE_JS, unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------------------
