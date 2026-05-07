@@ -53,5 +53,6 @@ seed_test_data.py
 *.zip
 portal-ui-*.zip
 
-# Toplu şifre script'inin girdisi — düz parolalar repoya gitmemeli
+# Toplu şifre script'inin girdileri — düz parolalar/kullanıcı listesi repoya gitmemeli
 scripts/passwords.csv
+scripts/usernames.txt
