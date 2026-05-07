@@ -60,16 +60,16 @@ inject_css()
 def render_login_form() -> None:
     """Stilize login formu — ortalanmış kart."""
     timer = page_timer("login")
-    # Login ekranında sidebar'ı gizle. Eski sürümde width:0 + min/max-width
-    # yapıyorduk, bunlar authenticated sayfalara sızıp orada da sidebar'ı
-    # boş bırakıyordu. Şimdi sadece transform + visibility — daha temiz
-    # ve session-state üzerinde kalıcı etki bırakmıyor.
+    # Sidebar'ı login ekranında gizle (orijinal 845d40b kuralı).
     st.markdown(
         """
         <style>
         [data-testid="stSidebar"] {
             transform: translateX(-100%) !important;
             visibility: hidden !important;
+            min-width: 0 !important;
+            max-width: 0 !important;
+            width: 0 !important;
             pointer-events: none !important;
         }
         [data-testid="stAppViewContainer"] { margin-left: 0 !important; }

@@ -86,11 +86,25 @@ a:hover { color: var(--text); }
     display: none !important;
 }
 
-/* Sidebar default'u Streamlit'e bırakıyoruz — width / transform /
-   state tamamen onun. Sadece login ekranı sidebar'ı kasten gizliyor
-   (kendi stil bloğunda). Kapatma/açma butonları da görünür kalıyor:
-   eğer Streamlit veya kullanıcı kapatırsa, geri açma oku elinde olsun
-   (en azından fonksiyon kaybı olmaz). */
+/* Sidebar'ı sabit aç tut — gizleme butonu yok. Kullanıcılar kapatıp
+   açamasın, hep aynı yerde kalsın. (845d40b'de çalışan orijinal
+   yapı; sonradan "savaş" diye sadeleştirmeye kalkıştım, sidebar tamamen
+   kayboldu — geri getirdim.) */
+[data-testid="stSidebar"] {
+    min-width: 230px !important;
+    max-width: 230px !important;
+    width: 230px !important;
+    transform: translateX(0) !important;
+    visibility: visible !important;
+}
+[data-testid="stSidebarCollapseButton"],
+[data-testid="stSidebarCollapsedControl"],
+[data-testid="collapsedControl"],
+[aria-label="Close sidebar"],
+[aria-label="Collapse sidebar"],
+button[kind="header"][data-testid="baseButton-header"] {
+    display: none !important;
+}
 
 /* Brand card sits at the natural top of the sidebar now that we
    render the page-link nav ourselves below it (no Streamlit auto-nav
