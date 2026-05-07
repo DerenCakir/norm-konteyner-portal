@@ -22,22 +22,8 @@ from utils.auth import (
 from utils.performance import page_timer
 from utils.ui import (
     _logo_data_uri,
-    flush_pending_toasts,
     inject_css,
-    page_header,
-    process_diagram,
-    quick_action_card,
     render_sidebar_brand,
-    render_sidebar_user,
-    section_header,
-    status_panel,
-)
-from utils.week import (
-    current_week_iso,
-    format_schedule_human,
-    format_week_human,
-    get_submission_status,
-    load_schedule,
 )
 
 
@@ -152,142 +138,22 @@ def render_login_form() -> None:
 
     if error_msg:
         st.session_state["login_error"] = error_msg
-
-    timer.finish()
-    st.rerun()
-
-
-# ---------------------------------------------------------------------------
-# Sidebar
-# ---------------------------------------------------------------------------
-def render_sidebar() -> None:
-    full_name = st.session_state.get("full_name", "")
-    role = st.session_state.get("role", "user")
-
-    render_sidebar_user(full_name, role)
-
-
-# ---------------------------------------------------------------------------
-# Dashboard
-# ---------------------------------------------------------------------------
-def render_dashboard() -> None:
-    timer = page_timer("ana_sayfa")
-    flush_pending_toasts()
-    render_sidebar()
-
-    full_name = st.session_state.get("full_name", "")
-    role = st.session_state.get("role", "user")
-
-    week_iso = current_week_iso()
-    week_human = format_week_human(week_iso)
-
-    try:
-        with get_session() as session:
-            # user_id'i geç — kullanıcıya özel late window varsa
-            # ana sayfa da "açık" göstersin; ana sayfa ile sayım girişi
-            # sayfası tutarlı olsun.
-            me_id_for_status = st.session_state.get("user_id")
-            status = get_submission_status(
-                week_iso, session, user_id=me_id_for_status,
-            )
-            active_schedule = load_schedule(session)
-    except SQLAlchemyError:
-        st.error("Sayım durumu okunamadı (veritabanı hatası).")
         timer.finish()
-        return
-
-    is_admin_view = role == "admin"
-    schedule_human = format_schedule_human(active_schedule)
-
-    # Kullanıcılara "geç giriş" terimi gösterilmez — admin'in açtığı late
-    # pencere de onlara "açık" olarak görünür.
-    effective_status = status if is_admin_view else ("open" if status == "late" else status)
-
-    status_label = {"open": "Açık", "late": "Geç giriş", "locked": "Kapalı"}[effective_status]
-    status_kind = {"open": "success", "late": "warning", "locked": "info"}[effective_status]
-
-    page_header(
-        title=f"Hoş geldin, {full_name.split()[0] if full_name else ''}".strip(),
-        subtitle=f"{week_human} · sayım penceresi {status_label.lower()}",
-    )
-
-    # Tek büyük durum paneli — bu sayfanın asıl amacı bunu söylemek
-    if effective_status == "open":
-        status_title = "Sayım girişi şu an açık"
-        status_text = f"{week_human} haftası için yetkili olduğunuz bölümlerde sayım girişi yapabilirsiniz."
-        status_meta = "Aktif pencere"
-    elif effective_status == "late":
-        # Sadece admin'e gösterilir
-        status_title = "Geç giriş penceresi açık"
-        status_text = f"{week_human} haftası için manuel geç giriş açtınız."
-        status_meta = "Admin onaylı"
+        st.rerun()
     else:
-        status_title = "Sayım girişi şu an kapalı"
-        status_text = f"Bir sonraki giriş penceresi {schedule_human} arasında açılır."
-        status_meta = "Takip modu"
+        # Başarılı login — kullanıcıyı her zaman ana sayfaya götür.
+        # st.switch_page Streamlit'in kendi nav state'ini doğru tutuyor;
+        # eski JS history.replaceState hack'ine gerek yok.
+        timer.finish()
+        st.switch_page("pages/00_ana_sayfa.py")
 
-    st.markdown(
-        status_panel(
-            status=status_kind,
-            title=status_title,
-            body=status_text,
-            meta=status_meta,
-            cta_label="Sayım ekranına git",
-            cta_href="sayim_girisi",
-        ),
-        unsafe_allow_html=True,
-    )
 
-    # Süreç diyagramı — herkesin nerede olduğunu net görsün.
-    # Sağ üstte kullanıcı hangi adımda olduğunu tek bakışta görsün diye
-    # küçük bir "şu an" badge'i çıkarıyoruz.
-    st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
-
-    if effective_status == "open":
-        current_step_label = "Sayım Açık"
-        current_step_tone = "success"
-    elif effective_status == "late":
-        current_step_label = "Geç Giriş Açık"
-        current_step_tone = "warning"
-    else:
-        current_step_label = "Sayım Kapalı"
-        current_step_tone = "info"
-
-    st.markdown(
-        f'<div class="process-header">'
-        f'  <div class="process-header-titles">'
-        f'    <div class="section-header-title">Sayım Süreci</div>'
-        f'    <div class="section-header-sub">Bu hafta hangi adımdayız</div>'
-        f'  </div>'
-        f'  <div class="process-current-step process-current-step--{current_step_tone}">'
-        f'    📍 {current_step_label}'
-        f'  </div>'
-        f'</div>',
-        unsafe_allow_html=True,
-    )
-    st.markdown(process_diagram(effective_status, schedule_human), unsafe_allow_html=True)
-
-    # Hızlı erişim — kısayollar (Analiz sadece adminlere)
-    st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
-    section_header("Hızlı Erişim")
-    if is_admin_view:
-        qa1, qa2, qa3 = st.columns(3)
-    else:
-        qa1, qa2 = st.columns(2)
-    qa1.markdown(
-        quick_action_card("", "Sayım Girişi", "Haftalık sayımı girin", "sayim_girisi"),
-        unsafe_allow_html=True,
-    )
-    qa2.markdown(
-        quick_action_card("", "Haftalık Durum", "Giren/eksik bölümler + matris", "haftalik_takip"),
-        unsafe_allow_html=True,
-    )
-    if is_admin_view:
-        qa3.markdown(
-            quick_action_card("", "Analiz", "Trend ve sapma analizi", "analiz"),
-            unsafe_allow_html=True,
-        )
-    timer.finish()
+# ---------------------------------------------------------------------------
+# (Eski render_dashboard / render_sidebar callable'ları silindi —
+#  ana sayfa artık pages/00_ana_sayfa.py içinde; st.switch_page ile
+#  güvenli yönlendirme için bu zorunluydu. JS history hack'ı da
+#  utils/auth.py'den temizlendi.)
+# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------
@@ -297,7 +163,7 @@ restore_session_from_query()
 
 if is_authenticated():
     pages = [
-        st.Page(render_dashboard, title="Ana Sayfa", default=True),
+        st.Page("pages/00_ana_sayfa.py", title="Ana Sayfa", default=True),
         st.Page("pages/01_sayim_girisi.py", title="Sayım Girişi"),
         st.Page("pages/03_haftalik_takip.py", title="Haftalık Durum"),
         st.Page("pages/05_yetkililer.py", title="Yetkililer"),
