@@ -267,7 +267,89 @@ def build_week_excel(rows: list[dict[str, Any]], week_iso: str, week_human: str)
     _autofit(summary, summary_headers)
 
     # -----------------------------------------------------------------
-    # Sheet 3: Bilgi (cover info)
+    # Sheet 3: Üretim Yeri Özeti — site-level aggregate
+    # -----------------------------------------------------------------
+    site_sheet = wb.create_sheet("Üretim Yeri Özeti")
+    site_headers = [
+        "Üretim Yeri",
+        "Giren Bölüm",
+        "Toplam Boş",
+        "Toplam Dolu",
+        "Toplam Kanban",
+        "Toplam Hurdaya Ayrılacak",
+        "Toplam Tonaj (t)",
+    ]
+    site_sheet.append(site_headers)
+    for cell in site_sheet[1]:
+        cell.fill = _HEADER_FILL
+        cell.font = _HEADER_FONT
+        cell.alignment = _CENTER
+        cell.border = _BORDER
+    site_sheet.row_dimensions[1].height = 26
+    site_sheet.freeze_panes = "A2"
+
+    # Bölüm-bazlı aggregate'ten üretim yerine topla.
+    site_aggs: dict[str, dict[str, Any]] = {}
+    for (site, _dept), agg in aggregates.items():
+        s = site_aggs.setdefault(site, {
+            "depts": 0, "empty": 0, "full": 0, "kanban": 0, "scrap": 0, "tonnage": 0.0,
+        })
+        s["depts"] += 1
+        s["empty"] += int(agg["empty"] or 0)
+        s["full"] += int(agg["full"] or 0)
+        s["kanban"] += int(agg["kanban"] or 0)
+        s["scrap"] += int(agg["scrap"] or 0)
+        if agg["tonnage"] is not None:
+            try:
+                s["tonnage"] += float(agg["tonnage"])
+            except (TypeError, ValueError):
+                pass
+
+    site_total = {"depts": 0, "empty": 0, "full": 0, "kanban": 0, "scrap": 0, "tonnage": 0.0}
+    for idx, (site, s) in enumerate(sorted(site_aggs.items()), start=2):
+        zebra = _ZEBRA_FILL if idx % 2 == 0 else None
+        values = [
+            site, s["depts"], s["empty"], s["full"], s["kanban"], s["scrap"], s["tonnage"],
+        ]
+        site_sheet.append(values)
+        for col_idx in range(1, len(site_headers) + 1):
+            cell = site_sheet.cell(row=idx, column=col_idx)
+            cell.border = _BORDER
+            if zebra:
+                cell.fill = zebra
+            if col_idx in (2, 3, 4, 5, 6, 7):
+                cell.alignment = _RIGHT
+                cell.number_format = "#,##0"
+            else:
+                cell.alignment = _LEFT
+        for k in ("depts", "empty", "full", "kanban", "scrap", "tonnage"):
+            site_total[k] += s[k]
+
+    # TOPLAM satırı
+    if site_aggs:
+        total_row_idx = site_sheet.max_row + 1
+        site_sheet.append([
+            "TOPLAM",
+            site_total["depts"], site_total["empty"], site_total["full"],
+            site_total["kanban"], site_total["scrap"], site_total["tonnage"],
+        ])
+        for col_idx in range(1, len(site_headers) + 1):
+            cell = site_sheet.cell(row=total_row_idx, column=col_idx)
+            cell.fill = PatternFill("solid", fgColor="E0EAF8")
+            cell.font = Font(bold=True, color="1F3A8A", size=11)
+            cell.border = _BORDER
+            if col_idx in (2, 3, 4, 5, 6, 7):
+                cell.alignment = _RIGHT
+                cell.number_format = "#,##0"
+            elif col_idx == 1:
+                cell.alignment = _RIGHT
+            else:
+                cell.alignment = _LEFT
+
+    _autofit(site_sheet, site_headers)
+
+    # -----------------------------------------------------------------
+    # Sheet 4: Bilgi (cover info)
     # -----------------------------------------------------------------
     info = wb.create_sheet("Bilgi", 0)
     info.column_dimensions["A"].width = 24
