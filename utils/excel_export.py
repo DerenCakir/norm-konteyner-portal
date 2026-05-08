@@ -16,6 +16,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
+from utils.week import now_tr
+
 
 _STATUS_LABEL = {
     "submitted": "Zamanında",
@@ -52,10 +54,13 @@ def build_week_excel(rows: list[dict[str, Any]], week_iso: str, week_human: str)
     wb = Workbook()
 
     # -----------------------------------------------------------------
-    # Sheet 1: Detay (one row per department × color)
+    # Sheet 1: Renk Kırılımı (one row per department × color)
+    # NOT: Tonaj burada YOK — submission başına tek bir değer; her renk
+    # satırında tekrar etmesi yanıltıcıydı (insanlar "5 renk × 1234 t =
+    # 6170 t" sanıyordu). Tonaj sadece "Özet" sheet'inde, bölüm başına.
     # -----------------------------------------------------------------
     detail = wb.active
-    detail.title = "Detay"
+    detail.title = "Renk Kırılımı"
 
     headers = [
         "Üretim Yeri",
@@ -64,8 +69,7 @@ def build_week_excel(rows: list[dict[str, Any]], week_iso: str, week_human: str)
         "Boş",
         "Dolu",
         "Kanban",
-        "Hurda",
-        "Gerçekleşen Tonaj (t)",
+        "Hurdaya Ayrılacak",
         "Durum",
         "Giren Kullanıcı",
         "Sayım Tarihi",
@@ -95,7 +99,6 @@ def build_week_excel(rows: list[dict[str, Any]], week_iso: str, week_human: str)
             row.get("Dolu"),
             row.get("Kanban"),
             row.get("Hurda"),
-            row.get("Gerçekleşen Tonaj"),
             _STATUS_LABEL.get(row.get("Durum"), row.get("Durum", "")),
             row.get("Giren Kullanıcı", ""),
             row.get("Sayım Tarihi", ""),
@@ -112,10 +115,7 @@ def build_week_excel(rows: list[dict[str, Any]], week_iso: str, week_human: str)
             if col_idx in (4, 5, 6, 7):  # numeric counts (Boş/Dolu/Kanban/Hurda)
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 8:  # tonnage
-                cell.alignment = _RIGHT
-                cell.number_format = "#,##0.00"
-            elif col_idx == 9:  # status
+            elif col_idx == 8:  # status
                 cell.alignment = _CENTER
                 if is_late:
                     cell.font = Font(bold=True, color="92400E")
@@ -134,7 +134,7 @@ def build_week_excel(rows: list[dict[str, Any]], week_iso: str, week_human: str)
         "Toplam Boş",
         "Toplam Dolu",
         "Toplam Kanban",
-        "Toplam Hurda",
+        "Toplam Hurdaya Ayrılacak",
         "Tonaj (t)",
         "Durum",
         "Giren Kullanıcı",
@@ -216,7 +216,7 @@ def build_week_excel(rows: list[dict[str, Any]], week_iso: str, week_human: str)
     info["A6"] = "Geç giriş kayıt"
     info["B6"] = sum(1 for a in aggregates.values() if a["status"] == "late_submitted")
     info["A7"] = "Oluşturulma"
-    info["B7"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    info["B7"] = now_tr().strftime("%Y-%m-%d %H:%M")
 
     for r in range(3, 8):
         info.cell(row=r, column=1).font = Font(bold=True)
@@ -288,7 +288,7 @@ def build_all_weeks_excel(rows: list[dict[str, Any]]) -> bytes:
         "Boş",
         "Dolu",
         "Kanban",
-        "Hurda",
+        "Hurdaya Ayrılacak",
         "Gerçekleşen Tonaj (t)",
         "Durum",
         "Giren Kullanıcı",
@@ -374,7 +374,7 @@ def build_all_weeks_excel(rows: list[dict[str, Any]]) -> bytes:
         info["A6"] = "En eski hafta"
         info["B6"] = weeks[-1]
     info["A7"] = "Oluşturulma"
-    info["B7"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+    info["B7"] = now_tr().strftime("%Y-%m-%d %H:%M")
     for r in range(3, 8):
         info.cell(row=r, column=1).font = Font(bold=True)
         info.cell(row=r, column=1).alignment = _LEFT
