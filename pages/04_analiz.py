@@ -145,12 +145,12 @@ total_dept_count = get_active_department_count()
 missing_count = total_dept_count - submitted_dept_count
 
 st.markdown(f"#### Seçili Hafta: {format_week_human(selected_week)}")
-total_containers = total_empty + total_full  # kanban dolu'nun alt kümesi, ayrı sayma
+total_containers = total_empty + total_full + total_kanban + total_scrap
 completion_pct = (submitted_dept_count / total_dept_count * 100) if total_dept_count else 0
 kanban_rate = (total_kanban / total_full * 100) if total_full else 0
 
 primary_cards = [
-    kpi_card("Toplam Konteyner", _fmt_tr(total_containers), sub="Boş + dolu (hurda dahil değil)"),
+    kpi_card("Toplam Konteyner", _fmt_tr(total_containers), sub="Boş + Dolu + Kanban + Hurdaya Ayrılacak"),
     kpi_card("Dolu Konteyner", _fmt_tr(total_full), sub="Ürün / yarı mamul taşıyan"),
     kpi_card("Boş Konteyner", _fmt_tr(total_empty), sub="Kullanılabilir kasa"),
     kpi_card("Kanban", _fmt_tr(total_kanban), sub="Dolu konteynerin alt kümesi"),
