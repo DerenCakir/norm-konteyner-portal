@@ -163,12 +163,16 @@ total_containers = total_empty + total_full + total_scrap  # kanban dolu'nun alt
 completion_pct = (submitted_dept_count / total_dept_count * 100) if total_dept_count else 0
 kanban_rate = (total_kanban / total_full * 100) if total_full else 0
 
+# Ortalama dolu konteyner ağırlığı (kg) — toplam tonaj × 1000 / toplam dolu
+# Bölüm-bazlı hesabı ileride tabloda gösteriyoruz; burada genel ortalama.
+avg_kg_per_full = (total_actual * 1000 / total_full) if total_full else 0
+
 primary_cards = [
     kpi_card("Toplam Konteyner", _fmt_tr(total_containers), sub="Boş + Dolu + Hurdaya Ayrılacak"),
     kpi_card("Dolu Konteyner", _fmt_tr(total_full), sub="Ürün / yarı mamul taşıyan"),
     kpi_card("Boş Konteyner", _fmt_tr(total_empty), sub="Kullanılabilir kasa"),
     kpi_card("Kanban", _fmt_tr(total_kanban), sub="Dolu konteynerin alt kümesi"),
-    kpi_card("Hurdaya Ayrılacak", _fmt_tr(total_scrap), sub="Artık kullanılmayacak"),
+    kpi_card("Hurdaya Ayrılacak", _fmt_tr(total_scrap)),
 ]
 render_kpis(primary_cards)
 
@@ -181,6 +185,11 @@ secondary_cards = [
         delta_kind="neutral" if missing_count else "neg",
     ),
     kpi_card("Kanban Oranı", f"%{_fmt_tr_decimal(kanban_rate)}", sub="Kanban / dolu"),
+    kpi_card(
+        "Ort. Dolu Konteyner Ağırlığı",
+        f"{_fmt_tr(avg_kg_per_full)} kg",
+        sub="Toplam tonaj / dolu konteyner",
+    ),
 ]
 st.markdown("<div style='height:0.75rem'></div>", unsafe_allow_html=True)
 render_kpis(secondary_cards)
@@ -385,16 +394,24 @@ dept_summary["toplam_bdh"] = (
     + dept_summary.get("hurda", 0)
 )
 
+# Bölüm bazında ortalama dolu konteyner ağırlığı (kg)
+# = tonaj (ton) × 1000 / dolu sayısı. Dolu yoksa NaN bırak (gösterimde "—").
+dept_summary["ort_kg"] = (
+    (dept_summary["actual"] * 1000 / dept_summary["dolu"].replace(0, pd.NA))
+).fillna(0)
+# 0 dolu olan bölümlere "—" göstermek için NaN'a çevir
+dept_summary.loc[dept_summary["dolu"] == 0, "ort_kg"] = pd.NA
+
 _summary_cols = ["site", "department", "boş", "dolu", "kanban"]
 if "hurda" in dept_summary.columns:
     _summary_cols.append("hurda")
-_summary_cols.extend(["toplam_bdh", "actual", "target", "sapma"])
+_summary_cols.extend(["toplam_bdh", "actual", "ort_kg", "target", "sapma"])
 
 _num_int_cols = ["Boş", "Dolu", "Kanban"]
 if "hurda" in dept_summary.columns:
     _num_int_cols.append("Hurdaya Ayrılacak")
 _num_int_cols.append("Toplam (B+D+H)")
-_num_int_cols.extend(["Gerçekleşen (t)", "Hedef (t)"])
+_num_int_cols.extend(["Gerçekleşen (t)", "Ort. Ağırlık (kg)", "Hedef (t)"])
 
 def _fmt_sapma_tr(n):
     try:
@@ -411,7 +428,9 @@ st.dataframe(
         "boş": "Boş", "dolu": "Dolu", "kanban": "Kanban",
         "hurda": "Hurdaya Ayrılacak",
         "toplam_bdh": "Toplam (B+D+H)",
-        "actual": "Gerçekleşen (t)", "target": "Hedef (t)", "sapma": "Sapma (t)",
+        "actual": "Gerçekleşen (t)",
+        "ort_kg": "Ort. Ağırlık (kg)",
+        "target": "Hedef (t)", "sapma": "Sapma (t)",
     })
     .style.format(
         {**{c: _fmt_tr for c in _num_int_cols}, "Sapma (t)": _fmt_sapma_tr},
@@ -451,18 +470,28 @@ with st.expander("Üretim Yeri Kırılımı", expanded=False):
         site_summary["boş"] + site_summary["dolu"]
         + site_summary.get("hurda", 0)
     )
+    # Üretim yeri bazında ortalama dolu konteyner ağırlığı (kg)
+    site_summary["ort_kg"] = (
+        site_summary["actual"] * 1000 / site_summary["dolu"].replace(0, pd.NA)
+    )
+    site_summary.loc[site_summary["dolu"] == 0, "ort_kg"] = pd.NA
     rename_map = {
         "site": "Üretim Yeri",
         "boş": "Boş", "dolu": "Dolu", "kanban": "Kanban",
         "hurda": "Hurdaya Ayrılacak",
         "toplam_bdh": "Toplam (B+D+H)",
-        "actual": "Gerçekleşen (t)", "target": "Hedef (t)", "sapma": "Sapma (t)",
+        "actual": "Gerçekleşen (t)",
+        "ort_kg": "Ort. Ağırlık (kg)",
+        "target": "Hedef (t)", "sapma": "Sapma (t)",
         "bölüm_sayısı": "Giren Bölüm",
     }
     site_num_cols = ["Boş", "Dolu", "Kanban"]
     if "hurda" in site_summary.columns:
         site_num_cols.append("Hurdaya Ayrılacak")
-    site_num_cols.extend(["Toplam (B+D+H)", "Gerçekleşen (t)", "Hedef (t)", "Giren Bölüm"])
+    site_num_cols.extend([
+        "Toplam (B+D+H)", "Gerçekleşen (t)",
+        "Ort. Ağırlık (kg)", "Hedef (t)", "Giren Bölüm",
+    ])
     st.dataframe(
         site_summary.rename(columns=rename_map)
         .style.format(
