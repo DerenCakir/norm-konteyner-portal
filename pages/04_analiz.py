@@ -53,6 +53,20 @@ def _fmt_tr(n: float | int) -> str:
         return str(n)
 
 
+def _fmt_tr_decimal(n: float, digits: int = 1) -> str:
+    """TR formatlı ondalıklı sayı — binlik ayraç '.', ondalık ',' ile.
+
+    Örnek: ``1234.5`` → ``"1.234,5"``.
+    """
+    try:
+        v = float(n)
+    except (TypeError, ValueError):
+        return str(n)
+    # f-string'de ondalık ayraç '.', binlik ',' geliyor → swap ile çeviriyoruz.
+    formatted = f"{v:,.{digits}f}"
+    return formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
 inject_css()
 restore_session_from_query()
 timer = page_timer("analiz")
@@ -166,7 +180,7 @@ secondary_cards = [
         delta=f"{missing_count} eksik" if missing_count else "Eksik yok",
         delta_kind="neutral" if missing_count else "neg",
     ),
-    kpi_card("Kanban Oranı", f"%{kanban_rate:.1f}", sub="Kanban / dolu"),
+    kpi_card("Kanban Oranı", f"%{_fmt_tr_decimal(kanban_rate)}", sub="Kanban / dolu"),
 ]
 st.markdown("<div style='height:0.75rem'></div>", unsafe_allow_html=True)
 render_kpis(secondary_cards)
@@ -184,24 +198,36 @@ site_signal = (
     .reset_index()
 )
 if not site_signal.empty:
-    site_signal["Toplam"] = site_signal["Boş"] + site_signal["Dolu"]
+    # Toplam (B+D+H) — hurda da dahil
+    if "Hurdaya_Ayrılacak" in site_signal.columns:
+        site_signal["Toplam (B+D+H)"] = (
+            site_signal["Boş"] + site_signal["Dolu"] + site_signal["Hurdaya_Ayrılacak"]
+        )
+    else:
+        site_signal["Toplam (B+D+H)"] = site_signal["Boş"] + site_signal["Dolu"]
     site_signal["Kanban Oranı (%)"] = (
         site_signal["Kanban"] / site_signal["Dolu"].replace(0, pd.NA) * 100
     ).fillna(0)
     data_panel("Öne Çıkan Üretim Yerleri", "Dolu konteyner ve toplam yoğunluğa göre ilk üretim yerleri.")
-    cols = ["Üretim Yeri", "Toplam", "Dolu", "Boş", "Kanban"]
+    cols = ["Üretim Yeri", "Toplam (B+D+H)", "Dolu", "Boş", "Kanban"]
     if "Hurdaya_Ayrılacak" in site_signal.columns:
         cols.append("Hurdaya Ayrılacak")
     cols.extend(["Kanban Oranı (%)", "Giren Bölüm"])
+    site_num_cols = ["Toplam (B+D+H)", "Dolu", "Boş", "Kanban", "Giren Bölüm"]
+    if "Hurdaya_Ayrılacak" in site_signal.columns:
+        site_num_cols.append("Hurdaya Ayrılacak")
     st.dataframe(
-        site_signal.sort_values(["Dolu", "Toplam"], ascending=False)
+        site_signal.sort_values(["Dolu", "Toplam (B+D+H)"], ascending=False)
         .head(8)
         .rename(columns={
             "site": "Üretim Yeri",
             "Giren_Bölüm": "Giren Bölüm",
             "Hurdaya_Ayrılacak": "Hurdaya Ayrılacak",
         })[cols]
-        .style.format({"Kanban Oranı (%)": "{:.1f}"}),
+        .style.format({
+            **{c: _fmt_tr for c in site_num_cols},
+            "Kanban Oranı (%)": _fmt_tr_decimal,
+        }),
         use_container_width=True,
         hide_index=True,
     )
@@ -353,10 +379,30 @@ dept_summary["sapma"] = dept_summary["actual"] - dept_summary["target"]
 # Bölüm Özeti — kırmızı satır boyaması KALDIRILDI (talep). Sapma sütunu
 # zaten +/- işaretiyle aşımı gösteriyor; satır boyama görsel kirlilik.
 
+# Toplam (B+D+H) kolonu — kullanıcı her sayfada görmek istiyor
+dept_summary["toplam_bdh"] = (
+    dept_summary["boş"] + dept_summary["dolu"]
+    + dept_summary.get("hurda", 0)
+)
+
 _summary_cols = ["site", "department", "boş", "dolu", "kanban"]
 if "hurda" in dept_summary.columns:
     _summary_cols.append("hurda")
-_summary_cols.extend(["actual", "target", "sapma"])
+_summary_cols.extend(["toplam_bdh", "actual", "target", "sapma"])
+
+_num_int_cols = ["Boş", "Dolu", "Kanban"]
+if "hurda" in dept_summary.columns:
+    _num_int_cols.append("Hurdaya Ayrılacak")
+_num_int_cols.append("Toplam (B+D+H)")
+_num_int_cols.extend(["Gerçekleşen (t)", "Hedef (t)"])
+
+def _fmt_sapma_tr(n):
+    try:
+        v = int(round(float(n)))
+    except (TypeError, ValueError):
+        return "—"
+    sign = "+" if v > 0 else ("" if v == 0 else "-")
+    return f"{sign}{_fmt_tr(abs(v))}"
 
 st.dataframe(
     dept_summary[_summary_cols]
@@ -364,9 +410,13 @@ st.dataframe(
         "site": "Üretim Yeri", "department": "Bölüm",
         "boş": "Boş", "dolu": "Dolu", "kanban": "Kanban",
         "hurda": "Hurdaya Ayrılacak",
+        "toplam_bdh": "Toplam (B+D+H)",
         "actual": "Gerçekleşen (t)", "target": "Hedef (t)", "sapma": "Sapma (t)",
     })
-    .style.format({"Gerçekleşen (t)": "{:.2f}", "Hedef (t)": "{:.2f}", "Sapma (t)": "{:+.2f}"}, na_rep="—"),
+    .style.format(
+        {**{c: _fmt_tr for c in _num_int_cols}, "Sapma (t)": _fmt_sapma_tr},
+        na_rep="—",
+    ),
     use_container_width=True,
     hide_index=True,
 )
@@ -397,17 +447,26 @@ with st.expander("Üretim Yeri Kırılımı", expanded=False):
     site_summary["bölüm_sayısı"] = (
         df_week.groupby("site")["department_id"].nunique().values
     )
+    site_summary["toplam_bdh"] = (
+        site_summary["boş"] + site_summary["dolu"]
+        + site_summary.get("hurda", 0)
+    )
     rename_map = {
         "site": "Üretim Yeri",
         "boş": "Boş", "dolu": "Dolu", "kanban": "Kanban",
         "hurda": "Hurdaya Ayrılacak",
+        "toplam_bdh": "Toplam (B+D+H)",
         "actual": "Gerçekleşen (t)", "target": "Hedef (t)", "sapma": "Sapma (t)",
         "bölüm_sayısı": "Giren Bölüm",
     }
+    site_num_cols = ["Boş", "Dolu", "Kanban"]
+    if "hurda" in site_summary.columns:
+        site_num_cols.append("Hurdaya Ayrılacak")
+    site_num_cols.extend(["Toplam (B+D+H)", "Gerçekleşen (t)", "Hedef (t)", "Giren Bölüm"])
     st.dataframe(
         site_summary.rename(columns=rename_map)
         .style.format(
-            {"Gerçekleşen (t)": "{:.2f}", "Hedef (t)": "{:.2f}", "Sapma (t)": "{:+.2f}"},
+            {**{c: _fmt_tr for c in site_num_cols}, "Sapma (t)": _fmt_sapma_tr},
             na_rep="—",
         ),
         use_container_width=True, hide_index=True,
@@ -425,15 +484,33 @@ with st.expander("Renk Kırılımı", expanded=False):
     )
     if "scrap_count" in df_week.columns:
         _color_agg["hurda"] = ("scrap_count", "sum")
-    color_summary = df_week.groupby("color").agg(**_color_agg).reset_index()
-    color_summary["toplam"] = color_summary["boş"] + color_summary["dolu"]
+    # Renk sırasını kayıt sırasında verilen sort_order'a göre yap (alfabetik değil).
+    if "color_sort_order" in df_week.columns:
+        color_summary = (
+            df_week.groupby(["color", "color_sort_order"])
+            .agg(**_color_agg)
+            .reset_index()
+            .sort_values("color_sort_order")
+            .drop(columns=["color_sort_order"])
+        )
+    else:
+        color_summary = df_week.groupby("color").agg(**_color_agg).reset_index()
+    color_summary["toplam"] = (
+        color_summary["boş"] + color_summary["dolu"]
+        + color_summary.get("hurda", 0)
+    )
     rename_map = {
         "color": "Renk", "boş": "Boş", "dolu": "Dolu",
         "kanban": "Kanban", "hurda": "Hurdaya Ayrılacak",
-        "toplam": "Toplam (B+D)",
+        "toplam": "Toplam (B+D+H)",
     }
+    num_cols = ["Boş", "Dolu", "Kanban"]
+    if "hurda" in color_summary.columns:
+        num_cols.append("Hurdaya Ayrılacak")
+    num_cols.append("Toplam (B+D+H)")
     st.dataframe(
-        color_summary.rename(columns=rename_map),
+        color_summary.rename(columns=rename_map)
+        .style.format({c: _fmt_tr for c in num_cols}),
         use_container_width=True, hide_index=True,
     )
 
@@ -605,10 +682,10 @@ with st.expander("Üretim Yeri Trend Sapma", expanded=False):
             "Toplam Δ": "Toplam Değişim",
             "Gerçekleşen": "Gerçekleşen Tonaj",
         }).style.format({
-            "Kanban Oranı (%)": "{:.1f}",
-            "Gerçekleşen Tonaj": "{:.2f}",
-            "Hedef": "{:.2f}",
-            "Fazla": "{:.2f}",
+            "Kanban Oranı (%)": _fmt_tr_decimal,
+            "Gerçekleşen Tonaj": _fmt_tr,
+            "Hedef": _fmt_tr,
+            "Fazla": _fmt_tr,
         }, na_rep="-"),
         use_container_width=True,
         hide_index=True,

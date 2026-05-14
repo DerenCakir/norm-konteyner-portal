@@ -105,6 +105,7 @@ _TAB_KEYS = [
     ("schedule",     "Sayım Takvimi"),
     ("late",         "Geç Giriş"),
     ("override",     "Sayım Düzeltme"),
+    ("excel",        "Excel İndir"),
     ("audit",        "İşlem Geçmişi"),
     ("test_reset",   "⚠ Test Sıfırlama"),
 ]
@@ -1369,6 +1370,91 @@ if _is_active("late"):
 # ---------------------------------------------------------------------------
 # TAB 6 — SAYIM DÜZELTME
 # ---------------------------------------------------------------------------
+if _is_active("excel"):
+    st.subheader("Excel İndir")
+    st.caption(
+        "Haftalık sayım verilerini Excel olarak indir. Tek bir hafta veya "
+        "tüm haftaların verisini tek dosyada (pivot için uygun) alabilirsin."
+    )
+
+    with get_session() as _s:
+        excel_known_weeks = list(_s.execute(
+            select(CountSubmission.week_iso)
+            .distinct()
+            .order_by(CountSubmission.week_iso.desc())
+        ).scalars())
+
+    if not excel_known_weeks:
+        st.info("Henüz indirilecek sayım kaydı yok.")
+    else:
+        excel_week = st.selectbox(
+            "Hafta",
+            excel_known_weeks,
+            index=0,
+            format_func=lambda w: f"{w} — {format_week_human(w)}",
+            key="excel_week_select",
+        )
+
+        with get_session() as _s:
+            excel_sub_count = _s.execute(
+                select(func.count(CountSubmission.id))
+                .where(CountSubmission.week_iso == excel_week)
+            ).scalar_one()
+            excel_late_count = _s.execute(
+                select(func.count(CountSubmission.id)).where(
+                    CountSubmission.week_iso == excel_week,
+                    CountSubmission.status == "late_submitted",
+                )
+            ).scalar_one()
+
+        excel_active_count = get_active_department_count()
+        excel_missing = max(excel_active_count - excel_sub_count, 0)
+        excel_pct = (
+            excel_sub_count / excel_active_count * 100
+            if excel_active_count else 0
+        )
+
+        st.markdown("#### Seçili Hafta Özeti")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Giren Bölüm", f"{excel_sub_count} / {excel_active_count}")
+        m2.metric("Eksik Bölüm", excel_missing)
+        m3.metric("Tamamlanma", f"%{excel_pct:.0f}")
+        m4.metric("Geç Girilen", excel_late_count)
+
+        st.markdown("#### İndirme Seçenekleri")
+        export_rows = get_week_export_rows(excel_week)
+        c1, c2 = st.columns(2)
+        if export_rows:
+            week_bytes = build_week_excel(
+                export_rows, excel_week, format_week_human(excel_week)
+            )
+            c1.download_button(
+                "Seçili Haftayı İndir",
+                data=week_bytes,
+                file_name=f"sayim_export_{excel_week}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                type="primary",
+            )
+        else:
+            c1.info("Seçili hafta için kayıt yok.")
+
+        all_weeks_rows = get_all_weeks_export_rows()
+        if all_weeks_rows:
+            today_str = now_tr().strftime("%Y-%m-%d")
+            all_bytes = build_all_weeks_excel(all_weeks_rows)
+            c2.download_button(
+                f"Tüm Haftaları İndir ({len(all_weeks_rows)} satır)",
+                data=all_bytes,
+                file_name=f"sayim_export_tum_haftalar_{today_str}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+                help="Tüm haftalardaki kayıtlar tek dosyada, long-format (pivot için uygun).",
+            )
+        else:
+            c2.info("Tüm haftalar için kayıt yok.")
+
+
 if _is_active("override"):
     st.subheader("Sayım Düzeltme")
     st.caption("Pencere kapandıktan sonra hatalı sayımı yönetici olarak düzenle veya sil.")
@@ -1419,51 +1505,9 @@ if _is_active("override"):
             ).scalar_one()
 
         active_department_count = get_active_department_count()
-        missing_department_count = max(active_department_count - week_submission_count, 0)
-        completion_pct = (
-            week_submission_count / active_department_count * 100
-            if active_department_count else 0
-        )
-        export_rows = get_week_export_rows(override_week)
 
-        st.markdown("#### Seçili Hafta Özeti")
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Giren Bölüm", f"{week_submission_count} / {active_department_count}")
-        m2.metric("Eksik Bölüm", missing_department_count)
-        m3.metric("Tamamlanma", f"%{completion_pct:.0f}")
-        m4.metric("Geç Girilen", late_submission_count)
-
-        export_col1, export_col2 = st.columns(2)
-
-        if export_rows:
-            xlsx_bytes = build_week_excel(
-                export_rows, override_week, format_week_human(override_week)
-            )
-            export_col1.download_button(
-                "Seçili Haftayı Excel İndir",
-                data=xlsx_bytes,
-                file_name=f"sayim_export_{override_week}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-            )
-        else:
-            export_col1.info("Seçili hafta için indirilecek sayım kaydı yok.")
-
-        # Tüm haftaların verisi tek bir long-format Excel — pivot için.
-        all_weeks_rows = get_all_weeks_export_rows()
-        if all_weeks_rows:
-            today_str = now_tr().strftime("%Y-%m-%d")
-            all_xlsx_bytes = build_all_weeks_excel(all_weeks_rows)
-            export_col2.download_button(
-                f"Tüm Haftaları Excel İndir ({len(all_weeks_rows)} satır)",
-                data=all_xlsx_bytes,
-                file_name=f"sayim_export_tum_haftalar_{today_str}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                use_container_width=True,
-                help="Tüm haftalardaki sayım kayıtlarını tek bir Excel dosyasında long-format (pivot için uygun) olarak indirir.",
-            )
-        else:
-            export_col2.info("Henüz hiç sayım kaydı yok — tüm haftalar export'u boş olur.")
+        # Excel indirme + haftalık özet artık ayrı bir "Excel İndir" sekmesinde.
+        # Burada sadece bölüm-bazlı override işlemleri kalıyor.
 
         with st.expander("Seçili Haftanın Tüm Sayımlarını Sil", expanded=False):
             st.warning(

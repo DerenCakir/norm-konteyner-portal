@@ -209,6 +209,7 @@ def get_analysis_rows(week_isos: tuple[str, ...]) -> list[dict[str, Any]]:
                 CountDetail.full_count,
                 CountDetail.kanban_count,
                 CountDetail.scrap_count,
+                Color.sort_order.label("color_sort_order"),
                 Department.name.label("department"),
                 Department.weekly_tonnage_target,
                 ProductionSite.id.label("site_id"),
@@ -244,6 +245,7 @@ def get_analysis_rows(week_isos: tuple[str, ...]) -> list[dict[str, Any]]:
             "site_id": row.site_id,
             "site": row.site,
             "color": row.color,
+            "color_sort_order": row.color_sort_order,
         }
         for row in rows
     ]
