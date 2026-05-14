@@ -152,7 +152,7 @@ st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
 # ---------------------------------------------------------------------------
 data_panel(
     "Bölüm × Renk Matrisi",
-    "Hücreler boş / dolu / kanban sırasıyla okunur. Tonaj sütunu bölümün haftalık sayım kaydından gelir.",
+    "Hücreler boş / dolu / kanban / hurdaya ayrılacak sırasıyla okunur. Tonaj sütunu bölümün haftalık sayım kaydından gelir.",
 )
 
 if not active_colors:
