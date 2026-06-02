@@ -184,6 +184,9 @@ if is_admin:
                  "Yönetici manuel ek süre açtı, kaydedebilirsiniz."),
         "locked": ("danger", "Kapalı", "Sayım girişi kapalı",
                    f"Bir sonraki pencere {schedule_human}'da açılır."),
+        "closed": ("muted", "Tatil", "Sayım kapalı",
+                   "Bu hafta yönetici tarafından tatil/bayram nedeniyle "
+                   "sayım kapatıldı; veri girişi beklenmiyor."),
     }
 else:
     # Kullanıcılar için 'late' durumu "açık" olarak sunulur. Geç giriş
@@ -198,10 +201,16 @@ else:
         "Şu an sayım girişi açık değil. Acil bir durum varsa yöneticinizle "
         "iletişime geçiniz.",
     )
+    user_closed_meta = (
+        "muted", "Tatil", "Bu hafta sayım kapalı",
+        "Bu hafta tatil/bayram nedeniyle sayım girişi kapatıldı; veri "
+        "girilmesi beklenmiyor.",
+    )
     status_meta = {
         "open": user_open_meta,
         "late": user_open_meta,
         "locked": user_locked_meta,
+        "closed": user_closed_meta,
     }
 status_tone, status_badge_text, status_title, status_body = status_meta.get(status, status_meta["locked"])
 st.markdown(

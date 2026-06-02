@@ -97,7 +97,7 @@ _TR_MONTHS = [
     "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık",
 ]
 
-SubmissionStatus = Literal["open", "late", "locked"]
+SubmissionStatus = Literal["open", "late", "locked", "closed"]
 
 
 # ---------------------------------------------------------------------------
@@ -213,6 +213,47 @@ def is_late_window_open(
     return override_user is not None
 
 
+def is_week_closed(week_iso: str, session: Session) -> bool:
+    """True if admin marked this week as closed (holiday, etc.).
+
+    Looks up ``closed_weeks`` by ``week_iso``. Presence of any row means
+    the week is closed and no submissions are expected.
+
+    Defensive: if the ``closed_weeks`` table is missing (migration not
+    yet applied on this database), returns ``False`` rather than
+    crashing the page. The transaction is rolled back so the caller's
+    session stays usable for subsequent queries.
+    """
+    from db.models import ClosedWeek  # local import to avoid circular
+
+    try:
+        return (
+            session.execute(
+                select(ClosedWeek.week_iso).where(ClosedWeek.week_iso == week_iso)
+            ).scalar_one_or_none()
+            is not None
+        )
+    except SQLAlchemyError:
+        session.rollback()
+        return False
+
+
+def get_closed_week_set(session: Session) -> set[str]:
+    """Return the set of all ``week_iso`` codes currently marked closed.
+
+    Defensive against a missing ``closed_weeks`` table — returns an empty
+    set in that case so callers can keep treating "no closed weeks" as
+    the default behaviour.
+    """
+    from db.models import ClosedWeek  # local import to avoid circular
+
+    try:
+        return set(session.execute(select(ClosedWeek.week_iso)).scalars())
+    except SQLAlchemyError:
+        session.rollback()
+        return set()
+
+
 def get_submission_status(
     week_iso: str,
     session: Session,
@@ -223,12 +264,16 @@ def get_submission_status(
     """Resolve the current submission status for a given week.
 
     Order of checks:
-      1. ``open``   — only if the regular window is active *and* the
-                      requested week is the current TR week.
-      2. ``late``   — admin-opened late window for this specific week.
-      3. ``locked`` — otherwise (default, applies to past/future weeks
-                      and to the current week outside the Friday slot).
+      1. ``closed`` — admin marked the week as a holiday / no-submission
+                      week; takes precedence over everything else.
+      2. ``open``   — the regular window is active *and* the requested
+                      week is the current TR week.
+      3. ``late``   — admin-opened late window for this specific week.
+      4. ``locked`` — otherwise (past/future weeks, current week outside
+                      the configured slot, etc.).
     """
+    if is_week_closed(week_iso, session):
+        return "closed"
     schedule = load_schedule(session)
     if is_submission_open(now, schedule) and week_iso == current_week_iso(now):
         return "open"

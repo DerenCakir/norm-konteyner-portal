@@ -379,6 +379,38 @@ class SubmissionSchedule(Base):
 
 
 # ---------------------------------------------------------------------------
+# 8c. CLOSED WEEKS (admin-marked holiday / no-submission weeks)
+# ---------------------------------------------------------------------------
+class ClosedWeek(Base):
+    """A week explicitly marked as closed for submissions.
+
+    Used for holidays (bayram, resmi tatil) and other situations where no
+    count submission is expected for the week. Closing a week removes any
+    existing submissions for it and excludes the week from analyses and
+    completion KPIs everywhere downstream.
+
+    Presence of a row keyed by ``week_iso`` means "this week is closed."
+    The row is deleted when admin reopens the week.
+    """
+
+    __tablename__ = "closed_weeks"
+
+    week_iso: Mapped[str] = mapped_column(String(8), primary_key=True)
+    reason: Mapped[Optional[str]] = mapped_column(String(500))
+    closed_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    closed_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), nullable=False
+    )
+
+    closer: Mapped["User"] = relationship()
+
+    def __repr__(self) -> str:
+        return (
+            f"<ClosedWeek week={self.week_iso!r} closed_by={self.closed_by}>"
+        )
+
+
+# ---------------------------------------------------------------------------
 # 9. AUDIT LOG
 # ---------------------------------------------------------------------------
 class AuditLog(Base):

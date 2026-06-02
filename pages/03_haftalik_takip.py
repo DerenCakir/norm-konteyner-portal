@@ -33,7 +33,7 @@ from utils.ui import (
     render_sidebar_user,
     table_note,
 )
-from utils.week import current_week_iso, format_week_human
+from utils.week import current_week_iso, format_week_human, is_week_closed
 
 
 inject_css()
@@ -62,6 +62,19 @@ selected_week = st.selectbox(
     index=0,
     format_func=lambda w: f"{w} — {format_week_human(w)}",
 )
+
+# Kapatılmış (tatil/bayram) hafta seçildiyse analizi gösterme — kapalı
+# haftalar 'tamamen gizle' kuralı gereği veri yokmuş gibi davranır.
+with get_session() as _s_closed_check:
+    _is_closed = is_week_closed(selected_week, _s_closed_check)
+if _is_closed:
+    st.info(
+        f"**{format_week_human(selected_week)}** haftası tatil/bayram "
+        "nedeniyle kapatıldı. Bu hafta için sayım beklenmediğinden "
+        "haftalık takip görüntülenmiyor."
+    )
+    timer.finish()
+    st.stop()
 
 
 # ---------------------------------------------------------------------------

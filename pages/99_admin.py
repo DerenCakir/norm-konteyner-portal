@@ -22,6 +22,7 @@ from sqlalchemy.orm import aliased, selectinload
 from db.connection import get_session
 from db.models import (
     AuditLog,
+    ClosedWeek,
     Color,
     CountDetail,
     CountSubmission,
@@ -104,6 +105,7 @@ _TAB_KEYS = [
     ("colors",       "Renkler"),
     ("schedule",     "Sayım Takvimi"),
     ("late",         "Geç Giriş"),
+    ("closed",       "Sayım Kapat"),
     ("override",     "Sayım Düzeltme"),
     ("excel",        "Excel İndir"),
     ("audit",        "İşlem Geçmişi"),
@@ -1460,6 +1462,196 @@ if _is_active("excel"):
             )
         else:
             c2.info("Tüm haftalar için kayıt yok.")
+
+
+# ---------------------------------------------------------------------------
+# TAB — SAYIM KAPAT (closed weeks / holidays)
+# ---------------------------------------------------------------------------
+if _is_active("closed"):
+    st.subheader("Sayım Kapat")
+    st.caption(
+        "Bayram veya tatil gibi sebeplerle sayım beklenmeyen haftaları "
+        "kapat. Kapalı haftalar kullanıcılara giriş formunda kapalı görünür, "
+        "varsa mevcut kayıtları silinir, analiz ve grafiklerde tamamen "
+        "yok sayılır."
+    )
+
+    with get_session() as s:
+        closed_known = list(s.execute(
+            select(ClosedWeek.week_iso).order_by(ClosedWeek.week_iso.desc())
+        ).scalars())
+    # Yakın 12 hafta + zaten kapalı olanları seçenek olarak göster.
+    closed_options = _merge_week_options(
+        _recent_week_options(12), closed_known
+    )
+
+    closed_target_week = st.selectbox(
+        "Kapatılacak / yönetilecek hafta",
+        closed_options,
+        index=0,
+        format_func=lambda w: f"{w} — {format_week_human(w)}",
+        key="closed_target_week",
+    )
+
+    with get_session() as s:
+        already_closed = s.get(ClosedWeek, closed_target_week)
+        existing_sub_count = s.execute(
+            select(func.count(CountSubmission.id)).where(
+                CountSubmission.week_iso == closed_target_week
+            )
+        ).scalar_one()
+
+    if already_closed is not None:
+        with get_session() as s:
+            closer = s.get(User, already_closed.closed_by)
+            closer_name = closer.full_name if closer else "—"
+        st.success(
+            f"Bu hafta **kapalı**. Sebep: "
+            f"**{already_closed.reason or '—'}** · "
+            f"Kapatan: **{closer_name}** · "
+            f"Kapatılma: **{now_tr(already_closed.closed_at):%Y-%m-%d %H:%M}**"
+        )
+        if st.button(
+            "Bu Haftayı Tekrar Aç",
+            key=f"reopen_{closed_target_week}",
+            use_container_width=True,
+        ):
+            try:
+                with get_session() as s:
+                    row = s.get(ClosedWeek, closed_target_week)
+                    if row is not None:
+                        old_value = {
+                            "week_iso": row.week_iso,
+                            "reason": row.reason,
+                            "closed_by": row.closed_by,
+                            "closed_at": row.closed_at.isoformat(),
+                        }
+                        s.delete(row)
+                        s.add(AuditLog(
+                            user_id=admin_id,
+                            action="week_reopen",
+                            entity_type="closed_week",
+                            entity_id=None,
+                            old_value=old_value,
+                            new_value={"week_iso": closed_target_week},
+                        ))
+                clear_cached_queries()
+                st.toast(
+                    f"{closed_target_week} haftası tekrar açıldı.", icon="✅"
+                )
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Hata: {exc}")
+    else:
+        with st.form(f"close_week_form_{closed_target_week}"):
+            close_reason = st.text_input(
+                "Sebep (opsiyonel)",
+                placeholder="örn. Ramazan Bayramı 2. günü",
+                key=f"close_reason_{closed_target_week}",
+            )
+            if existing_sub_count > 0:
+                st.warning(
+                    f"Bu haftada **{existing_sub_count}** sayım kaydı var. "
+                    "Kapatırsan hepsi silinir. Devam etmek için aşağıya "
+                    "`ONAYLIYORUM` yaz."
+                )
+                close_confirm = st.text_input(
+                    "Silme onayı",
+                    key=f"close_confirm_{closed_target_week}",
+                )
+                close_label = (
+                    f"Kapat ve {existing_sub_count} Kaydı Sil"
+                )
+                close_disabled = close_confirm != "ONAYLIYORUM"
+            else:
+                close_confirm = "ONAYLIYORUM"  # nothing to delete
+                close_label = "Bu Haftayı Kapat"
+                close_disabled = False
+
+            close_submitted = st.form_submit_button(
+                close_label,
+                use_container_width=True,
+                disabled=close_disabled,
+                type="primary",
+            )
+
+        if close_submitted and not close_disabled:
+            try:
+                with get_session() as s:
+                    # Var olan kayıtları topla (audit için), sil
+                    submissions_to_delete = list(s.execute(
+                        select(CountSubmission)
+                        .options(selectinload(CountSubmission.details))
+                        .where(CountSubmission.week_iso == closed_target_week)
+                    ).scalars())
+
+                    deleted_ids = [sub.id for sub in submissions_to_delete]
+                    for sub in submissions_to_delete:
+                        s.delete(sub)
+
+                    s.add(ClosedWeek(
+                        week_iso=closed_target_week,
+                        reason=(close_reason.strip() or None),
+                        closed_by=admin_id,
+                    ))
+
+                    s.add(AuditLog(
+                        user_id=admin_id,
+                        action="week_close",
+                        entity_type="closed_week",
+                        entity_id=None,
+                        old_value={
+                            "deleted_submission_ids": deleted_ids,
+                            "deleted_submission_count": len(deleted_ids),
+                        } if deleted_ids else None,
+                        new_value={
+                            "week_iso": closed_target_week,
+                            "reason": close_reason.strip() or None,
+                        },
+                    ))
+                clear_cached_queries()
+                if deleted_ids:
+                    st.toast(
+                        f"{closed_target_week} kapatıldı; "
+                        f"{len(deleted_ids)} kayıt silindi.",
+                        icon="✅",
+                    )
+                else:
+                    st.toast(
+                        f"{closed_target_week} kapatıldı.", icon="✅"
+                    )
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Hata: {exc}")
+
+    # Tüm kapalı haftaların listesi
+    st.markdown("#### Kapalı Haftalar")
+    with get_session() as s:
+        closed_rows = list(s.execute(
+            select(ClosedWeek, User)
+            .join(User, User.id == ClosedWeek.closed_by)
+            .order_by(ClosedWeek.week_iso.desc())
+        ).all())
+
+    if not closed_rows:
+        st.info("Henüz kapatılmış hafta yok.")
+    else:
+        st.dataframe(
+            [
+                {
+                    "Hafta": cw.week_iso,
+                    "Tarih Aralığı": format_week_human(cw.week_iso),
+                    "Sebep": cw.reason or "—",
+                    "Kapatan": closer_user.full_name,
+                    "Kapatılma": now_tr(cw.closed_at).strftime(
+                        "%Y-%m-%d %H:%M"
+                    ),
+                }
+                for cw, closer_user in closed_rows
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
 if _is_active("override"):
