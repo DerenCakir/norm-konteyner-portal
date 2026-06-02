@@ -615,6 +615,32 @@ def _aggregate_all_weeks(
 _DEFINED_COLOR_ORDER = ["Mavi", "Turuncu", "Yeşil", "Gri", "MS Vida", "Sarı"]
 
 
+# Production-site display order for charts where üretim yerleri sit on the
+# X axis (charts 3 and 4). Anything not listed falls in alphabetically at
+# the end so a newly-added site is still visible without a code change.
+_SITE_ORDER = [
+    "Norm Cıvata İzmir",
+    "Norm Cıvata Salihli",
+    "Norm Somun İzmir",
+    "Norm Somun Salihli",
+    "Uysal İzmir",
+    "Uysal Salihli",
+    "MS Vida",
+    "Nedu",
+    "Sac Şekillendirme",
+    "Sıcak Dövme",
+    "Norm Holding",
+]
+
+
+def _site_sort_key(site: str) -> tuple[int, str]:
+    """Sort by ``_SITE_ORDER`` position; unknown sites fall to the end."""
+    try:
+        return (_SITE_ORDER.index(site), site)
+    except ValueError:
+        return (len(_SITE_ORDER), site)
+
+
 def _short_week(week_iso: str) -> str:
     """Strip the year prefix from an ISO week code for chart axis use.
 
@@ -659,6 +685,28 @@ def _horizontal_axis_title(text: str) -> Title:
     layout = Layout(
         manualLayout=ManualLayout(
             x=0.02, y=0.05, xMode="edge", yMode="edge",
+        )
+    )
+    return Title(tx=tx, layout=layout, overlay=False)
+
+
+def _end_x_axis_title(text: str) -> Title:
+    """Build an X-axis title anchored near the right edge of the chart
+    (i.e. at the *end* of the X axis) instead of below its center.
+
+    Matches ``_horizontal_axis_title`` styling so X and Y titles look
+    visually consistent across charts.
+    """
+    body_pr = RichTextProperties(rot=0, vert="horz")
+    char_props = CharacterProperties(b=True, sz=1000)
+    para_props = ParagraphProperties(defRPr=char_props)
+    run = RegularTextRun(t=text)
+    para = Paragraph(pPr=para_props, r=[run])
+    rt = RichText(bodyPr=body_pr, p=[para])
+    tx = Text(rich=rt)
+    layout = Layout(
+        manualLayout=ManualLayout(
+            x=0.93, y=0.93, xMode="edge", yMode="edge",
         )
     )
     return Title(tx=tx, layout=layout, overlay=False)
@@ -723,7 +771,12 @@ def _build_ozet_charts_sheet(
 
     weekly_totals, weekly_site, weekly_color, color_order = _aggregate_all_weeks(all_rows)
     weeks = sorted(weekly_totals.keys())
-    all_sites = sorted({s for sd in weekly_site.values() for s in sd.keys()})
+    # Custom site order — see _SITE_ORDER. Anything not on that list
+    # falls through alphabetically at the end.
+    all_sites = sorted(
+        {s for sd in weekly_site.values() for s in sd.keys()},
+        key=_site_sort_key,
+    )
     last_3_weeks = weeks[-3:] if len(weeks) >= 3 else weeks[:]
     latest_week = weeks[-1] if weeks else None
 
@@ -735,7 +788,8 @@ def _build_ozet_charts_sheet(
     # ================================================================
     t1_col = 1
     t1_headers = [
-        "Hafta", "Boş", "Dolu", "Dolu İçindeki Kanban", "Hurdaya Ayrılacak",
+        "Hafta", "Boş", "Dolu", "Dolu İçindeki Kanban",
+        "Hurdaya Ayrılacak", "Toplam",
     ]
     for j, h in enumerate(t1_headers):
         data_ws.cell(row=1, column=t1_col + j, value=h)
@@ -754,6 +808,14 @@ def _build_ozet_charts_sheet(
                 row=2 + i, column=t1_col + col_offset, value=wt[key]
             )
             cell.number_format = "[$-tr-TR]#,##0"
+        # Toplam = Boş + Dolu + Hurda (Kanban dolunun alt kümesi olduğu
+        # için toplama dahil edilmez — workbook genelinde 'Toplam B+D+H'
+        # tanımıyla aynı).
+        total = wt["empty"] + wt["full"] + wt["scrap"]
+        total_cell = data_ws.cell(
+            row=2 + i, column=t1_col + 5, value=total
+        )
+        total_cell.number_format = "[$-tr-TR]#,##0"
     t1_last = 1 + len(weeks)
 
     chart1 = BarChart()
@@ -762,7 +824,7 @@ def _build_ozet_charts_sheet(
     chart1.grouping = "clustered"
     chart1.title = "Haftalık Toplam Konteyner Dağılımı"
     chart1.y_axis.title = _horizontal_axis_title("Konteyner Adedi")
-    chart1.x_axis.title = "Hafta"
+    chart1.x_axis.title = _end_x_axis_title("Hafta")
     data_ref = Reference(
         data_ws,
         min_col=t1_col + 1, min_row=1,
@@ -780,6 +842,25 @@ def _build_ozet_charts_sheet(
     chart1.legend.overlay = False
     chart1.height = 11
     chart1.width = 26
+
+    # Invisible "Toplam" line on top of each cluster — its only job is
+    # to host a data label showing the week's total above the bar group.
+    total_line = LineChart()
+    total_ref = Reference(
+        data_ws,
+        min_col=t1_col + 5, min_row=1,
+        max_col=t1_col + 5, max_row=t1_last,
+    )
+    total_line.add_data(total_ref, titles_from_data=True)
+    total_line.set_categories(cats_ref)
+    for s in total_line.series:
+        gp = GraphicalProperties()
+        gp.line = LineProperties(noFill=True)
+        s.graphicalProperties = gp
+        s.marker = Marker(symbol="none")
+    total_line.dataLabels = _value_only_labels("t")
+    chart1 += total_line
+
     ws.add_chart(chart1, "A4")
 
     # ================================================================
@@ -803,7 +884,7 @@ def _build_ozet_charts_sheet(
     chart2.style = 2
     chart2.title = "Dolu Konteyner Başına Yük — Genel (Haftalık)"
     chart2.y_axis.title = _horizontal_axis_title("Ton / Dolu Konteyner")
-    chart2.x_axis.title = "Hafta"
+    chart2.x_axis.title = _end_x_axis_title("Hafta")
     data_ref = Reference(
         data_ws,
         min_col=t2_col + 1, min_row=1,
@@ -817,9 +898,18 @@ def _build_ozet_charts_sheet(
     # ton/Dolu is fractional → two decimal places on both the Y-axis
     # tick labels and the per-point data labels.
     chart2.y_axis.numFmt = "[$-tr-TR]#,##0.00"
+    # Start the Y axis at 0.10 instead of 0 — values cluster between 0.2
+    # and 1.0 typically, so a tight axis surfaces the variance.
+    chart2.y_axis.scaling.min = 0.10
     chart2.dataLabels = _value_only_labels("t", "[$-tr-TR]#,##0.00")
     for series in chart2.series:
         series.marker = Marker(symbol="circle", size=7)
+        # Force a single solid line color (navy blue) so the line reads
+        # as one continuous series instead of a default per-segment
+        # auto-gradient.
+        gp = GraphicalProperties()
+        gp.line = LineProperties(solidFill="1F3A8A", w=22000)
+        series.graphicalProperties = gp
     chart2.legend = None  # single series — legend is just noise
     chart2.height = 11
     chart2.width = 26
@@ -849,8 +939,8 @@ def _build_ozet_charts_sheet(
     chart3.style = 2
     chart3.grouping = "clustered"
     chart3.title = "Dolu Konteyner Başına Yük — Üretim Yeri Kırılımı (Son 3 Hafta)"
-    chart3.y_axis.title = "Ton / Dolu Konteyner"
-    chart3.x_axis.title = "Üretim Yeri"
+    chart3.y_axis.title = _horizontal_axis_title("Ton / Dolu Konteyner")
+    chart3.x_axis.title = _end_x_axis_title("Üretim Yeri")
     if last_3_weeks and all_sites:
         data_ref = Reference(
             data_ws,
@@ -862,7 +952,9 @@ def _build_ozet_charts_sheet(
         chart3.set_categories(cats_ref)
     _clean_axis(chart3.x_axis)
     _clean_axis(chart3.y_axis)
-    # ton/Dolu is fractional → two decimal places.
+    # ton/Dolu is fractional → two decimal places everywhere (Y-axis +
+    # data labels).
+    chart3.y_axis.numFmt = "[$-tr-TR]#,##0.00"
     chart3.dataLabels = _value_only_labels("outEnd", "[$-tr-TR]#,##0.00")
     chart3.legend.position = "b"
     chart3.legend.overlay = False
@@ -902,17 +994,28 @@ def _build_ozet_charts_sheet(
         [c for c in _DEFINED_COLOR_ORDER if c in color_order]
         + [c for c in color_order if c not in _DEFINED_COLOR_ORDER]
     )
-    chart4_sites = sorted(site_color_latest.keys())
+    # Custom production-site order on the X axis.
+    chart4_sites = sorted(site_color_latest.keys(), key=_site_sort_key)
 
     t4_col = 18
     data_ws.cell(row=1, column=t4_col, value="Üretim Yeri")
     for j, color in enumerate(chart4_colors):
         data_ws.cell(row=1, column=t4_col + 1 + j, value=color)
+    # Column after the last color holds the per-site stack total used by
+    # the invisible 'Toplam' overlay line.
+    t4_total_col = t4_col + 1 + len(chart4_colors)
+    data_ws.cell(row=1, column=t4_total_col, value="Toplam")
     for i, site in enumerate(chart4_sites):
         data_ws.cell(row=2 + i, column=t4_col, value=site)
         sc = site_color_latest.get(site, {})
         for j, color in enumerate(chart4_colors):
-            data_ws.cell(row=2 + i, column=t4_col + 1 + j, value=sc.get(color, 0))
+            cell = data_ws.cell(
+                row=2 + i, column=t4_col + 1 + j, value=sc.get(color, 0)
+            )
+            cell.number_format = "[$-tr-TR]#,##0"
+        total = sum(sc.values())
+        total_cell = data_ws.cell(row=2 + i, column=t4_total_col, value=total)
+        total_cell.number_format = "[$-tr-TR]#,##0"
     t4_last = 1 + len(chart4_sites)
 
     chart4 = BarChart()
@@ -922,8 +1025,8 @@ def _build_ozet_charts_sheet(
     chart4.overlap = 100
     title_suffix = f" ({_short_week(latest_week)})" if latest_week else ""
     chart4.title = f"Üretim Yerleri Renk Dağılımı{title_suffix}"
-    chart4.y_axis.title = "Konteyner Adedi"
-    chart4.x_axis.title = "Üretim Yeri"
+    chart4.y_axis.title = _horizontal_axis_title("Konteyner Adedi")
+    chart4.x_axis.title = _end_x_axis_title("Üretim Yeri")
     if chart4_colors and chart4_sites:
         data_ref = Reference(
             data_ws,
@@ -931,8 +1034,10 @@ def _build_ozet_charts_sheet(
             max_col=t4_col + len(chart4_colors), max_row=t4_last,
         )
         chart4.add_data(data_ref, titles_from_data=True)
-        cats_ref = Reference(data_ws, min_col=t4_col, min_row=2, max_row=t4_last)
-        chart4.set_categories(cats_ref)
+        cats_ref4 = Reference(
+            data_ws, min_col=t4_col, min_row=2, max_row=t4_last,
+        )
+        chart4.set_categories(cats_ref4)
         for series, color_name in zip(chart4.series, chart4_colors):
             hex_code = _COLOR_HEX.get(color_name, "94A3B8")
             try:
@@ -941,15 +1046,34 @@ def _build_ozet_charts_sheet(
                 pass
     _clean_axis(chart4.x_axis)
     _clean_axis(chart4.y_axis)
-    # No per-segment data labels: with 6 stacked colors × 11 sites
-    # the values pile on top of each other and are unreadable. Brand
-    # colors + bottom legend already convey the breakdown; users can
-    # hover or check the underlying ``Renk Özeti`` sheet for exact
-    # counts.
+    chart4.y_axis.numFmt = "[$-tr-TR]#,##0"
+    # No per-segment data labels: with 6 stacked colors × 11 sites the
+    # values pile on top of each other. We do show a single 'Toplam'
+    # label above each stack via an invisible overlay line (below).
     chart4.legend.position = "b"
     chart4.legend.overlay = False
     chart4.height = 13
     chart4.width = 38
+
+    # Invisible 'Toplam' line that sits at the top of each stack and
+    # carries the total-count data label. Mirrors the chart-1 pattern.
+    if chart4_colors and chart4_sites:
+        chart4_total_line = LineChart()
+        total_ref4 = Reference(
+            data_ws,
+            min_col=t4_total_col, min_row=1,
+            max_col=t4_total_col, max_row=t4_last,
+        )
+        chart4_total_line.add_data(total_ref4, titles_from_data=True)
+        chart4_total_line.set_categories(cats_ref4)
+        for s in chart4_total_line.series:
+            gp = GraphicalProperties()
+            gp.line = LineProperties(noFill=True)
+            s.graphicalProperties = gp
+            s.marker = Marker(symbol="none")
+        chart4_total_line.dataLabels = _value_only_labels("t")
+        chart4 += chart4_total_line
+
     ws.add_chart(chart4, "A74")
 
 
