@@ -24,6 +24,7 @@ from typing import Any
 
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, LineChart, Reference
+from openpyxl.chart.data_source import NumFmt
 from openpyxl.chart.label import DataLabelList
 from openpyxl.chart.layout import Layout, ManualLayout
 from openpyxl.chart.marker import Marker
@@ -649,16 +650,21 @@ def _horizontal_axis_title(text: str) -> Title:
 def _value_only_labels(
     position: str, num_format: str = "[$-tr-TR]#,##0"
 ) -> DataLabelList:
-    """Data labels that show ONLY the numeric value, with a forced
-    Turkish locale ``#,##0`` format (so 8023 renders as ``8.023``).
+    """Data labels that show ONLY the numeric value.
 
     openpyxl/Excel sometimes display series name and category name
     alongside the value when those flags are left unset (interpreted
     as 'show by default'). Setting every other show* flag to False
     keeps the label to just the number.
 
-    ``num_format`` defaults to integer thousand-separated. For
-    fractional values (ton/Dolu KPI), pass ``"[$-tr-TR]#,##0.00"``.
+    The ``num_format`` is written to the ``<c:dLbls><c:numFmt/>``
+    element, but Excel still falls back to the source-cell format
+    when ``sourceLinked`` defaults to true (and openpyxl can't write
+    ``sourceLinked="0"`` here — its DataLabelList only accepts the
+    format code as a string). To make the format actually take
+    effect, ALSO call ``cell.number_format = num_format`` on the
+    backing ``_veri`` sheet cells. The string passed here is
+    redundant-but-harmless fallback.
     """
     return DataLabelList(
         showVal=True,
@@ -719,10 +725,16 @@ def _build_ozet_charts_sheet(
     for i, w in enumerate(weeks):
         wt = weekly_totals[w]
         data_ws.cell(row=2 + i, column=t1_col, value=w)
-        data_ws.cell(row=2 + i, column=t1_col + 1, value=wt["empty"])
-        data_ws.cell(row=2 + i, column=t1_col + 2, value=wt["full"])
-        data_ws.cell(row=2 + i, column=t1_col + 3, value=wt["kanban"])
-        data_ws.cell(row=2 + i, column=t1_col + 4, value=wt["scrap"])
+        # Apply Turkish thousand-separated format to data cells so the
+        # chart data labels (which Excel pulls via sourceLinked=true)
+        # inherit the format. See _value_only_labels() for rationale.
+        for col_offset, key in enumerate(
+            ["empty", "full", "kanban", "scrap"], start=1
+        ):
+            cell = data_ws.cell(
+                row=2 + i, column=t1_col + col_offset, value=wt[key]
+            )
+            cell.number_format = "[$-tr-TR]#,##0"
     t1_last = 1 + len(weeks)
 
     chart1 = BarChart()
@@ -764,13 +776,14 @@ def _build_ozet_charts_sheet(
         wt = weekly_totals[w]
         ton_per = (wt["tonnage"] / wt["full"]) if wt["full"] else None
         data_ws.cell(row=2 + i, column=t2_col, value=w)
-        data_ws.cell(row=2 + i, column=t2_col + 1, value=ton_per)
+        cell = data_ws.cell(row=2 + i, column=t2_col + 1, value=ton_per)
+        cell.number_format = "[$-tr-TR]#,##0.00"
     t2_last = 1 + len(weeks)
 
     chart2 = LineChart()
     chart2.style = 2
     chart2.title = "Dolu Konteyner Başına Yük — Genel (Haftalık)"
-    chart2.y_axis.title = "Ton / Dolu Konteyner"
+    chart2.y_axis.title = _horizontal_axis_title("Ton / Dolu Konteyner")
     chart2.x_axis.title = "Hafta"
     data_ref = Reference(
         data_ws,
@@ -782,7 +795,9 @@ def _build_ozet_charts_sheet(
     chart2.set_categories(cats_ref)
     _clean_axis(chart2.x_axis)
     _clean_axis(chart2.y_axis)
-    # ton/Dolu is fractional → two decimal places.
+    # ton/Dolu is fractional → two decimal places on both the Y-axis
+    # tick labels and the per-point data labels.
+    chart2.y_axis.numFmt = "[$-tr-TR]#,##0.00"
     chart2.dataLabels = _value_only_labels("t", "[$-tr-TR]#,##0.00")
     for series in chart2.series:
         series.marker = Marker(symbol="circle", size=7)
@@ -805,7 +820,8 @@ def _build_ozet_charts_sheet(
         for j, w in enumerate(last_3_weeks):
             sd = weekly_site.get(w, {}).get(site)
             val = (sd["tonnage"] / sd["full"]) if (sd and sd["full"]) else None
-            data_ws.cell(row=2 + i, column=t3_col + 1 + j, value=val)
+            cell = data_ws.cell(row=2 + i, column=t3_col + 1 + j, value=val)
+            cell.number_format = "[$-tr-TR]#,##0.00"
     t3_last = 1 + len(all_sites)
 
     chart3 = BarChart()
