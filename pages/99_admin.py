@@ -1543,9 +1543,8 @@ if _is_active("closed"):
             except Exception as exc:
                 st.error(f"Hata: {exc}")
     else:
-        # st.form içinde input değerleri SUBMIT öncesi okunamıyor; o yüzden
-        # "ONAYLIYORUM" yazılınca butonun anında aktifleşmesi için form
-        # KULLANMIYORUZ — direkt widget'lar.
+        # Doğrudan widget'lar (form içinde değil) — disabled gymnastics
+        # yapmıyoruz; buton hep aktif, validation tıklamada.
         close_reason = st.text_input(
             "Sebep (opsiyonel)",
             placeholder="örn. Ramazan Bayramı 2. günü",
@@ -1555,30 +1554,32 @@ if _is_active("closed"):
             st.warning(
                 f"Bu haftada **{existing_sub_count}** sayım kaydı var. "
                 "Kapatırsan hepsi silinir. Devam etmek için aşağıya "
-                "`ONAYLIYORUM` yaz."
+                "`ONAYLIYORUM` yazıp butona bas."
             )
             close_confirm = st.text_input(
                 "Silme onayı",
                 key=f"close_confirm_{closed_target_week}",
             )
-            close_label = (
-                f"Kapat ve {existing_sub_count} Kaydı Sil"
-            )
-            close_disabled = close_confirm != "ONAYLIYORUM"
+            close_label = f"Kapat ve {existing_sub_count} Kaydı Sil"
         else:
             close_confirm = "ONAYLIYORUM"  # nothing to delete
             close_label = "Bu Haftayı Kapat"
-            close_disabled = False
 
         close_submitted = st.button(
             close_label,
             key=f"close_submit_{closed_target_week}",
             use_container_width=True,
-            disabled=close_disabled,
             type="primary",
         )
 
-        if close_submitted and not close_disabled:
+        # Validation runs on click; button stays enabled so Streamlit's
+        # text_input "Enter to commit" gotcha doesn't block the admin.
+        if close_submitted and (
+            existing_sub_count == 0
+            or st.session_state.get(
+                f"close_confirm_{closed_target_week}", ""
+            ).strip() == "ONAYLIYORUM"
+        ):
             try:
                 with get_session() as s:
                     # Var olan kayıtları topla (audit için), sil
@@ -1626,6 +1627,13 @@ if _is_active("closed"):
                 st.rerun()
             except Exception as exc:
                 st.error(f"Hata: {exc}")
+        elif close_submitted:
+            # Buton basıldı ama onay metni eşleşmedi.
+            st.error(
+                "Onay metni eşleşmedi. Lütfen 'Silme onayı' kutusuna "
+                "tam olarak `ONAYLIYORUM` yazıp Enter'a basın, sonra "
+                "tekrar deneyin."
+            )
 
     # Tüm kapalı haftaların listesi
     st.markdown("#### Kapalı Haftalar")
