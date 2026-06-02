@@ -24,6 +24,8 @@ from typing import Any
 
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, LineChart, Reference
+from openpyxl.chart.label import DataLabelList
+from openpyxl.chart.marker import Marker
 from openpyxl.chart.shapes import GraphicalProperties
 from openpyxl.drawing.line import LineProperties
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
@@ -597,14 +599,26 @@ def _aggregate_all_weeks(
 # ÖZET — charts across all weeks
 # ---------------------------------------------------------------------------
 
+# Display order used by the color-breakdown chart. Anything outside this
+# list is appended at the end in discovery order.
+_DEFINED_COLOR_ORDER = ["Mavi", "Turuncu", "Yeşil", "Gri", "MS Vida", "Sarı"]
+
+
+def _clean_axis(axis) -> None:
+    """Common axis styling: visible labels, no major gridlines."""
+    axis.delete = False
+    axis.majorGridlines = None
+    axis.majorTickMark = "out"
+
+
 def _build_ozet_charts_sheet(
     wb: Workbook, all_rows: list[dict[str, Any]]
 ) -> None:
-    """Sheet 5 (ÖZET): four charts driven by tables placed to the right.
+    """Sheet 5 (ÖZET): four charts only.
 
-    Layout:
-      - Charts in columns A:K (visible area).
-      - Data tables driving the charts in columns N onwards.
+    Backing data tables live in a ``veryHidden`` ``_veri`` sheet so the
+    visible ÖZET sheet shows the title and the four charts and nothing
+    else. Hidden-but-referenced cells continue to feed the charts.
     """
     ws = wb.create_sheet("ÖZET")
     ws["A1"] = "ÖZET — Tüm Haftaların Görüntüsü"
@@ -618,173 +632,219 @@ def _build_ozet_charts_sheet(
         ws["A4"] = "Henüz veri yok — sayım girildikçe burada grafikler oluşacak."
         return
 
+    # Hidden helper sheet: 'veryHidden' keeps it out of the unhide menu so
+    # casual users can't stumble onto the raw data tables.
+    data_ws = wb.create_sheet("_veri")
+    data_ws.sheet_state = "veryHidden"
+
     weekly_totals, weekly_site, weekly_color, color_order = _aggregate_all_weeks(all_rows)
     weeks = sorted(weekly_totals.keys())
     all_sites = sorted({s for sd in weekly_site.values() for s in sd.keys()})
+    last_3_weeks = weeks[-3:] if len(weeks) >= 3 else weeks[:]
+    latest_week = weeks[-1] if weeks else None
 
     # ================================================================
-    # Table 1 (cols N..R): Hafta | Boş | Dolu | Kanban | Hurda
-    # Drives Chart 1.
+    # Chart 1 — Clustered column: weekly total split by category
+    #   X = weeks
+    #   Series order: Boş, Dolu, Dolu İçindeki Kanban, Hurda (matches
+    #   the per-week tables elsewhere in the workbook)
     # ================================================================
-    t1_col = 14  # column N
-    t1_headers = ["Hafta", "Boş", "Dolu", "Dolu İçindeki Kanban", "Hurdaya Ayrılacak"]
+    t1_col = 1
+    t1_headers = [
+        "Hafta", "Boş", "Dolu", "Dolu İçindeki Kanban", "Hurdaya Ayrılacak",
+    ]
     for j, h in enumerate(t1_headers):
-        cell = ws.cell(row=3, column=t1_col + j, value=h)
-        cell.fill = _HEADER_FILL
-        cell.font = _HEADER_FONT
-        cell.alignment = _CENTER
+        data_ws.cell(row=1, column=t1_col + j, value=h)
     for i, w in enumerate(weeks):
         wt = weekly_totals[w]
-        ws.cell(row=4 + i, column=t1_col, value=w).alignment = _CENTER
-        ws.cell(row=4 + i, column=t1_col + 1, value=wt["empty"])
-        ws.cell(row=4 + i, column=t1_col + 2, value=wt["full"])
-        ws.cell(row=4 + i, column=t1_col + 3, value=wt["kanban"])
-        ws.cell(row=4 + i, column=t1_col + 4, value=wt["scrap"])
-    t1_last = 4 + len(weeks) - 1
+        data_ws.cell(row=2 + i, column=t1_col, value=w)
+        data_ws.cell(row=2 + i, column=t1_col + 1, value=wt["empty"])
+        data_ws.cell(row=2 + i, column=t1_col + 2, value=wt["full"])
+        data_ws.cell(row=2 + i, column=t1_col + 3, value=wt["kanban"])
+        data_ws.cell(row=2 + i, column=t1_col + 4, value=wt["scrap"])
+    t1_last = 1 + len(weeks)
 
     chart1 = BarChart()
     chart1.type = "col"
-    chart1.style = 11
-    chart1.grouping = "stacked"
-    chart1.overlap = 100
-    chart1.title = "Haftalık Toplam Konteyner Dağılımı (Boş / Dolu / Kanban / Hurda)"
+    chart1.style = 2
+    chart1.grouping = "clustered"
+    chart1.title = "Haftalık Toplam Konteyner Dağılımı"
     chart1.y_axis.title = "Konteyner Adedi"
     chart1.x_axis.title = "Hafta"
     data_ref = Reference(
-        ws, min_col=t1_col + 1, min_row=3, max_col=t1_col + 4, max_row=t1_last,
+        data_ws,
+        min_col=t1_col + 1, min_row=1,
+        max_col=t1_col + 4, max_row=t1_last,
     )
     chart1.add_data(data_ref, titles_from_data=True)
-    cats_ref = Reference(ws, min_col=t1_col, min_row=4, max_row=t1_last)
+    cats_ref = Reference(data_ws, min_col=t1_col, min_row=2, max_row=t1_last)
     chart1.set_categories(cats_ref)
-    chart1.height = 10
-    chart1.width = 22
+    _clean_axis(chart1.x_axis)
+    _clean_axis(chart1.y_axis)
+    chart1.dataLabels = DataLabelList(showVal=True, dLblPos="outEnd")
+    chart1.legend.position = "b"
+    chart1.legend.overlay = False
+    chart1.height = 11
+    chart1.width = 26
     ws.add_chart(chart1, "A4")
 
     # ================================================================
-    # Table 2 (cols T..V): Hafta | Toplam Tonaj | Toplam Dolu | ton/Dolu
-    # Drives Chart 2 (overall ton-per-full).
+    # Chart 2 — Line chart: overall ton/Dolu per week
+    #   Single series across all weeks with markers + data labels.
+    #   Data column layout: each row is one week so the chart resolves
+    #   to ONE series with N points (not N series with 1 point each).
     # ================================================================
-    t2_col = 20  # column T
-    t2_headers = ["Hafta", "Toplam Tonaj", "Toplam Dolu", "Ton / Dolu Konteyner"]
-    for j, h in enumerate(t2_headers):
-        cell = ws.cell(row=3, column=t2_col + j, value=h)
-        cell.fill = _HEADER_FILL
-        cell.font = _HEADER_FONT
-        cell.alignment = _CENTER
+    t2_col = 7  # well clear of table 1
+    data_ws.cell(row=1, column=t2_col, value="Hafta")
+    data_ws.cell(row=1, column=t2_col + 1, value="Ton / Dolu Konteyner")
     for i, w in enumerate(weeks):
         wt = weekly_totals[w]
         ton_per = (wt["tonnage"] / wt["full"]) if wt["full"] else None
-        ws.cell(row=4 + i, column=t2_col, value=w).alignment = _CENTER
-        ws.cell(row=4 + i, column=t2_col + 1, value=wt["tonnage"])
-        ws.cell(row=4 + i, column=t2_col + 2, value=wt["full"])
-        ws.cell(row=4 + i, column=t2_col + 3, value=ton_per)
-    t2_last = 4 + len(weeks) - 1
+        data_ws.cell(row=2 + i, column=t2_col, value=w)
+        data_ws.cell(row=2 + i, column=t2_col + 1, value=ton_per)
+    t2_last = 1 + len(weeks)
 
     chart2 = LineChart()
-    chart2.style = 12
+    chart2.style = 2
     chart2.title = "Dolu Konteyner Başına Yük — Genel (Haftalık)"
     chart2.y_axis.title = "Ton / Dolu Konteyner"
     chart2.x_axis.title = "Hafta"
     data_ref = Reference(
-        ws, min_col=t2_col + 3, min_row=3, max_col=t2_col + 3, max_row=t2_last,
+        data_ws,
+        min_col=t2_col + 1, min_row=1,
+        max_col=t2_col + 1, max_row=t2_last,
     )
     chart2.add_data(data_ref, titles_from_data=True)
-    cats_ref = Reference(ws, min_col=t2_col, min_row=4, max_row=t2_last)
+    cats_ref = Reference(data_ws, min_col=t2_col, min_row=2, max_row=t2_last)
     chart2.set_categories(cats_ref)
-    chart2.height = 10
-    chart2.width = 22
-    ws.add_chart(chart2, "A24")
+    _clean_axis(chart2.x_axis)
+    _clean_axis(chart2.y_axis)
+    chart2.dataLabels = DataLabelList(showVal=True, dLblPos="t")
+    for series in chart2.series:
+        series.marker = Marker(symbol="circle", size=7)
+    chart2.legend = None  # single series — legend is just noise
+    chart2.height = 11
+    chart2.width = 26
+    ws.add_chart(chart2, "A26")
 
     # ================================================================
-    # Table 3: Hafta + columns per site, values = ton/dolu
-    # Drives Chart 3 (per-site lines).
+    # Chart 3 — Clustered column: ton/Dolu per site for last 3 weeks
+    #   X = production sites
+    #   Series = last 3 weeks (one cluster of 3 bars per site)
     # ================================================================
-    t3_col = 25  # column Y (well away from t2)
-    ws.cell(row=3, column=t3_col, value="Hafta").fill = _HEADER_FILL
-    ws.cell(row=3, column=t3_col).font = _HEADER_FONT
-    ws.cell(row=3, column=t3_col).alignment = _CENTER
-    for j, site in enumerate(all_sites):
-        cell = ws.cell(row=3, column=t3_col + 1 + j, value=site)
-        cell.fill = _HEADER_FILL
-        cell.font = _HEADER_FONT
-        cell.alignment = _CENTER
-    for i, w in enumerate(weeks):
-        ws.cell(row=4 + i, column=t3_col, value=w).alignment = _CENTER
-        sites_map = weekly_site.get(w, {})
-        for j, site in enumerate(all_sites):
-            sd = sites_map.get(site)
-            if sd and sd["full"]:
-                val = sd["tonnage"] / sd["full"]
-            else:
-                val = None
-            ws.cell(row=4 + i, column=t3_col + 1 + j, value=val)
-    t3_last = 4 + len(weeks) - 1
+    t3_col = 10
+    data_ws.cell(row=1, column=t3_col, value="Üretim Yeri")
+    for j, w in enumerate(last_3_weeks):
+        data_ws.cell(row=1, column=t3_col + 1 + j, value=w)
+    for i, site in enumerate(all_sites):
+        data_ws.cell(row=2 + i, column=t3_col, value=site)
+        for j, w in enumerate(last_3_weeks):
+            sd = weekly_site.get(w, {}).get(site)
+            val = (sd["tonnage"] / sd["full"]) if (sd and sd["full"]) else None
+            data_ws.cell(row=2 + i, column=t3_col + 1 + j, value=val)
+    t3_last = 1 + len(all_sites)
 
-    chart3 = LineChart()
-    chart3.style = 12
-    chart3.title = "Dolu Konteyner Başına Yük — Üretim Yeri Kırılımı (Haftalık)"
+    chart3 = BarChart()
+    chart3.type = "col"
+    chart3.style = 2
+    chart3.grouping = "clustered"
+    chart3.title = "Dolu Konteyner Başına Yük — Üretim Yeri Kırılımı (Son 3 Hafta)"
     chart3.y_axis.title = "Ton / Dolu Konteyner"
-    chart3.x_axis.title = "Hafta"
-    if all_sites:
+    chart3.x_axis.title = "Üretim Yeri"
+    if last_3_weeks and all_sites:
         data_ref = Reference(
-            ws,
-            min_col=t3_col + 1, min_row=3,
-            max_col=t3_col + len(all_sites), max_row=t3_last,
+            data_ws,
+            min_col=t3_col + 1, min_row=1,
+            max_col=t3_col + len(last_3_weeks), max_row=t3_last,
         )
         chart3.add_data(data_ref, titles_from_data=True)
-        cats_ref = Reference(ws, min_col=t3_col, min_row=4, max_row=t3_last)
+        cats_ref = Reference(data_ws, min_col=t3_col, min_row=2, max_row=t3_last)
         chart3.set_categories(cats_ref)
-    chart3.height = 11
-    chart3.width = 22
-    ws.add_chart(chart3, "A44")
+    _clean_axis(chart3.x_axis)
+    _clean_axis(chart3.y_axis)
+    chart3.dataLabels = DataLabelList(showVal=True, dLblPos="outEnd")
+    chart3.legend.position = "b"
+    chart3.legend.overlay = False
+    chart3.height = 12
+    chart3.width = 28
+    ws.add_chart(chart3, "A48")
 
     # ================================================================
-    # Table 4: Hafta + per-color totals
-    # Drives Chart 4 (color breakdown stacked column).
+    # Chart 4 — Stacked column: color breakdown per site (latest week)
+    #   X = production sites
+    #   Stacks = colors in defined order
+    #   Each color series painted with its brand hex
     # ================================================================
-    t4_col = t3_col + 1 + max(len(all_sites), 1) + 2
-    ws.cell(row=3, column=t4_col, value="Hafta").fill = _HEADER_FILL
-    ws.cell(row=3, column=t4_col).font = _HEADER_FONT
-    ws.cell(row=3, column=t4_col).alignment = _CENTER
-    for j, color in enumerate(color_order):
-        cell = ws.cell(row=3, column=t4_col + 1 + j, value=color)
-        cell.fill = _HEADER_FILL
-        cell.font = _HEADER_FONT
-        cell.alignment = _CENTER
-    for i, w in enumerate(weeks):
-        ws.cell(row=4 + i, column=t4_col, value=w).alignment = _CENTER
-        wc = weekly_color.get(w, {})
-        for j, color in enumerate(color_order):
-            ws.cell(row=4 + i, column=t4_col + 1 + j, value=wc.get(color, 0))
-    t4_last = 4 + len(weeks) - 1
+    # Aggregate per (site, color) for the latest week.
+    site_color_latest: dict[str, dict[str, int]] = {}
+    if latest_week:
+        for r in all_rows:
+            if r.get("Hafta") != latest_week:
+                continue
+            site = r.get("Üretim Yeri") or ""
+            color = r.get("Renk") or ""
+            cnt = (
+                int(r.get("Boş") or 0)
+                + int(r.get("Dolu") or 0)
+                + int(r.get("Hurda") or 0)
+            )
+            site_color_latest.setdefault(site, {})
+            site_color_latest[site][color] = (
+                site_color_latest[site].get(color, 0) + cnt
+            )
+
+    # Color order: defined order first, then any extras in discovery order.
+    chart4_colors = (
+        [c for c in _DEFINED_COLOR_ORDER if c in color_order]
+        + [c for c in color_order if c not in _DEFINED_COLOR_ORDER]
+    )
+    chart4_sites = sorted(site_color_latest.keys())
+
+    t4_col = 18
+    data_ws.cell(row=1, column=t4_col, value="Üretim Yeri")
+    for j, color in enumerate(chart4_colors):
+        data_ws.cell(row=1, column=t4_col + 1 + j, value=color)
+    for i, site in enumerate(chart4_sites):
+        data_ws.cell(row=2 + i, column=t4_col, value=site)
+        sc = site_color_latest.get(site, {})
+        for j, color in enumerate(chart4_colors):
+            data_ws.cell(row=2 + i, column=t4_col + 1 + j, value=sc.get(color, 0))
+    t4_last = 1 + len(chart4_sites)
 
     chart4 = BarChart()
     chart4.type = "col"
-    chart4.style = 11
+    chart4.style = 2
     chart4.grouping = "stacked"
     chart4.overlap = 100
-    chart4.title = "Haftalık Renk Bazlı Konteyner Adetleri"
-    chart4.y_axis.title = "Konteyner Adedi (Toplam B+D+H)"
-    chart4.x_axis.title = "Hafta"
-    if color_order:
+    title_suffix = f" ({latest_week})" if latest_week else ""
+    chart4.title = f"Üretim Yerleri Renk Dağılımı{title_suffix}"
+    chart4.y_axis.title = "Konteyner Adedi"
+    chart4.x_axis.title = "Üretim Yeri"
+    if chart4_colors and chart4_sites:
         data_ref = Reference(
-            ws,
-            min_col=t4_col + 1, min_row=3,
-            max_col=t4_col + len(color_order), max_row=t4_last,
+            data_ws,
+            min_col=t4_col + 1, min_row=1,
+            max_col=t4_col + len(chart4_colors), max_row=t4_last,
         )
         chart4.add_data(data_ref, titles_from_data=True)
-        cats_ref = Reference(ws, min_col=t4_col, min_row=4, max_row=t4_last)
+        cats_ref = Reference(data_ws, min_col=t4_col, min_row=2, max_row=t4_last)
         chart4.set_categories(cats_ref)
-        # Map series to actual colors where possible.
-        for series, color_name in zip(chart4.series, color_order):
+        for series, color_name in zip(chart4.series, chart4_colors):
             hex_code = _COLOR_HEX.get(color_name, "94A3B8")
             try:
                 _set_bar_series_color(series, hex_code)
             except Exception:
-                pass  # fall back to Excel default
-    chart4.height = 11
-    chart4.width = 22
-    ws.add_chart(chart4, "A65")
+                pass
+    _clean_axis(chart4.x_axis)
+    _clean_axis(chart4.y_axis)
+    # Center labels inside each stack segment so each color count is
+    # readable without overlapping other charts.
+    chart4.dataLabels = DataLabelList(showVal=True, dLblPos="ctr")
+    chart4.legend.position = "b"
+    chart4.legend.overlay = False
+    chart4.height = 12
+    chart4.width = 28
+    ws.add_chart(chart4, "A72")
 
 
 # ---------------------------------------------------------------------------
