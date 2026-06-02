@@ -611,6 +611,25 @@ def _clean_axis(axis) -> None:
     axis.majorTickMark = "out"
 
 
+def _value_only_labels(position: str) -> DataLabelList:
+    """Data labels that show ONLY the numeric value.
+
+    openpyxl/Excel sometimes display series name and category name
+    alongside the value when those flags are left unset (interpreted
+    as 'show by default'). Setting every other show* flag to False
+    keeps the label to just the number.
+    """
+    return DataLabelList(
+        showVal=True,
+        showCatName=False,
+        showSerName=False,
+        showLegendKey=False,
+        showPercent=False,
+        showBubbleSize=False,
+        dLblPos=position,
+    )
+
+
 def _build_ozet_charts_sheet(
     wb: Workbook, all_rows: list[dict[str, Any]]
 ) -> None:
@@ -681,7 +700,7 @@ def _build_ozet_charts_sheet(
     chart1.set_categories(cats_ref)
     _clean_axis(chart1.x_axis)
     _clean_axis(chart1.y_axis)
-    chart1.dataLabels = DataLabelList(showVal=True, dLblPos="outEnd")
+    chart1.dataLabels = _value_only_labels("outEnd")
     chart1.legend.position = "b"
     chart1.legend.overlay = False
     chart1.height = 11
@@ -719,7 +738,7 @@ def _build_ozet_charts_sheet(
     chart2.set_categories(cats_ref)
     _clean_axis(chart2.x_axis)
     _clean_axis(chart2.y_axis)
-    chart2.dataLabels = DataLabelList(showVal=True, dLblPos="t")
+    chart2.dataLabels = _value_only_labels("t")
     for series in chart2.series:
         series.marker = Marker(symbol="circle", size=7)
     chart2.legend = None  # single series — legend is just noise
@@ -762,7 +781,7 @@ def _build_ozet_charts_sheet(
         chart3.set_categories(cats_ref)
     _clean_axis(chart3.x_axis)
     _clean_axis(chart3.y_axis)
-    chart3.dataLabels = DataLabelList(showVal=True, dLblPos="outEnd")
+    chart3.dataLabels = _value_only_labels("outEnd")
     chart3.legend.position = "b"
     chart3.legend.overlay = False
     chart3.height = 12
@@ -839,7 +858,7 @@ def _build_ozet_charts_sheet(
     _clean_axis(chart4.y_axis)
     # Center labels inside each stack segment so each color count is
     # readable without overlapping other charts.
-    chart4.dataLabels = DataLabelList(showVal=True, dLblPos="ctr")
+    chart4.dataLabels = _value_only_labels("ctr")
     chart4.legend.position = "b"
     chart4.legend.overlay = False
     chart4.height = 12
