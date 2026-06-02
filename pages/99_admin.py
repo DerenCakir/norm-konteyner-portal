@@ -29,6 +29,7 @@ from db.models import (
     Department,
     LateUserWindowOverride,
     LateWindowOverride,
+    ManualSiteAggregate,
     ProductionSite,
     SubmissionSchedule,
     User,
@@ -40,6 +41,7 @@ from utils.cached_queries import (
     clear_cached_queries,
     get_active_department_count,
     get_all_weeks_export_rows,
+    get_manual_site_aggregates,
     get_week_export_rows,
 )
 from utils.excel_export import build_all_weeks_excel, build_week_excel
@@ -106,6 +108,7 @@ _TAB_KEYS = [
     ("schedule",     "Sayım Takvimi"),
     ("late",         "Geç Giriş"),
     ("closed",       "Sayım Kapat"),
+    ("manual",       "Geçmiş Veri"),
     ("override",     "Sayım Düzeltme"),
     ("excel",        "Excel İndir"),
     ("audit",        "İşlem Geçmişi"),
@@ -1426,10 +1429,12 @@ if _is_active("excel"):
         st.markdown("#### İndirme Seçenekleri")
         export_rows = get_week_export_rows(excel_week)
         # Tüm haftaların verisi: hem "Tüm Haftaları İndir" düğmesi hem de
-        # seçili hafta dosyasındaki ÖZET (grafikler) ve Üretim Yeri
-        # Karşılaştırma sayfaları için gerekli. Bir kez çekip ikisinde de
-        # paylaşıyoruz.
+        # seçili hafta dosyasındaki GRAFİKLER ve Üretim Yeri Karşılaştırma
+        # sayfaları için gerekli. Bir kez çekip ikisinde de paylaşıyoruz.
         all_weeks_rows = get_all_weeks_export_rows()
+        # Geçmiş (sistem öncesi) haftalar için elle girilmiş üretim yeri
+        # toplamları; grafiklere folded ediliyor.
+        manual_aggs = get_manual_site_aggregates()
         c1, c2 = st.columns(2)
         if export_rows:
             week_bytes = build_week_excel(
@@ -1437,6 +1442,7 @@ if _is_active("excel"):
                 excel_week,
                 format_week_human(excel_week),
                 all_weeks_rows=all_weeks_rows,
+                manual_aggs=manual_aggs,
             )
             c1.download_button(
                 "Seçili Haftayı İndir",
@@ -1659,6 +1665,226 @@ if _is_active("closed"):
                     ),
                 }
                 for cw, closer_user in closed_rows
+            ],
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
+# ---------------------------------------------------------------------------
+# TAB — GEÇMİŞ VERİ (manual site aggregates for pre-system weeks)
+# ---------------------------------------------------------------------------
+if _is_active("manual"):
+    st.subheader("Geçmiş Veri Girişi")
+    st.caption(
+        "Sistem öncesi manuel sayılan haftalar için üretim yeri bazlı "
+        "Boş ve Dolu toplamlarını gir. Bu veri grafiklerde tarihsel "
+        "karşılaştırma amaçlı kullanılır; renk ve bölüm detayı "
+        "gerektirmez."
+    )
+
+    manual_week = st.text_input(
+        "Hafta (YYYY-Wnn formatında, örn. 2026-W17)",
+        key="manual_week_input",
+        placeholder="2026-W17",
+    )
+    manual_week = manual_week.strip()
+
+    if not manual_week:
+        st.info("Devam etmek için hafta kodu gir (örn. `2026-W17`).")
+    elif not (
+        len(manual_week) == 8
+        and manual_week[4:6] == "-W"
+        and manual_week[:4].isdigit()
+        and manual_week[6:].isdigit()
+    ):
+        st.error("Geçersiz format. Örnek: `2026-W17`")
+    else:
+        with get_session() as s:
+            manual_sites = list(s.execute(
+                select(ProductionSite)
+                .where(ProductionSite.is_active.is_(True))
+                .order_by(ProductionSite.name)
+            ).scalars())
+            try:
+                existing_map = {
+                    m.site_id: m for m in s.execute(
+                        select(ManualSiteAggregate)
+                        .where(ManualSiteAggregate.week_iso == manual_week)
+                    ).scalars()
+                }
+            except Exception:
+                existing_map = {}
+                st.warning(
+                    "`manual_site_aggregates` tablosu henüz Supabase'de "
+                    "oluşturulmamış. SQL migration "
+                    "`sql/migrations/2026-06-01_manual_site_aggregates.sql` "
+                    "dosyasını çalıştırın."
+                )
+
+        st.markdown(
+            f"#### {manual_week} — Üretim Yeri Bazlı Toplam Değerler"
+        )
+        st.caption(
+            "Her satırda Boş ve Dolu değerlerini gir. Boş bırakılan ya da "
+            "ikisi de sıfır olan satırlar kaydedilmez."
+        )
+
+        manual_inputs: dict[int, tuple[int, int]] = {}
+        for site in manual_sites:
+            ex = existing_map.get(site.id)
+            ex_empty = int(ex.empty_total) if ex else 0
+            ex_full = int(ex.full_total) if ex else 0
+
+            cols = st.columns([3, 2, 2])
+            cols[0].markdown(f"**{site.name}**")
+            empty_val = cols[1].number_input(
+                "Boş",
+                min_value=0, step=1, value=ex_empty,
+                key=f"manual_empty_{manual_week}_{site.id}",
+                label_visibility="collapsed",
+            )
+            full_val = cols[2].number_input(
+                "Dolu",
+                min_value=0, step=1, value=ex_full,
+                key=f"manual_full_{manual_week}_{site.id}",
+                label_visibility="collapsed",
+            )
+            manual_inputs[site.id] = (int(empty_val), int(full_val))
+
+        col_save, col_clear = st.columns([3, 1])
+        save_clicked = col_save.button(
+            "Kaydet",
+            key=f"manual_save_{manual_week}",
+            use_container_width=True,
+            type="primary",
+        )
+        clear_clicked = col_clear.button(
+            "Bu Haftayı Sil",
+            key=f"manual_clear_{manual_week}",
+            use_container_width=True,
+            disabled=not existing_map,
+        )
+
+        if save_clicked:
+            try:
+                touched = 0
+                with get_session() as s:
+                    for site_id, (empty, full) in manual_inputs.items():
+                        existing = s.execute(
+                            select(ManualSiteAggregate).where(
+                                ManualSiteAggregate.week_iso == manual_week,
+                                ManualSiteAggregate.site_id == site_id,
+                            )
+                        ).scalar_one_or_none()
+
+                        if empty == 0 and full == 0:
+                            # Sıfır satırları kaydetme; varsa sil.
+                            if existing is not None:
+                                s.delete(existing)
+                                touched += 1
+                            continue
+
+                        if existing is None:
+                            s.add(ManualSiteAggregate(
+                                week_iso=manual_week,
+                                site_id=site_id,
+                                empty_total=empty,
+                                full_total=full,
+                                created_by=admin_id,
+                            ))
+                            touched += 1
+                        elif (
+                            existing.empty_total != empty
+                            or existing.full_total != full
+                        ):
+                            existing.empty_total = empty
+                            existing.full_total = full
+                            touched += 1
+
+                    s.add(AuditLog(
+                        user_id=admin_id,
+                        action="manual_data_save",
+                        entity_type="manual_site_aggregate",
+                        entity_id=None,
+                        old_value=None,
+                        new_value={
+                            "week_iso": manual_week,
+                            "rows_touched": touched,
+                        },
+                    ))
+                clear_cached_queries()
+                st.toast(
+                    f"{manual_week} manuel verisi kaydedildi "
+                    f"({touched} satır değişti).",
+                    icon="✅",
+                )
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Hata: {exc}")
+
+        if clear_clicked:
+            try:
+                deleted = 0
+                with get_session() as s:
+                    rows = list(s.execute(
+                        select(ManualSiteAggregate).where(
+                            ManualSiteAggregate.week_iso == manual_week
+                        )
+                    ).scalars())
+                    deleted = len(rows)
+                    for r in rows:
+                        s.delete(r)
+                    s.add(AuditLog(
+                        user_id=admin_id,
+                        action="manual_data_delete",
+                        entity_type="manual_site_aggregate",
+                        entity_id=None,
+                        old_value={
+                            "week_iso": manual_week,
+                            "deleted_count": deleted,
+                        },
+                        new_value=None,
+                    ))
+                clear_cached_queries()
+                st.toast(
+                    f"{manual_week} manuel verisi silindi "
+                    f"({deleted} satır).",
+                    icon="✅",
+                )
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Hata: {exc}")
+
+    # Mevcut tüm haftalardaki manuel veri listesi
+    st.markdown("#### Mevcut Manuel Veri")
+    try:
+        with get_session() as s:
+            all_manual = list(s.execute(
+                select(
+                    ManualSiteAggregate.week_iso,
+                    func.count(ManualSiteAggregate.id).label("site_count"),
+                    func.sum(ManualSiteAggregate.empty_total).label("total_empty"),
+                    func.sum(ManualSiteAggregate.full_total).label("total_full"),
+                )
+                .group_by(ManualSiteAggregate.week_iso)
+                .order_by(ManualSiteAggregate.week_iso.desc())
+            ).all())
+    except Exception:
+        all_manual = []
+
+    if not all_manual:
+        st.info("Henüz manuel veri yok.")
+    else:
+        st.dataframe(
+            [
+                {
+                    "Hafta": r.week_iso,
+                    "Üretim Yeri Sayısı": int(r.site_count),
+                    "Toplam Boş": int(r.total_empty or 0),
+                    "Toplam Dolu": int(r.total_full or 0),
+                }
+                for r in all_manual
             ],
             use_container_width=True,
             hide_index=True,

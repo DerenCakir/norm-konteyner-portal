@@ -18,10 +18,12 @@ from db.models import (
     CountDetail,
     CountSubmission,
     Department,
+    ManualSiteAggregate,
     ProductionSite,
     User,
     UserDepartment,
 )
+from sqlalchemy.exc import SQLAlchemyError
 from utils.week import now_tr
 
 
@@ -51,6 +53,52 @@ def clear_cached_queries() -> None:
     get_active_department_count.clear()
     get_week_export_rows.clear()
     get_all_weeks_export_rows.clear()
+    get_manual_site_aggregates.clear()
+
+
+@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
+def get_manual_site_aggregates() -> list[dict[str, Any]]:
+    """Return per-(week × site) manual aggregate rows.
+
+    Defensive against a missing ``manual_site_aggregates`` table — if
+    the migration hasn't been applied yet the function returns an
+    empty list so downstream Excel / chart code keeps working.
+    """
+    try:
+        with get_session() as s:
+            rows = s.execute(
+                select(
+                    ManualSiteAggregate.week_iso,
+                    ManualSiteAggregate.empty_total,
+                    ManualSiteAggregate.full_total,
+                    ManualSiteAggregate.scrap_total,
+                    ManualSiteAggregate.tonnage_total,
+                    ProductionSite.name.label("site"),
+                )
+                .join(
+                    ProductionSite,
+                    ProductionSite.id == ManualSiteAggregate.site_id,
+                )
+                .order_by(
+                    ManualSiteAggregate.week_iso, ProductionSite.name,
+                )
+            ).all()
+    except SQLAlchemyError:
+        return []
+
+    return [
+        {
+            "week_iso": r.week_iso,
+            "site": r.site,
+            "empty": int(r.empty_total or 0),
+            "full": int(r.full_total or 0),
+            "scrap": int(r.scrap_total or 0),
+            "tonnage": (
+                float(r.tonnage_total) if r.tonnage_total is not None else None
+            ),
+        }
+        for r in rows
+    ]
 
 
 @st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)

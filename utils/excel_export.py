@@ -545,6 +545,7 @@ def _build_renk_ozeti_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
 
 def _aggregate_all_weeks(
     all_rows: list[dict[str, Any]],
+    manual_aggs: list[dict[str, Any]] | None = None,
 ) -> tuple[
     dict[str, dict[str, float]],           # weekly_totals
     dict[str, dict[str, dict[str, float]]], # weekly_site
@@ -556,6 +557,11 @@ def _aggregate_all_weeks(
     Tonnage is captured once per (week, site, department) because each color
     row of the same submission carries the same submission-level tonnage —
     summing it per color would multiply by color count.
+
+    ``manual_aggs`` lets the caller fold historical / pre-system data
+    (rows from the ``manual_site_aggregates`` table) into the weekly +
+    site aggregates without polluting the per-color or per-department
+    structures (which have no manual-data counterpart).
     """
     weekly_totals: dict[str, dict[str, float]] = {}
     weekly_site: dict[str, dict[str, dict[str, float]]] = {}
@@ -610,6 +616,47 @@ def _aggregate_all_weeks(
             if t is not None:
                 try:
                     t_f = float(t)
+                    wt["tonnage"] += t_f
+                    ws_agg["tonnage"] += t_f
+                except (TypeError, ValueError):
+                    pass
+
+    # Fold in the manual aggregates (no color / dept granularity); these
+    # only touch ``weekly_totals`` and ``weekly_site``. Per-color charts
+    # skip these weeks naturally because there are no color rows.
+    if manual_aggs:
+        for m in manual_aggs:
+            week = m.get("week_iso") or ""
+            site = m.get("site") or ""
+            if not week or not site:
+                continue
+            empty_v = int(m.get("empty") or 0)
+            full_v = int(m.get("full") or 0)
+            scrap_v = int(m.get("scrap") or 0)
+            bdh_v = empty_v + full_v + scrap_v
+            tonnage_v = m.get("tonnage")
+
+            wt = weekly_totals.setdefault(week, {
+                "empty": 0, "full": 0, "kanban": 0, "scrap": 0,
+                "bdh": 0, "tonnage": 0.0,
+            })
+            wt["empty"] += empty_v
+            wt["full"] += full_v
+            wt["scrap"] += scrap_v
+            wt["bdh"] += bdh_v
+
+            ws_agg = weekly_site.setdefault(week, {}).setdefault(site, {
+                "empty": 0, "full": 0, "kanban": 0, "scrap": 0,
+                "bdh": 0, "tonnage": 0.0,
+            })
+            ws_agg["empty"] += empty_v
+            ws_agg["full"] += full_v
+            ws_agg["scrap"] += scrap_v
+            ws_agg["bdh"] += bdh_v
+
+            if tonnage_v is not None:
+                try:
+                    t_f = float(tonnage_v)
                     wt["tonnage"] += t_f
                     ws_agg["tonnage"] += t_f
                 except (TypeError, ValueError):
@@ -781,7 +828,9 @@ def _value_only_labels(
 
 
 def _build_ozet_charts_sheet(
-    wb: Workbook, all_rows: list[dict[str, Any]]
+    wb: Workbook,
+    all_rows: list[dict[str, Any]],
+    manual_aggs: list[dict[str, Any]] | None = None,
 ) -> None:
     """Sheet 5 (ÖZET): four charts only.
 
@@ -797,7 +846,7 @@ def _build_ozet_charts_sheet(
     ws["A2"].font = Font(italic=True, color="64748B")
     ws.merge_cells("A2:K2")
 
-    if not all_rows:
+    if not all_rows and not manual_aggs:
         ws["A4"] = "Henüz veri yok — sayım girildikçe burada grafikler oluşacak."
         return
 
@@ -806,7 +855,9 @@ def _build_ozet_charts_sheet(
     data_ws = wb.create_sheet("_veri")
     data_ws.sheet_state = "veryHidden"
 
-    weekly_totals, weekly_site, weekly_color, color_order = _aggregate_all_weeks(all_rows)
+    weekly_totals, weekly_site, weekly_color, color_order = _aggregate_all_weeks(
+        all_rows, manual_aggs,
+    )
     weeks = sorted(weekly_totals.keys())
     # Custom site order — see _SITE_ORDER. Anything not on that list
     # falls through alphabetically at the end.
@@ -1134,7 +1185,9 @@ def _build_ozet_charts_sheet(
 # ---------------------------------------------------------------------------
 
 def _build_uretim_yeri_karsilastirma_sheet(
-    wb: Workbook, all_rows: list[dict[str, Any]]
+    wb: Workbook,
+    all_rows: list[dict[str, Any]],
+    manual_aggs: list[dict[str, Any]] | None = None,
 ) -> None:
     """Sheet 6: per-week ``Üretim Yeri Özeti`` tables stacked vertically.
 
@@ -1146,11 +1199,11 @@ def _build_uretim_yeri_karsilastirma_sheet(
     ws["A1"] = "Üretim Yeri Özeti — Haftalık Karşılaştırma"
     ws["A1"].font = Font(bold=True, size=14, color="1F3A8A")
 
-    if not all_rows:
+    if not all_rows and not manual_aggs:
         ws["A3"] = "Henüz veri yok."
         return
 
-    _, weekly_site, _, _ = _aggregate_all_weeks(all_rows)
+    _, weekly_site, _, _ = _aggregate_all_weeks(all_rows, manual_aggs)
     # Newest week at the top — admins typically open this sheet to compare
     # 'this week' against the recent past.
     weeks = sorted(weekly_site.keys(), reverse=True)
@@ -1274,24 +1327,31 @@ def build_week_excel(
     week_iso: str,
     week_human: str,
     all_weeks_rows: list[dict[str, Any]] | None = None,
+    manual_aggs: list[dict[str, Any]] | None = None,
 ) -> bytes:
     """Return an .xlsx byte string for the selected week.
 
     ``rows``           — output of ``get_week_export_rows(week_iso)``.
-    ``all_weeks_rows`` — output of ``get_all_weeks_export_rows()``; used for
-                        the ÖZET (charts) and Üretim Yeri Karşılaştırma
-                        sheets. Pass ``None`` if you only need the per-week
-                        sheets; the ÖZET sheet will show an empty notice.
+    ``all_weeks_rows`` — output of ``get_all_weeks_export_rows()``; used
+                        for the GRAFİKLER (charts) and Üretim Yeri
+                        Karşılaştırma sheets.
+    ``manual_aggs``    — output of ``get_manual_site_aggregates()``;
+                        per-(week, site) totals for historical weeks
+                        counted outside the normal flow. Folded into
+                        the charts + comparison sheet via
+                        ``_aggregate_all_weeks``.
     ``week_iso`` and ``week_human`` are accepted for backwards-compatible
-    call sites but no longer surfaced in a "Bilgi" cover sheet.
+    call sites but no longer surfaced in a 'Bilgi' cover sheet.
     """
     wb = Workbook()
     _build_renk_kirilim_sheet(wb, rows)
     dept_aggs = _build_uretim_yeri_kirilim_sheet(wb, rows)
     _build_uretim_yeri_ozeti_sheet(wb, dept_aggs)
     _build_renk_ozeti_sheet(wb, rows)
-    _build_ozet_charts_sheet(wb, all_weeks_rows or [])
-    _build_uretim_yeri_karsilastirma_sheet(wb, all_weeks_rows or [])
+    _build_ozet_charts_sheet(wb, all_weeks_rows or [], manual_aggs or [])
+    _build_uretim_yeri_karsilastirma_sheet(
+        wb, all_weeks_rows or [], manual_aggs or []
+    )
 
     buf = BytesIO()
     wb.save(buf)

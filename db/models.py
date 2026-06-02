@@ -379,6 +379,58 @@ class SubmissionSchedule(Base):
 
 
 # ---------------------------------------------------------------------------
+# 8b2. MANUAL SITE AGGREGATES (pre-system / historical data)
+# ---------------------------------------------------------------------------
+class ManualSiteAggregate(Base):
+    """Per-site totals for weeks counted outside the normal flow.
+
+    Historical / pre-system weeks (e.g. W17 counted manually before
+    the portal launched) where only site-level Boş, Dolu, optionally
+    Hurda / tonaj is available — no department or color breakdown.
+
+    Charts and aggregate sheets merge these rows alongside the regular
+    ``count_submissions`` data so historical comparisons stay
+    continuous. Per-color sheets simply skip the week because the
+    color dimension is missing.
+    """
+
+    __tablename__ = "manual_site_aggregates"
+    __table_args__ = (
+        UniqueConstraint("week_iso", "site_id", name="uq_manual_site_week"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    week_iso: Mapped[str] = mapped_column(String(8), nullable=False, index=True)
+    site_id: Mapped[int] = mapped_column(
+        ForeignKey("production_sites.id"), nullable=False, index=True
+    )
+    empty_total: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    full_total: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    scrap_total: Mapped[Optional[int]] = mapped_column(Integer)
+    tonnage_total: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+    created_by: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    site: Mapped["ProductionSite"] = relationship()
+    creator: Mapped["User"] = relationship()
+
+    def __repr__(self) -> str:
+        return (
+            f"<ManualSiteAggregate week={self.week_iso!r} site_id={self.site_id} "
+            f"empty={self.empty_total} full={self.full_total}>"
+        )
+
+
+# ---------------------------------------------------------------------------
 # 8c. CLOSED WEEKS (admin-marked holiday / no-submission weeks)
 # ---------------------------------------------------------------------------
 class ClosedWeek(Base):
