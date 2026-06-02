@@ -73,6 +73,9 @@ _COLOR_HEX = {
     "Gri": "6B7280",
     "MS Vida": "854D0E",
     "Sarı": "EAB308",
+    "Mor": "8B5CF6",
+    "Kırmızı": "DC2626",
+    "Siyah": "111827",
 }
 
 
@@ -621,7 +624,10 @@ def _aggregate_all_weeks(
 
 # Display order used by the color-breakdown chart. Anything outside this
 # list is appended at the end in discovery order.
-_DEFINED_COLOR_ORDER = ["Mavi", "Turuncu", "Yeşil", "Gri", "MS Vida", "Sarı"]
+_DEFINED_COLOR_ORDER = [
+    "Mavi", "Turuncu", "Yeşil", "Gri", "MS Vida", "Sarı",
+    "Mor", "Kırmızı", "Siyah",
+]
 
 
 # Production-site display order for charts where üretim yerleri sit on the
@@ -817,10 +823,14 @@ def _build_ozet_charts_sheet(
                 row=2 + i, column=t1_col + col_offset, value=wt[key]
             )
             cell.number_format = "[$-tr-TR]#,##0"
-        # Toplam = Boş + Dolu + Hurda (Kanban dolunun alt kümesi olduğu
-        # için toplama dahil edilmez — workbook genelinde 'Toplam B+D+H'
-        # tanımıyla aynı).
-        total = wt["empty"] + wt["full"] + wt["scrap"]
+        # Toplam = görsel yığının yüksekliği (B + D + K + H). Chart 1
+        # stacked olduğu için tüm 4 kategori üst üste yığılır; Toplam
+        # etiketi yığının tepesine oturmalı, dolayısıyla aynı değeri
+        # yansıtmalı. (Kanban analitik olarak Dolu'nun alt kümesidir ama
+        # bu grafikte 4 ayrı görsel parça olarak gösterilir.)
+        total = (
+            wt["empty"] + wt["full"] + wt["kanban"] + wt["scrap"]
+        )
         total_cell = data_ws.cell(
             row=2 + i, column=t1_col + 5, value=total
         )
@@ -830,7 +840,8 @@ def _build_ozet_charts_sheet(
     chart1 = BarChart()
     chart1.type = "col"
     chart1.style = 2
-    chart1.grouping = "clustered"
+    chart1.grouping = "stacked"
+    chart1.overlap = 100
     chart1.title = "Haftalık Toplam Konteyner Dağılımı"
     chart1.y_axis.title = _horizontal_axis_title("Konteyner Adedi")
     chart1.x_axis.title = _end_x_axis_title("Hafta")
@@ -846,18 +857,19 @@ def _build_ozet_charts_sheet(
     _clean_axis(chart1.y_axis)
     # Turkish thousand-separated format on Y-axis tick labels (5000 → 5.000)
     chart1.y_axis.numFmt = "[$-tr-TR]#,##0"
-    chart1.dataLabels = _value_only_labels("outEnd")
+    # Stacked sütunlarda dataLabels stack içinde değer gösterir; her
+    # parça için ayrı etiket karmaşa yaratır. Stack tepesindeki Toplam
+    # etiketini overlay çizgi üzerinden veriyoruz; per-stack etiketler
+    # kapalı.
     chart1.legend.position = "b"
     chart1.legend.overlay = False
     chart1.height = 11
     chart1.width = 26
 
-    # Invisible "Toplam" line on top of each cluster — its only job is
-    # to host a data label showing the week's total above the bar group.
-    # Label position 'b' (below the line point) pulls the number down
-    # toward the visible bars instead of floating above them in white
-    # space; the line itself is at Toplam value, so 'b' lands the
-    # label roughly at the top of the tallest bar.
+    # Invisible "Toplam" line at the top of each stack: same value as
+    # the stack height, so the data label lands right at the stack top
+    # ("t" = just above the line point) and reads as the column's
+    # total without any visible artifact.
     total_line = LineChart()
     total_ref = Reference(
         data_ws,
@@ -871,7 +883,7 @@ def _build_ozet_charts_sheet(
         gp.line = LineProperties(noFill=True)
         s.graphicalProperties = gp
         s.marker = Marker(symbol="none")
-    total_line.dataLabels = _value_only_labels("b")
+    total_line.dataLabels = _value_only_labels("t")
     chart1 += total_line
 
     ws.add_chart(chart1, "A4")
@@ -1097,9 +1109,11 @@ def _build_ozet_charts_sheet(
 def _build_uretim_yeri_karsilastirma_sheet(
     wb: Workbook, all_rows: list[dict[str, Any]]
 ) -> None:
-    """Sheet 6: per-week ``Üretim Yeri Özeti`` tables placed horizontally.
+    """Sheet 6: per-week ``Üretim Yeri Özeti`` tables stacked vertically.
 
-    Each week occupies 9 consecutive columns, separated by a 1-column gap.
+    Each week renders its own table top-to-bottom (week-title row, header
+    row, one row per production site, then a TOPLAM row). A two-row gap
+    separates consecutive weeks. Newest week first.
     """
     ws = wb.create_sheet("Üretim Yeri Karşılaştırma")
     ws["A1"] = "Üretim Yeri Özeti — Haftalık Karşılaştırma"
@@ -1110,7 +1124,9 @@ def _build_uretim_yeri_karsilastirma_sheet(
         return
 
     _, weekly_site, _, _ = _aggregate_all_weeks(all_rows)
-    weeks = sorted(weekly_site.keys())
+    # Newest week at the top — admins typically open this sheet to compare
+    # 'this week' against the recent past.
+    weeks = sorted(weekly_site.keys(), reverse=True)
 
     sub_headers = [
         "Üretim Yeri", "Boş", "Dolu", "Dolu içindeki Kanban", "Hurdaya ayrılacak",
@@ -1118,23 +1134,30 @@ def _build_uretim_yeri_karsilastirma_sheet(
         "Dolu Konteyner Başına Yük",
     ]
     cols_per_table = len(sub_headers)
-    gap = 1
+    gap_rows = 2
 
-    start_col = 1
+    # Column widths — set once for the whole sheet (same columns reused
+    # by every weekly sub-table).
+    ws.column_dimensions[get_column_letter(1)].width = 22
+    for j in range(2, cols_per_table + 1):
+        ws.column_dimensions[get_column_letter(j)].width = 14
+
+    start_row = 3
     for w in weeks:
-        # Week title row (row 3) — merged across the table width.
-        title_cell = ws.cell(row=3, column=start_col, value=w)
+        # Week title row, merged across the table width.
+        title_cell = ws.cell(row=start_row, column=1, value=w)
         title_cell.font = Font(bold=True, size=12, color="1F3A8A")
         title_cell.alignment = _CENTER
         title_cell.fill = _TOTAL_FILL
         ws.merge_cells(
-            start_row=3, start_column=start_col,
-            end_row=3, end_column=start_col + cols_per_table - 1,
+            start_row=start_row, start_column=1,
+            end_row=start_row, end_column=cols_per_table,
         )
 
-        # Column header row (row 4)
+        # Column header row
+        header_row = start_row + 1
         for j, h in enumerate(sub_headers):
-            cell = ws.cell(row=4, column=start_col + j, value=h)
+            cell = ws.cell(row=header_row, column=1 + j, value=h)
             cell.fill = _HEADER_FILL
             cell.font = _HEADER_FONT
             cell.alignment = _CENTER
@@ -1152,7 +1175,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
                 sites_in_week.items(),
                 key=lambda kv: _site_sort_key(kv[0]),
             ),
-            start=5,
+            start=header_row + 1,
         ):
             bdh = agg["empty"] + agg["full"] + agg["scrap"]
             pct = (bdh / grand_total_bdh) if grand_total_bdh else 0
@@ -1164,7 +1187,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
                 bdh, pct, agg["tonnage"], ton_per,
             ]
             for j, val in enumerate(values):
-                cell = ws.cell(row=r_offset, column=start_col + j, value=val)
+                cell = ws.cell(row=r_offset, column=1 + j, value=val)
                 cell.border = _BORDER
                 if j == 0:
                     cell.alignment = _LEFT
@@ -1185,8 +1208,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
             totals["bdh"] += bdh
             totals["tonnage"] += agg["tonnage"]
 
-        # TOPLAM row
-        total_row = 5 + len(sites_in_week)
+        total_row = header_row + 1 + len(sites_in_week)
         ton_per_total = (totals["tonnage"] / totals["full"]) if totals["full"] else 0
         total_values = [
             "TOPLAM",
@@ -1194,7 +1216,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
             totals["bdh"], 1.0, totals["tonnage"], ton_per_total,
         ]
         for j, val in enumerate(total_values):
-            cell = ws.cell(row=total_row, column=start_col + j, value=val)
+            cell = ws.cell(row=total_row, column=1 + j, value=val)
             cell.fill = _TOTAL_FILL
             cell.font = _TOTAL_FONT
             cell.border = _BORDER
@@ -1210,14 +1232,10 @@ def _build_uretim_yeri_karsilastirma_sheet(
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
 
-        # Column widths — site col wider, others compact.
-        ws.column_dimensions[get_column_letter(start_col)].width = 22
-        for j in range(1, cols_per_table):
-            ws.column_dimensions[get_column_letter(start_col + j)].width = 14
+        # Move start_row past this week's table plus the gap.
+        start_row = total_row + 1 + gap_rows
 
-        start_col += cols_per_table + gap
-
-    ws.freeze_panes = "A5"
+    ws.freeze_panes = "A3"
 
 
 # ---------------------------------------------------------------------------
