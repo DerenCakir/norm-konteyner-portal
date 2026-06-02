@@ -1423,10 +1423,18 @@ if _is_active("excel"):
 
         st.markdown("#### İndirme Seçenekleri")
         export_rows = get_week_export_rows(excel_week)
+        # Tüm haftaların verisi: hem "Tüm Haftaları İndir" düğmesi hem de
+        # seçili hafta dosyasındaki ÖZET (grafikler) ve Üretim Yeri
+        # Karşılaştırma sayfaları için gerekli. Bir kez çekip ikisinde de
+        # paylaşıyoruz.
+        all_weeks_rows = get_all_weeks_export_rows()
         c1, c2 = st.columns(2)
         if export_rows:
             week_bytes = build_week_excel(
-                export_rows, excel_week, format_week_human(excel_week)
+                export_rows,
+                excel_week,
+                format_week_human(excel_week),
+                all_weeks_rows=all_weeks_rows,
             )
             c1.download_button(
                 "Seçili Haftayı İndir",
@@ -1439,7 +1447,6 @@ if _is_active("excel"):
         else:
             c1.info("Seçili hafta için kayıt yok.")
 
-        all_weeks_rows = get_all_weeks_export_rows()
         if all_weeks_rows:
             today_str = now_tr().strftime("%Y-%m-%d")
             all_bytes = build_all_weeks_excel(all_weeks_rows)
