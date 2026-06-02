@@ -615,6 +615,23 @@ def _aggregate_all_weeks(
 _DEFINED_COLOR_ORDER = ["Mavi", "Turuncu", "Yeşil", "Gri", "MS Vida", "Sarı"]
 
 
+def _short_week(week_iso: str) -> str:
+    """Strip the year prefix from an ISO week code for chart axis use.
+
+    ``2026-W18`` → ``W18``. Falls back to the original string if the
+    input doesn't match the expected shape.
+    """
+    if not week_iso:
+        return ""
+    if "-W" in week_iso:
+        try:
+            _, suffix = week_iso.split("-W", 1)
+            return f"W{suffix}"
+        except ValueError:
+            return week_iso
+    return week_iso
+
+
 def _clean_axis(axis) -> None:
     """Common axis styling: visible labels, no major gridlines."""
     axis.delete = False
@@ -724,7 +741,9 @@ def _build_ozet_charts_sheet(
         data_ws.cell(row=1, column=t1_col + j, value=h)
     for i, w in enumerate(weeks):
         wt = weekly_totals[w]
-        data_ws.cell(row=2 + i, column=t1_col, value=w)
+        # Short label on the X axis ('W18' instead of '2026-W18') keeps
+        # the category labels compact and readable across all charts.
+        data_ws.cell(row=2 + i, column=t1_col, value=_short_week(w))
         # Apply Turkish thousand-separated format to data cells so the
         # chart data labels (which Excel pulls via sourceLinked=true)
         # inherit the format. See _value_only_labels() for rationale.
@@ -775,7 +794,7 @@ def _build_ozet_charts_sheet(
     for i, w in enumerate(weeks):
         wt = weekly_totals[w]
         ton_per = (wt["tonnage"] / wt["full"]) if wt["full"] else None
-        data_ws.cell(row=2 + i, column=t2_col, value=w)
+        data_ws.cell(row=2 + i, column=t2_col, value=_short_week(w))
         cell = data_ws.cell(row=2 + i, column=t2_col + 1, value=ton_per)
         cell.number_format = "[$-tr-TR]#,##0.00"
     t2_last = 1 + len(weeks)
@@ -814,7 +833,8 @@ def _build_ozet_charts_sheet(
     t3_col = 10
     data_ws.cell(row=1, column=t3_col, value="Üretim Yeri")
     for j, w in enumerate(last_3_weeks):
-        data_ws.cell(row=1, column=t3_col + 1 + j, value=w)
+        # Series headers become legend entries → short week label.
+        data_ws.cell(row=1, column=t3_col + 1 + j, value=_short_week(w))
     for i, site in enumerate(all_sites):
         data_ws.cell(row=2 + i, column=t3_col, value=site)
         for j, w in enumerate(last_3_weeks):
@@ -900,7 +920,7 @@ def _build_ozet_charts_sheet(
     chart4.style = 2
     chart4.grouping = "stacked"
     chart4.overlap = 100
-    title_suffix = f" ({latest_week})" if latest_week else ""
+    title_suffix = f" ({_short_week(latest_week)})" if latest_week else ""
     chart4.title = f"Üretim Yerleri Renk Dağılımı{title_suffix}"
     chart4.y_axis.title = "Konteyner Adedi"
     chart4.x_axis.title = "Üretim Yeri"
