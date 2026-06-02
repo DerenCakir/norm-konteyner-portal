@@ -7,7 +7,7 @@ Per-week workbook (``build_week_excel``) layout:
     3. Üretim Yeri Özeti       — selected week, per-site aggregate with %
                                  and ton/dolu KPI
     4. Renk Özeti              — selected week, per-color aggregate
-    5. ÖZET                    — ALL weeks, charts only
+    5. GRAFİKLER               — ALL weeks, charts only
     6. Üretim Yeri Karşılaştırma — ALL weeks, site-summary tables placed
                                  side by side for visual comparison
 
@@ -705,6 +705,28 @@ def _horizontal_axis_title(text: str) -> Title:
     return Title(tx=tx, layout=layout, overlay=False)
 
 
+def _top_left_chart_title(text: str) -> Title:
+    """Chart title anchored at the top-left corner instead of top-center.
+
+    Useful when data labels above the bars would otherwise overlap the
+    centered title (e.g. chart 4 has tall stacks with Toplam labels on
+    top — centered title collides with the tallest site's label).
+    """
+    body_pr = RichTextProperties(rot=0, vert="horz")
+    char_props = CharacterProperties(b=True, sz=1100)
+    para_props = ParagraphProperties(defRPr=char_props)
+    run = RegularTextRun(t=text)
+    para = Paragraph(pPr=para_props, r=[run])
+    rt = RichText(bodyPr=body_pr, p=[para])
+    tx = Text(rich=rt)
+    layout = Layout(
+        manualLayout=ManualLayout(
+            x=0.02, y=0.02, xMode="edge", yMode="edge",
+        )
+    )
+    return Title(tx=tx, layout=layout, overlay=False)
+
+
 def _end_x_axis_title(text: str) -> Title:
     """Build an X-axis title anchored near the right edge of the chart
     (i.e. at the *end* of the X axis) instead of below its center.
@@ -767,8 +789,8 @@ def _build_ozet_charts_sheet(
     visible ÖZET sheet shows the title and the four charts and nothing
     else. Hidden-but-referenced cells continue to feed the charts.
     """
-    ws = wb.create_sheet("ÖZET")
-    ws["A1"] = "ÖZET — Tüm Haftaların Görüntüsü"
+    ws = wb.create_sheet("GRAFİKLER")
+    ws["A1"] = "GRAFİKLER — Tüm Haftaların Görüntüsü"
     ws["A1"].font = Font(bold=True, size=16, color="1F3A8A")
     ws.merge_cells("A1:K1")
     ws["A2"] = "Aşağıdaki grafikler tüm haftaların verisi üzerinden hesaplanır."
@@ -801,11 +823,11 @@ def _build_ozet_charts_sheet(
     #   Series order: Boş, Dolu, Dolu İçindeki Kanban, Hurda (matches
     #   the per-week tables elsewhere in the workbook)
     # ================================================================
+    # Kanban analitik olarak Dolu'nun alt kümesidir; bu grafikte ayrı
+    # bir kategori olarak göstermek yanıltıcı toplam üretirdi. Yalnızca
+    # üç AYRIK kategori stackleniyor: Boş, Dolu (Kanban dahil), Hurda.
     t1_col = 1
-    t1_headers = [
-        "Hafta", "Boş", "Dolu", "Dolu İçindeki Kanban",
-        "Hurdaya Ayrılacak", "Toplam",
-    ]
+    t1_headers = ["Hafta", "Boş", "Dolu", "Hurdaya Ayrılacak", "Toplam"]
     for j, h in enumerate(t1_headers):
         data_ws.cell(row=1, column=t1_col + j, value=h)
     for i, w in enumerate(weeks):
@@ -817,22 +839,18 @@ def _build_ozet_charts_sheet(
         # chart data labels (which Excel pulls via sourceLinked=true)
         # inherit the format. See _value_only_labels() for rationale.
         for col_offset, key in enumerate(
-            ["empty", "full", "kanban", "scrap"], start=1
+            ["empty", "full", "scrap"], start=1
         ):
             cell = data_ws.cell(
                 row=2 + i, column=t1_col + col_offset, value=wt[key]
             )
             cell.number_format = "[$-tr-TR]#,##0"
-        # Toplam = görsel yığının yüksekliği (B + D + K + H). Chart 1
-        # stacked olduğu için tüm 4 kategori üst üste yığılır; Toplam
-        # etiketi yığının tepesine oturmalı, dolayısıyla aynı değeri
-        # yansıtmalı. (Kanban analitik olarak Dolu'nun alt kümesidir ama
-        # bu grafikte 4 ayrı görsel parça olarak gösterilir.)
-        total = (
-            wt["empty"] + wt["full"] + wt["kanban"] + wt["scrap"]
-        )
+        # Toplam = B + D + H (workbook genelinde tutarlı tanım; stack
+        # yüksekliği de aynı bu üç kategorinin toplamı, dolayısıyla
+        # overlay etiketi stack tepesine birebir oturur).
+        total = wt["empty"] + wt["full"] + wt["scrap"]
         total_cell = data_ws.cell(
-            row=2 + i, column=t1_col + 5, value=total
+            row=2 + i, column=t1_col + 4, value=total
         )
         total_cell.number_format = "[$-tr-TR]#,##0"
     t1_last = 1 + len(weeks)
@@ -848,7 +866,7 @@ def _build_ozet_charts_sheet(
     data_ref = Reference(
         data_ws,
         min_col=t1_col + 1, min_row=1,
-        max_col=t1_col + 4, max_row=t1_last,
+        max_col=t1_col + 3, max_row=t1_last,
     )
     chart1.add_data(data_ref, titles_from_data=True)
     cats_ref = Reference(data_ws, min_col=t1_col, min_row=2, max_row=t1_last)
@@ -857,24 +875,23 @@ def _build_ozet_charts_sheet(
     _clean_axis(chart1.y_axis)
     # Turkish thousand-separated format on Y-axis tick labels (5000 → 5.000)
     chart1.y_axis.numFmt = "[$-tr-TR]#,##0"
-    # Stacked sütunlarda dataLabels stack içinde değer gösterir; her
-    # parça için ayrı etiket karmaşa yaratır. Stack tepesindeki Toplam
-    # etiketini overlay çizgi üzerinden veriyoruz; per-stack etiketler
-    # kapalı.
+    # Per-segment data labels centered inside each stack segment so the
+    # user sees Boş / Dolu / Hurda values without breaking the stack
+    # visual. Toplam still goes on top via the overlay line.
+    chart1.dataLabels = _value_only_labels("ctr")
     chart1.legend.position = "b"
     chart1.legend.overlay = False
     chart1.height = 11
     chart1.width = 26
 
-    # Invisible "Toplam" line at the top of each stack: same value as
-    # the stack height, so the data label lands right at the stack top
-    # ("t" = just above the line point) and reads as the column's
-    # total without any visible artifact.
+    # Invisible "Toplam" line at the top of each stack — same value as
+    # the stack height (B + D + H), so the data label lands right at
+    # the stack top.
     total_line = LineChart()
     total_ref = Reference(
         data_ws,
-        min_col=t1_col + 5, min_row=1,
-        max_col=t1_col + 5, max_row=t1_last,
+        min_col=t1_col + 4, min_row=1,
+        max_col=t1_col + 4, max_row=t1_last,
     )
     total_line.add_data(total_ref, titles_from_data=True)
     total_line.set_categories(cats_ref)
@@ -923,9 +940,11 @@ def _build_ozet_charts_sheet(
     # ton/Dolu is fractional → two decimal places on both the Y-axis
     # tick labels and the per-point data labels.
     chart2.y_axis.numFmt = "[$-tr-TR]#,##0.00"
-    # Start the Y axis at 0.20 instead of 0 — values cluster between 0.2
-    # and 1.0 typically, so a tight axis surfaces the variance.
+    # Tight Y-axis band (0.20 → 0.90) — values typically cluster in this
+    # range, and forcing the floor/ceiling surfaces week-on-week variance
+    # that Excel's auto-scale would otherwise flatten.
     chart2.y_axis.scaling.min = 0.20
+    chart2.y_axis.scaling.max = 0.90
     chart2.dataLabels = _value_only_labels("t", "[$-tr-TR]#,##0.00")
     for series in chart2.series:
         series.marker = Marker(symbol="circle", size=7)
@@ -1049,7 +1068,12 @@ def _build_ozet_charts_sheet(
     chart4.grouping = "stacked"
     chart4.overlap = 100
     title_suffix = f" ({_short_week(latest_week)})" if latest_week else ""
-    chart4.title = f"Üretim Yerleri Renk Dağılımı{title_suffix}"
+    # Top-left positioning so the title doesn't sit above the tallest
+    # stack and collide with that stack's Toplam label (Uysal Salihli
+    # routinely hits the centered-title zone).
+    chart4.title = _top_left_chart_title(
+        f"Üretim Yerleri Renk Dağılımı{title_suffix}"
+    )
     chart4.y_axis.title = _horizontal_axis_title("Konteyner Adedi")
     chart4.x_axis.title = _end_x_axis_title("Üretim Yeri")
     if chart4_colors and chart4_sites:
@@ -1077,7 +1101,10 @@ def _build_ozet_charts_sheet(
     # label above each stack via an invisible overlay line (below).
     chart4.legend.position = "b"
     chart4.legend.overlay = False
-    chart4.height = 13
+    # Taller chart gives the Toplam labels room above the stacks so the
+    # title (now anchored top-left) and the labels don't fight for the
+    # same vertical band.
+    chart4.height = 16
     chart4.width = 38
 
     # Invisible 'Toplam' line that sits at the top of each stack and
