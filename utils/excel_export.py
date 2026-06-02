@@ -25,9 +25,19 @@ from typing import Any
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, LineChart, Reference
 from openpyxl.chart.label import DataLabelList
+from openpyxl.chart.layout import Layout, ManualLayout
 from openpyxl.chart.marker import Marker
 from openpyxl.chart.shapes import GraphicalProperties
+from openpyxl.chart.text import RichText, Text
+from openpyxl.chart.title import Title
 from openpyxl.drawing.line import LineProperties
+from openpyxl.drawing.text import (
+    CharacterProperties,
+    Paragraph,
+    ParagraphProperties,
+    RegularTextRun,
+    RichTextProperties,
+)
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 
@@ -611,6 +621,31 @@ def _clean_axis(axis) -> None:
     axis.majorTickMark = "out"
 
 
+def _horizontal_axis_title(text: str) -> Title:
+    """Build an axis title rendered horizontally and anchored near the
+    top of the axis instead of the default vertically-centered rotated
+    layout.
+
+    Excel's default Y-axis title is rotated 90° and centered along the
+    axis. This helper forces ``rot=0`` (horizontal) and positions the
+    title near the top edge so it reads naturally above the topmost
+    Y-axis tick.
+    """
+    body_pr = RichTextProperties(rot=0, vert="horz")
+    char_props = CharacterProperties(b=True, sz=1000)
+    para_props = ParagraphProperties(defRPr=char_props)
+    run = RegularTextRun(t=text)
+    para = Paragraph(pPr=para_props, r=[run])
+    rt = RichText(bodyPr=body_pr, p=[para])
+    tx = Text(rich=rt)
+    layout = Layout(
+        manualLayout=ManualLayout(
+            x=0.02, y=0.05, xMode="edge", yMode="edge",
+        )
+    )
+    return Title(tx=tx, layout=layout, overlay=False)
+
+
 def _value_only_labels(
     position: str, num_format: str = "[$-tr-TR]#,##0"
 ) -> DataLabelList:
@@ -695,7 +730,7 @@ def _build_ozet_charts_sheet(
     chart1.style = 2
     chart1.grouping = "clustered"
     chart1.title = "Haftalık Toplam Konteyner Dağılımı"
-    chart1.y_axis.title = "Konteyner Adedi"
+    chart1.y_axis.title = _horizontal_axis_title("Konteyner Adedi")
     chart1.x_axis.title = "Hafta"
     data_ref = Reference(
         data_ws,
@@ -707,6 +742,8 @@ def _build_ozet_charts_sheet(
     chart1.set_categories(cats_ref)
     _clean_axis(chart1.x_axis)
     _clean_axis(chart1.y_axis)
+    # Turkish thousand-separated format on Y-axis tick labels (5000 → 5.000)
+    chart1.y_axis.numFmt = "[$-tr-TR]#,##0"
     chart1.dataLabels = _value_only_labels("outEnd")
     chart1.legend.position = "b"
     chart1.legend.overlay = False
