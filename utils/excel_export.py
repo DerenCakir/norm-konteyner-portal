@@ -286,7 +286,13 @@ def _build_uretim_yeri_kirilim_sheet(
 
     totals = {"empty": 0, "full": 0, "kanban": 0, "scrap": 0, "bdh": 0, "tonnage": 0.0}
 
-    for idx, ((site, dept), agg) in enumerate(sorted(aggregates.items()), start=2):
+    for idx, ((site, dept), agg) in enumerate(
+        sorted(
+            aggregates.items(),
+            key=lambda kv: (_site_sort_key(kv[0][0]), kv[0][1]),
+        ),
+        start=2,
+    ):
         is_late = agg["status"] == "late_submitted"
         fill = _LATE_FILL if is_late else (_ZEBRA_FILL if idx % 2 == 0 else None)
         bdh = int(agg["empty"] or 0) + int(agg["full"] or 0) + int(agg["scrap"] or 0)
@@ -388,7 +394,10 @@ def _build_uretim_yeri_ozeti_sheet(
     )
 
     totals = {"empty": 0, "full": 0, "kanban": 0, "scrap": 0, "bdh": 0, "tonnage": 0.0}
-    for idx, (site, s) in enumerate(sorted(site_aggs.items()), start=2):
+    for idx, (site, s) in enumerate(
+        sorted(site_aggs.items(), key=lambda kv: _site_sort_key(kv[0])),
+        start=2,
+    ):
         zebra = _ZEBRA_FILL if idx % 2 == 0 else None
         bdh = s["empty"] + s["full"] + s["scrap"]
         pct = (bdh / grand_total_bdh) if grand_total_bdh else 0  # stored as fraction
@@ -845,6 +854,10 @@ def _build_ozet_charts_sheet(
 
     # Invisible "Toplam" line on top of each cluster — its only job is
     # to host a data label showing the week's total above the bar group.
+    # Label position 'b' (below the line point) pulls the number down
+    # toward the visible bars instead of floating above them in white
+    # space; the line itself is at Toplam value, so 'b' lands the
+    # label roughly at the top of the tallest bar.
     total_line = LineChart()
     total_ref = Reference(
         data_ws,
@@ -858,7 +871,7 @@ def _build_ozet_charts_sheet(
         gp.line = LineProperties(noFill=True)
         s.graphicalProperties = gp
         s.marker = Marker(symbol="none")
-    total_line.dataLabels = _value_only_labels("t")
+    total_line.dataLabels = _value_only_labels("b")
     chart1 += total_line
 
     ws.add_chart(chart1, "A4")
@@ -898,9 +911,9 @@ def _build_ozet_charts_sheet(
     # ton/Dolu is fractional → two decimal places on both the Y-axis
     # tick labels and the per-point data labels.
     chart2.y_axis.numFmt = "[$-tr-TR]#,##0.00"
-    # Start the Y axis at 0.10 instead of 0 — values cluster between 0.2
+    # Start the Y axis at 0.20 instead of 0 — values cluster between 0.2
     # and 1.0 typically, so a tight axis surfaces the variance.
-    chart2.y_axis.scaling.min = 0.10
+    chart2.y_axis.scaling.min = 0.20
     chart2.dataLabels = _value_only_labels("t", "[$-tr-TR]#,##0.00")
     for series in chart2.series:
         series.marker = Marker(symbol="circle", size=7)
@@ -1135,7 +1148,11 @@ def _build_uretim_yeri_karsilastirma_sheet(
                   "bdh": 0, "tonnage": 0.0}
 
         for r_offset, (site, agg) in enumerate(
-            sorted(sites_in_week.items()), start=5
+            sorted(
+                sites_in_week.items(),
+                key=lambda kv: _site_sort_key(kv[0]),
+            ),
+            start=5,
         ):
             bdh = agg["empty"] + agg["full"] + agg["scrap"]
             pct = (bdh / grand_total_bdh) if grand_total_bdh else 0
