@@ -611,13 +611,19 @@ def _clean_axis(axis) -> None:
     axis.majorTickMark = "out"
 
 
-def _value_only_labels(position: str) -> DataLabelList:
-    """Data labels that show ONLY the numeric value.
+def _value_only_labels(
+    position: str, num_format: str = "[$-tr-TR]#,##0"
+) -> DataLabelList:
+    """Data labels that show ONLY the numeric value, with a forced
+    Turkish locale ``#,##0`` format (so 8023 renders as ``8.023``).
 
     openpyxl/Excel sometimes display series name and category name
     alongside the value when those flags are left unset (interpreted
     as 'show by default'). Setting every other show* flag to False
     keeps the label to just the number.
+
+    ``num_format`` defaults to integer thousand-separated. For
+    fractional values (ton/Dolu KPI), pass ``"[$-tr-TR]#,##0.00"``.
     """
     return DataLabelList(
         showVal=True,
@@ -627,6 +633,7 @@ def _value_only_labels(position: str) -> DataLabelList:
         showPercent=False,
         showBubbleSize=False,
         dLblPos=position,
+        numFmt=num_format,
     )
 
 
@@ -738,7 +745,8 @@ def _build_ozet_charts_sheet(
     chart2.set_categories(cats_ref)
     _clean_axis(chart2.x_axis)
     _clean_axis(chart2.y_axis)
-    chart2.dataLabels = _value_only_labels("t")
+    # ton/Dolu is fractional → two decimal places.
+    chart2.dataLabels = _value_only_labels("t", "[$-tr-TR]#,##0.00")
     for series in chart2.series:
         series.marker = Marker(symbol="circle", size=7)
     chart2.legend = None  # single series — legend is just noise
@@ -781,11 +789,15 @@ def _build_ozet_charts_sheet(
         chart3.set_categories(cats_ref)
     _clean_axis(chart3.x_axis)
     _clean_axis(chart3.y_axis)
-    chart3.dataLabels = _value_only_labels("outEnd")
+    # ton/Dolu is fractional → two decimal places.
+    chart3.dataLabels = _value_only_labels("outEnd", "[$-tr-TR]#,##0.00")
     chart3.legend.position = "b"
     chart3.legend.overlay = False
-    chart3.height = 12
-    chart3.width = 28
+    # Wider than other charts: 11 sites × 3 weekly bars per site = 33
+    # columns, so the chart needs the extra width to keep labels
+    # legible without overlapping.
+    chart3.height = 13
+    chart3.width = 38
     ws.add_chart(chart3, "A48")
 
     # ================================================================
@@ -856,14 +868,16 @@ def _build_ozet_charts_sheet(
                 pass
     _clean_axis(chart4.x_axis)
     _clean_axis(chart4.y_axis)
-    # Center labels inside each stack segment so each color count is
-    # readable without overlapping other charts.
-    chart4.dataLabels = _value_only_labels("ctr")
+    # No per-segment data labels: with 6 stacked colors × 11 sites
+    # the values pile on top of each other and are unreadable. Brand
+    # colors + bottom legend already convey the breakdown; users can
+    # hover or check the underlying ``Renk Özeti`` sheet for exact
+    # counts.
     chart4.legend.position = "b"
     chart4.legend.overlay = False
-    chart4.height = 12
-    chart4.width = 28
-    ws.add_chart(chart4, "A72")
+    chart4.height = 13
+    chart4.width = 38
+    ws.add_chart(chart4, "A74")
 
 
 # ---------------------------------------------------------------------------
