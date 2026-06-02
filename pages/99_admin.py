@@ -1543,37 +1543,40 @@ if _is_active("closed"):
             except Exception as exc:
                 st.error(f"Hata: {exc}")
     else:
-        with st.form(f"close_week_form_{closed_target_week}"):
-            close_reason = st.text_input(
-                "Sebep (opsiyonel)",
-                placeholder="örn. Ramazan Bayramı 2. günü",
-                key=f"close_reason_{closed_target_week}",
+        # st.form içinde input değerleri SUBMIT öncesi okunamıyor; o yüzden
+        # "ONAYLIYORUM" yazılınca butonun anında aktifleşmesi için form
+        # KULLANMIYORUZ — direkt widget'lar.
+        close_reason = st.text_input(
+            "Sebep (opsiyonel)",
+            placeholder="örn. Ramazan Bayramı 2. günü",
+            key=f"close_reason_{closed_target_week}",
+        )
+        if existing_sub_count > 0:
+            st.warning(
+                f"Bu haftada **{existing_sub_count}** sayım kaydı var. "
+                "Kapatırsan hepsi silinir. Devam etmek için aşağıya "
+                "`ONAYLIYORUM` yaz."
             )
-            if existing_sub_count > 0:
-                st.warning(
-                    f"Bu haftada **{existing_sub_count}** sayım kaydı var. "
-                    "Kapatırsan hepsi silinir. Devam etmek için aşağıya "
-                    "`ONAYLIYORUM` yaz."
-                )
-                close_confirm = st.text_input(
-                    "Silme onayı",
-                    key=f"close_confirm_{closed_target_week}",
-                )
-                close_label = (
-                    f"Kapat ve {existing_sub_count} Kaydı Sil"
-                )
-                close_disabled = close_confirm != "ONAYLIYORUM"
-            else:
-                close_confirm = "ONAYLIYORUM"  # nothing to delete
-                close_label = "Bu Haftayı Kapat"
-                close_disabled = False
+            close_confirm = st.text_input(
+                "Silme onayı",
+                key=f"close_confirm_{closed_target_week}",
+            )
+            close_label = (
+                f"Kapat ve {existing_sub_count} Kaydı Sil"
+            )
+            close_disabled = close_confirm != "ONAYLIYORUM"
+        else:
+            close_confirm = "ONAYLIYORUM"  # nothing to delete
+            close_label = "Bu Haftayı Kapat"
+            close_disabled = False
 
-            close_submitted = st.form_submit_button(
-                close_label,
-                use_container_width=True,
-                disabled=close_disabled,
-                type="primary",
-            )
+        close_submitted = st.button(
+            close_label,
+            key=f"close_submit_{closed_target_week}",
+            use_container_width=True,
+            disabled=close_disabled,
+            type="primary",
+        )
 
         if close_submitted and not close_disabled:
             try:
