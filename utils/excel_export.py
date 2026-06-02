@@ -551,6 +551,7 @@ def _aggregate_all_weeks(
     dict[str, dict[str, dict[str, float]]], # weekly_site
     dict[str, dict[str, int]],             # weekly_color (color → toplam konteyner)
     list[str],                              # ordered color list (discovery order)
+    set[str],                              # manual_only_weeks
 ]:
     """Aggregate the long-format rows into structures useful for charts.
 
@@ -568,6 +569,11 @@ def _aggregate_all_weeks(
     weekly_color: dict[str, dict[str, int]] = {}
     color_order: list[str] = []
     seen_colors: set[str] = set()
+    # Weeks that have any count_submission row (i.e. real per-color data).
+    # Anything not in here but folded in via manual_aggs is "manual only"
+    # and should be excluded from charts/sheets that depend on the
+    # per-color or per-tonnage dimension.
+    submission_weeks: set[str] = set()
 
     tonnage_seen: set[tuple[str, str, str]] = set()
 
@@ -576,6 +582,9 @@ def _aggregate_all_weeks(
         site = r.get("Üretim Yeri") or ""
         dept = r.get("Bölüm") or ""
         color = r.get("Renk") or ""
+
+        if week:
+            submission_weeks.add(week)
 
         empty_v = int(r.get("Boş") or 0)
         full_v = int(r.get("Dolu") or 0)
@@ -662,7 +671,14 @@ def _aggregate_all_weeks(
                 except (TypeError, ValueError):
                     pass
 
-    return weekly_totals, weekly_site, weekly_color, color_order
+    manual_only_weeks = {
+        week for week in weekly_totals.keys() if week not in submission_weeks
+    }
+
+    return (
+        weekly_totals, weekly_site, weekly_color, color_order,
+        manual_only_weeks,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -855,18 +871,24 @@ def _build_ozet_charts_sheet(
     data_ws = wb.create_sheet("_veri")
     data_ws.sheet_state = "veryHidden"
 
-    weekly_totals, weekly_site, weekly_color, color_order = _aggregate_all_weeks(
-        all_rows, manual_aggs,
-    )
+    (
+        weekly_totals, weekly_site, weekly_color, color_order,
+        manual_only_weeks,
+    ) = _aggregate_all_weeks(all_rows, manual_aggs)
     weeks = sorted(weekly_totals.keys())
+    # Weeks that have full per-color / tonnage data — used by charts 2,
+    # 3, and 4 plus the comparison sheet so manual-only entries (Boş +
+    # Dolu only, no tonnage, no color) don't render as misleading
+    # zeros.
+    full_weeks = [w for w in weeks if w not in manual_only_weeks]
     # Custom site order — see _SITE_ORDER. Anything not on that list
     # falls through alphabetically at the end.
     all_sites = sorted(
         {s for sd in weekly_site.values() for s in sd.keys()},
         key=_site_sort_key,
     )
-    last_3_weeks = weeks[-3:] if len(weeks) >= 3 else weeks[:]
-    latest_week = weeks[-1] if weeks else None
+    last_3_weeks = full_weeks[-3:] if len(full_weeks) >= 3 else full_weeks[:]
+    latest_week = full_weeks[-1] if full_weeks else None
 
     # ================================================================
     # Chart 1 — Clustered column: weekly total split by category
@@ -965,13 +987,15 @@ def _build_ozet_charts_sheet(
     t2_col = 7  # well clear of table 1
     data_ws.cell(row=1, column=t2_col, value="Hafta")
     data_ws.cell(row=1, column=t2_col + 1, value="Ton / Dolu Konteyner")
-    for i, w in enumerate(weeks):
+    # Use full_weeks (excludes manual-only entries) so W17 etc. don't
+    # appear as misleading zeros on the ton/Dolu chart.
+    for i, w in enumerate(full_weeks):
         wt = weekly_totals[w]
         ton_per = (wt["tonnage"] / wt["full"]) if wt["full"] else None
         data_ws.cell(row=2 + i, column=t2_col, value=_short_week(w))
         cell = data_ws.cell(row=2 + i, column=t2_col + 1, value=ton_per)
         cell.number_format = "[$-tr-TR]#,##0.00"
-    t2_last = 1 + len(weeks)
+    t2_last = 1 + len(full_weeks)
 
     chart2 = LineChart()
     chart2.style = 2
@@ -1203,10 +1227,19 @@ def _build_uretim_yeri_karsilastirma_sheet(
         ws["A3"] = "Henüz veri yok."
         return
 
-    _, weekly_site, _, _ = _aggregate_all_weeks(all_rows, manual_aggs)
+    # Manual-only weeks have no Kanban / Hurda / Tonaj so most of the
+    # comparison columns would be zeros; exclude them so the side-by-side
+    # comparison stays meaningful. They still show up in the Grafik 1
+    # weekly totals breakdown.
+    _, weekly_site, _, _, manual_only_weeks = _aggregate_all_weeks(
+        all_rows, manual_aggs,
+    )
     # Newest week at the top — admins typically open this sheet to compare
     # 'this week' against the recent past.
-    weeks = sorted(weekly_site.keys(), reverse=True)
+    weeks = sorted(
+        (w for w in weekly_site.keys() if w not in manual_only_weeks),
+        reverse=True,
+    )
 
     sub_headers = [
         "Üretim Yeri", "Boş", "Dolu", "Dolu içindeki Kanban", "Hurdaya ayrılacak",
