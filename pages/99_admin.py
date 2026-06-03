@@ -211,7 +211,7 @@ if _is_active("users"):
                             },
                         ))
                         clear_cached_queries()
-                        st.toast(f"'{new_username}' oluşturuldu.", icon="✅")
+                        queue_toast(f"'{new_username}' oluşturuldu.", icon="✅")
             except Exception as exc:
                 st.error(f"Hata: {exc}")
 
@@ -431,7 +431,7 @@ if _is_active("colors"):
                             },
                         ))
                 clear_cached_queries()
-                st.toast(f"'{clean_name}' rengi eklendi.", icon="✅")
+                queue_toast(f"'{clean_name}' rengi eklendi.", icon="✅")
                 st.rerun()
             except Exception as exc:
                 st.error(f"Hata: {exc}")
@@ -520,7 +520,7 @@ if _is_active("colors"):
                                 },
                             ))
                     clear_cached_queries()
-                    st.toast("Renk güncellendi.", icon="✅")
+                    queue_toast("Renk güncellendi.", icon="✅")
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Hata: {exc}")
@@ -541,7 +541,7 @@ if _is_active("colors"):
                             new_value={"is_active": False, "delete_mode": "soft"},
                         ))
                     clear_cached_queries()
-                    st.toast("Renk pasifleştirildi.", icon="✅")
+                    queue_toast("Renk pasifleştirildi.", icon="✅")
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Hata: {exc}")
@@ -630,7 +630,7 @@ if _is_active("users"):
                             new_value={"is_active": False, "delete_mode": "soft"},
                         ))
                     clear_cached_queries()
-                    st.toast(f"'{selected_user.username}' pasifleştirildi.", icon="✅")
+                    queue_toast(f"'{selected_user.username}' pasifleştirildi.", icon="✅")
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Hata: {exc}")
@@ -1302,9 +1302,9 @@ if _is_active("late"):
                     ))
                 clear_cached_queries()
                 if late_scope == "Hafta geneli":
-                    st.toast(f"{selected_week} için hafta geneli geç giriş penceresi açıldı.", icon="✅")
+                    queue_toast(f"{selected_week} için hafta geneli geç giriş penceresi açıldı.", icon="✅")
                 else:
-                    st.toast(f"{selected_week} için kullanıcı özel geç giriş izni açıldı.", icon="✅")
+                    queue_toast(f"{selected_week} için kullanıcı özel geç giriş izni açıldı.", icon="✅")
                 st.rerun()
             except Exception as exc:
                 st.error(f"Hata: {exc}")
@@ -1542,7 +1542,7 @@ if _is_active("closed"):
                             new_value={"week_iso": closed_target_week},
                         ))
                 clear_cached_queries()
-                st.toast(
+                queue_toast(
                     f"{closed_target_week} haftası tekrar açıldı.", icon="✅"
                 )
                 st.rerun()
@@ -1621,13 +1621,13 @@ if _is_active("closed"):
                     ))
                 clear_cached_queries()
                 if deleted_ids:
-                    st.toast(
+                    queue_toast(
                         f"{closed_target_week} kapatıldı; "
                         f"{len(deleted_ids)} kayıt silindi.",
                         icon="✅",
                     )
                 else:
-                    st.toast(
+                    queue_toast(
                         f"{closed_target_week} kapatıldı.", icon="✅"
                     )
                 st.rerun()
@@ -1814,7 +1814,7 @@ if _is_active("manual"):
                         },
                     ))
                 clear_cached_queries()
-                st.toast(
+                queue_toast(
                     f"{manual_week} manuel verisi kaydedildi "
                     f"({touched} satır değişti).",
                     icon="✅",
@@ -1847,7 +1847,7 @@ if _is_active("manual"):
                         new_value=None,
                     ))
                 clear_cached_queries()
-                st.toast(
+                queue_toast(
                     f"{manual_week} manuel verisi silindi "
                     f"({deleted} satır).",
                     icon="✅",
@@ -1991,7 +1991,7 @@ if _is_active("override"):
                             },
                         ))
                     clear_cached_queries()
-                    st.toast(f"{override_week} haftasındaki {len(submissions)} sayım kaydı silindi.", icon="✅")
+                    queue_toast(f"{override_week} haftasındaki {len(submissions)} sayım kaydı silindi.", icon="✅")
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Hata: {exc}")
@@ -2065,7 +2065,7 @@ if _is_active("override"):
                                 },
                             ))
                     clear_cached_queries()
-                    st.toast("Sayım kaydı silindi.", icon="✅")
+                    queue_toast("Sayım kaydı silindi.", icon="✅")
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Hata: {exc}")
@@ -2379,7 +2379,7 @@ if _is_active("test_reset"):
                     },
                 ))
             clear_cached_queries()
-            st.toast(
+            queue_toast(
                 f"Sıfırlama tamam. Silinen: {deleted_subs} sayım, "
                 f"{deleted_details} detay, {deleted_late + deleted_late_user} "
                 f"geç giriş penceresi, {deleted_audit} audit satırı.",

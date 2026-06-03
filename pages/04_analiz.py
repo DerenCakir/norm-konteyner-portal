@@ -67,6 +67,68 @@ def _fmt_tr_decimal(n: float, digits: int = 1) -> str:
     return formatted.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def _tr_axis(integer: bool = True) -> alt.Axis:
+    """Altair Y-axis with Turkish number format (1.234 instead of 1,234).
+
+    Vega-Lite's default ``,d`` / ``,.1f`` uses ``,`` as the thousands
+    separator. ``labelExpr`` runs inside Vega's expression language and
+    rewrites the rendered label client-side so values read TR-natural.
+    """
+    fmt = ",d" if integer else ",.1f"
+    return alt.Axis(
+        format=fmt,
+        labelExpr="replace(datum.label, ',', '.')",
+        grid=True,
+    )
+
+
+def _altair_line(df_wide: pd.DataFrame, value_title: str, integer: bool = True):
+    """Build a non-interactive multi-series altair line chart from a
+    wide ``week_iso × series`` dataframe. Avoids ``st.line_chart`` so
+    we control the Y-axis number format AND keep the chart static
+    under mouse-wheel (no zoom / pan on hover)."""
+    if df_wide is None or df_wide.empty:
+        return None
+    long = df_wide.melt(
+        id_vars="week_iso", var_name="Seri", value_name="Değer",
+    )
+    return (
+        alt.Chart(long)
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("week_iso:N", title="Hafta"),
+            y=alt.Y(
+                "Değer:Q", title=value_title, axis=_tr_axis(integer),
+            ),
+            color=alt.Color("Seri:N", title=""),
+            tooltip=["week_iso", "Seri", "Değer"],
+        )
+        .properties(height=320)
+    )
+
+
+def _altair_bar(df_wide: pd.DataFrame, value_title: str, integer: bool = True):
+    """Wide ``week_iso × series`` → non-interactive altair bar chart."""
+    if df_wide is None or df_wide.empty:
+        return None
+    long = df_wide.melt(
+        id_vars="week_iso", var_name="Seri", value_name="Değer",
+    )
+    return (
+        alt.Chart(long)
+        .mark_bar()
+        .encode(
+            x=alt.X("week_iso:N", title="Hafta"),
+            y=alt.Y(
+                "Değer:Q", title=value_title, axis=_tr_axis(integer),
+            ),
+            color=alt.Color("Seri:N", title=""),
+            tooltip=["week_iso", "Seri", "Değer"],
+        )
+        .properties(height=320)
+    )
+
+
 inject_css()
 restore_session_from_query()
 timer = page_timer("analiz")
@@ -163,15 +225,39 @@ total_containers = total_empty + total_full + total_scrap  # kanban dolu'nun alt
 completion_pct = (submitted_dept_count / total_dept_count * 100) if total_dept_count else 0
 kanban_rate = (total_kanban / total_full * 100) if total_full else 0
 
-# Ortalama dolu konteyner ağırlığı (kg) — toplam tonaj × 1000 / toplam dolu
-# Bölüm-bazlı hesabı ileride tabloda gösteriyoruz; burada genel ortalama.
-avg_kg_per_full = (total_actual * 1000 / total_full) if total_full else 0
+# Ort. Dolu Konteyner Ağırlığı — üretim yeri başına ton/Dolu hesaplanır,
+# sonra bunların ortalaması alınır (toplam tonaj / toplam dolu DEĞİL).
+# Bu mantık tek bir hattın hacmiyle ortalamanın bozulmasını engeller.
+_site_tonnage = sub_unique.groupby("site")["actual_tonnage"].sum()
+_site_full = df_week.groupby("site")["full_count"].sum()
+_site_kg_per_full = (
+    _site_tonnage * 1000 / _site_full.replace(0, pd.NA)
+).dropna()
+avg_kg_per_full = (
+    float(_site_kg_per_full.mean()) if not _site_kg_per_full.empty else 0
+)
+
+# Compound Dolu KPI card: Dolu adedi üstte; alt yarıda Kanban + Dolu'ya
+# oranı. Tek başına 'Kanban' veya 'Kanban Oranı' kartına gerek kalmıyor.
+_dolu_compound = (
+    f'<div class="kpi-card kpi-card-compound kpi-tone-blue">'
+    f'  <div class="kpi-card-top"><div class="kpi-label">Dolu Konteyner</div></div>'
+    f'  <div class="kpi-value kpi-value-lg">{_fmt_tr(total_full)}</div>'
+    f'  <div class="kpi-sub kpi-sub-tight">Ürün / yarı mamul taşıyan</div>'
+    f'  <div class="kpi-compound-row">'
+    f'    <span class="kpi-compound-label">Kanban</span>'
+    f'    <span class="kpi-compound-value">'
+    f'      <strong>{_fmt_tr(total_kanban)}</strong>'
+    f'      <span class="kpi-compound-pct">%{_fmt_tr_decimal(kanban_rate)}</span>'
+    f'    </span>'
+    f'  </div>'
+    f'</div>'
+)
 
 primary_cards = [
     kpi_card("Toplam Konteyner", _fmt_tr(total_containers), sub="Boş + Dolu + Hurdaya Ayrılacak"),
-    kpi_card("Dolu Konteyner", _fmt_tr(total_full), sub="Ürün / yarı mamul taşıyan"),
     kpi_card("Boş Konteyner", _fmt_tr(total_empty), sub="Kullanılabilir kasa"),
-    kpi_card("Kanban", _fmt_tr(total_kanban), sub="Dolu konteynerin alt kümesi"),
+    _dolu_compound,
     kpi_card("Hurdaya Ayrılacak", _fmt_tr(total_scrap)),
 ]
 render_kpis(primary_cards)
@@ -184,11 +270,15 @@ secondary_cards = [
         delta=f"{missing_count} eksik" if missing_count else "Eksik yok",
         delta_kind="neutral" if missing_count else "neg",
     ),
-    kpi_card("Kanban Oranı", f"%{_fmt_tr_decimal(kanban_rate)}", sub="Kanban / dolu"),
+    kpi_card(
+        "Toplam Tonaj",
+        f"{_fmt_tr_decimal(total_actual)} t",
+        sub="Seçili hafta gerçekleşen",
+    ),
     kpi_card(
         "Ort. Dolu Konteyner Ağırlığı",
         f"{_fmt_tr(avg_kg_per_full)} kg",
-        sub="Toplam tonaj / dolu konteyner",
+        sub="Üretim yeri ortalamalarının ortalaması",
     ),
 ]
 st.markdown("<div style='height:0.75rem'></div>", unsafe_allow_html=True)
@@ -306,7 +396,10 @@ if breakdown and selected_trend_site != "Tümü":
     else:
         chart = alt.Chart(per_dept).mark_line(point=True).encode(
             x=alt.X("week_iso:N", title="Hafta"),
-            y=alt.Y("Değer:Q", title=metric),
+            y=alt.Y(
+                "Değer:Q", title=metric,
+                axis=_tr_axis(integer=(metric != "Gerçekleşen Tonaj")),
+            ),
             color=alt.Color("department:N", title="Bölüm"),
             tooltip=["week_iso", "department", "Değer"],
         ).properties(height=400)
@@ -344,16 +437,87 @@ else:
         cl, cr = st.columns(2)
         with cl:
             st.markdown("**Konteyner sayıları (haftalık toplam)**")
-            st.line_chart(weekly.set_index("week_iso")[["Boş", "Dolu", "Kanban"]])
+            _c = _altair_line(weekly[["week_iso", "Boş", "Dolu", "Kanban"]], "Adet")
+            if _c is not None:
+                st.altair_chart(_c, use_container_width=True)
         with cr:
             st.markdown("**Tonaj: Gerçekleşen vs Hedef**")
-            st.line_chart(weekly_tonnage.set_index("week_iso")[["Gerçekleşen", "Hedef"]])
+            _c = _altair_line(
+                weekly_tonnage[["week_iso", "Gerçekleşen", "Hedef"]],
+                "Ton", integer=False,
+            )
+            if _c is not None:
+                st.altair_chart(_c, use_container_width=True)
 
         weekly_tonnage["Fazla (t)"] = (
             weekly_tonnage["Gerçekleşen"] - weekly_tonnage["Hedef"]
         ).clip(lower=0)
         st.markdown("**Hedefi aşan tonaj (haftalık)**")
-        st.bar_chart(weekly_tonnage.set_index("week_iso")[["Fazla (t)"]])
+        _c = _altair_bar(
+            weekly_tonnage[["week_iso", "Fazla (t)"]], "Ton", integer=False,
+        )
+        if _c is not None:
+            st.altair_chart(_c, use_container_width=True)
+
+
+# ---------------------------------------------------------------------------
+# Section 2.5 — Renk Bazında Konteyner Dağılımı (ana görünüm)
+# ---------------------------------------------------------------------------
+st.divider()
+st.subheader("Renk Bazında Konteyner Dağılımı (seçili hafta)")
+
+_color_group_keys = (
+    ["color", "color_sort_order"]
+    if "color_sort_order" in df_week.columns
+    else ["color"]
+)
+_color_main = (
+    df_week.groupby(_color_group_keys)
+    .agg(Boş=("empty_count", "sum"), Dolu=("full_count", "sum"))
+    .reset_index()
+)
+if "color_sort_order" in _color_main.columns:
+    _color_main = _color_main.sort_values("color_sort_order").drop(
+        columns=["color_sort_order"]
+    )
+
+if _color_main.empty or (_color_main[["Boş", "Dolu"]].sum().sum() == 0):
+    st.markdown(
+        empty_state(
+            "Renk dağılımı için veri yok",
+            "Seçili hafta için renk bazlı veri bulunmuyor.",
+            badge="Veri bekleniyor",
+            tone="info",
+        ),
+        unsafe_allow_html=True,
+    )
+else:
+    _color_long = _color_main.melt(
+        id_vars="color", value_vars=["Boş", "Dolu"],
+        var_name="Tip", value_name="Sayı",
+    )
+    _color_chart = (
+        alt.Chart(_color_long)
+        .mark_bar()
+        .encode(
+            x=alt.X(
+                "color:N", title="Renk",
+                sort=list(_color_main["color"]),
+            ),
+            xOffset=alt.XOffset("Tip:N"),
+            y=alt.Y("Sayı:Q", title="Konteyner Adedi", axis=_tr_axis()),
+            color=alt.Color(
+                "Tip:N",
+                scale=alt.Scale(
+                    domain=["Boş", "Dolu"], range=["#9aa5b1", "#3aa56b"],
+                ),
+                legend=alt.Legend(title=""),
+            ),
+            tooltip=["color", "Tip", "Sayı"],
+        )
+        .properties(height=340)
+    )
+    st.altair_chart(_color_chart, use_container_width=True)
 
 
 # ---------------------------------------------------------------------------
@@ -673,15 +837,33 @@ with st.expander("Üretim Yeri Trend Sapma", expanded=False):
     cl, cr = st.columns(2)
     with cl:
         st.markdown(f"**{selected_site} — konteynerler**")
-        st.line_chart(site_weekly.set_index("week_iso")[["Boş", "Dolu", "Kanban"]])
+        _c = _altair_line(
+            site_weekly[["week_iso", "Boş", "Dolu", "Kanban"]], "Adet",
+        )
+        if _c is not None:
+            st.altair_chart(_c, use_container_width=True)
     with cr:
         st.markdown(f"**{selected_site} — tonaj**")
-        st.line_chart(site_tonnage_weekly.set_index("week_iso")[["Gerçekleşen", "Hedef"]])
+        _c = _altair_line(
+            site_tonnage_weekly[["week_iso", "Gerçekleşen", "Hedef"]],
+            "Ton", integer=False,
+        )
+        if _c is not None:
+            st.altair_chart(_c, use_container_width=True)
 
     st.markdown("**Kanban oranı ve toplam konteyner trendi**")
     c_ratio, c_total = st.columns(2)
-    c_ratio.line_chart(site_weekly.set_index("week_iso")[["Kanban Oranı (%)"]])
-    c_total.line_chart(site_weekly.set_index("week_iso")[["Toplam"]])
+    with c_ratio:
+        _c = _altair_line(
+            site_weekly[["week_iso", "Kanban Oranı (%)"]],
+            "Oran (%)", integer=False,
+        )
+        if _c is not None:
+            st.altair_chart(_c, use_container_width=True)
+    with c_total:
+        _c = _altair_line(site_weekly[["week_iso", "Toplam"]], "Adet")
+        if _c is not None:
+            st.altair_chart(_c, use_container_width=True)
 
     site_change = site_weekly.merge(
         site_tonnage_weekly[["week_iso", "Gerçekleşen", "Hedef", "Fazla"]],

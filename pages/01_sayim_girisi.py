@@ -326,8 +326,8 @@ if st.session_state.get(f"tonnage_missing_{form_scope}"):
     st.markdown(
         """
         <style>
-        [data-testid="stForm"] .stNumberInput:has(input[aria-label*="tonaj"]) [data-baseweb="input"] > div,
-        [data-testid="stForm"] .stNumberInput:has(input[aria-label*="Tonaj"]) [data-baseweb="input"] > div {
+        [data-testid="stForm"] .stTextInput:has(input[aria-label*="tonaj"]) [data-baseweb="input"] > div,
+        [data-testid="stForm"] .stTextInput:has(input[aria-label*="Tonaj"]) [data-baseweb="input"] > div {
             border-color: var(--danger) !important;
             background: rgba(220, 38, 38, 0.06) !important;
             animation: tonnage-required-pulse 0.7s ease-in-out 2;
@@ -348,15 +348,55 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
         "Tarih ve saat sayımı kaydederken otomatik olarak işlenir; manuel "
         "değiştirilemez."
     )
-    # Tonaj alanı — CSS, :has() selector'u ile bu input'a özel kalın
-    # çerçeve + büyük rakam veriyor; ekstra wrapper div'e gerek yok.
-    tonnage = st.number_input(
+    # Tonaj alanı — TR ondalık ayracı (",") kullanılır.
+    # st.number_input her zaman "." kullanır; bu yüzden text_input ile
+    # alıp aşağıda hem "," hem "." kabul ederek parse ediyoruz.
+    # CSS, :has() selector'u ile bu input'a özel kalın çerçeve + büyük
+    # rakam veriyor; ekstra wrapper div'e gerek yok.
+    def _format_tr_tonnage(v: float | None) -> str:
+        if v is None:
+            return ""
+        formatted = f"{float(v):.2f}".rstrip("0").rstrip(".")
+        return formatted.replace(".", ",") if formatted else "0"
+
+    tonnage_input_str = st.text_input(
         "Yarı mamül tonajı (toplam) — ton",
-        value=default_tonnage, min_value=0.0, step=0.1, format="%g",
+        value=_format_tr_tonnage(default_tonnage),
         disabled=not can_submit,
         key=f"sayim_tonnage_{form_scope}",
-        placeholder="örn. 1234",
+        placeholder="örn. 1.234,56",
+        help="Ondalık ayırıcı olarak virgül kullan (örn. 1,5).",
     )
+
+    def _parse_tr_tonnage(text: str) -> float | None:
+        if text is None:
+            return None
+        cleaned = (
+            text.strip().replace(" ", "").replace(" ", "")
+        )
+        if not cleaned:
+            return None
+        # Hem "1.234,56" hem "1234.56" hem "1234,56" hem "1234" kabul:
+        # son virgülü/noktayı ondalık ayracı olarak değerlendir, diğer
+        # virgül/noktaları bin ayracı say.
+        last_comma = cleaned.rfind(",")
+        last_dot = cleaned.rfind(".")
+        decimal_pos = max(last_comma, last_dot)
+        if decimal_pos == -1:
+            normalized = cleaned
+        else:
+            integer_part = (
+                cleaned[:decimal_pos].replace(".", "").replace(",", "")
+            )
+            decimal_part = cleaned[decimal_pos + 1:]
+            normalized = f"{integer_part}.{decimal_part}" if decimal_part else integer_part
+        try:
+            v = float(normalized)
+        except ValueError:
+            return None
+        return v if v >= 0 else None
+
+    tonnage = _parse_tr_tonnage(tonnage_input_str)
 
     # Renk × Boş / Dolu / Kanban / Hurda tablosu
     st.markdown('<div style="height:0.5rem"></div>', unsafe_allow_html=True)
