@@ -173,10 +173,357 @@ def _set_line_series_color(series, hex_code: str) -> None:
 # Per-week sheet builders
 # ---------------------------------------------------------------------------
 
-def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
-    """Sheet 1: detail per (department × color) for the selected week."""
+# ---------------------------------------------------------------------------
+# Dashboard — one-page summary view (KPI cards + mini chart + top sites)
+# ---------------------------------------------------------------------------
+
+def _compute_week_kpis(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Aggregate the per-(site×dept×color) rows down to the KPI numbers
+    surfaced on the Dashboard (matches the portal Analiz page logic).
+    """
+    total_empty = sum(int(r.get("Boş") or 0) for r in rows)
+    total_full = sum(int(r.get("Dolu") or 0) for r in rows)
+    total_kanban = sum(int(r.get("Kanban") or 0) for r in rows)
+    total_scrap = sum(int(r.get("Hurda") or 0) for r in rows)
+    total_containers = total_empty + total_full + total_scrap
+
+    # Tonnage: once per submission_id (color rows share the submission tonnage).
+    seen_subs: set[int] = set()
+    total_tonnage = 0.0
+    site_tonnage: dict[str, float] = {}
+    for r in rows:
+        sub_id = r.get("Submission ID")
+        if sub_id is None or sub_id in seen_subs:
+            continue
+        seen_subs.add(sub_id)
+        ton = r.get("Gerçekleşen Tonaj")
+        if ton is None:
+            continue
+        try:
+            ton_f = float(ton)
+        except (TypeError, ValueError):
+            continue
+        total_tonnage += ton_f
+        site = r.get("Üretim Yeri") or ""
+        site_tonnage[site] = site_tonnage.get(site, 0.0) + ton_f
+
+    # Per-site full container counts (across all colors).
+    site_full: dict[str, int] = {}
+    for r in rows:
+        site = r.get("Üretim Yeri") or ""
+        site_full[site] = site_full.get(site, 0) + int(r.get("Dolu") or 0)
+
+    # Ortalama Dolu Konteyner Ağırlığı: average of per-site (ton/full) ratios.
+    site_ratios: list[float] = []
+    for site, full in site_full.items():
+        if full <= 0:
+            continue
+        ton = site_tonnage.get(site, 0.0)
+        site_ratios.append(ton * 1000.0 / full)
+    avg_kg_per_full = sum(site_ratios) / len(site_ratios) if site_ratios else 0.0
+
+    kanban_pct = (total_kanban / total_full * 100.0) if total_full else 0.0
+
+    return {
+        "empty": total_empty,
+        "full": total_full,
+        "kanban": total_kanban,
+        "scrap": total_scrap,
+        "total_containers": total_containers,
+        "tonnage": total_tonnage,
+        "avg_kg_per_full": avg_kg_per_full,
+        "kanban_pct": kanban_pct,
+        "site_tonnage": site_tonnage,
+        "site_full": site_full,
+    }
+
+
+def _kpi_card_excel(
+    ws,
+    row: int,
+    col: int,
+    width: int,
+    label: str,
+    value: str,
+    sub: str = "",
+    tone: str = "blue",
+) -> None:
+    """Render a KPI card into a 3-row × ``width``-col block.
+
+    Row layout:
+      row N      → label band (small, navy bg, white text)
+      row N+1..2 → value (large bold) merged with sub line below
+    """
+    accent = {
+        "blue":   "1F3A8A",
+        "green":  "047857",
+        "amber":  "B45309",
+        "rose":   "BE123C",
+        "slate":  "334155",
+    }.get(tone, "1F3A8A")
+
+    # Label band
+    end_col = col + width - 1
+    ws.merge_cells(start_row=row, start_column=col, end_row=row, end_column=end_col)
+    label_cell = ws.cell(row=row, column=col, value=label)
+    label_cell.font = Font(bold=True, color="FFFFFF", size=10)
+    label_cell.fill = PatternFill("solid", fgColor=accent)
+    label_cell.alignment = Alignment(
+        horizontal="left", vertical="center", indent=1,
+    )
+    ws.row_dimensions[row].height = 20
+
+    # Value row
+    ws.merge_cells(
+        start_row=row + 1, start_column=col,
+        end_row=row + 1, end_column=end_col,
+    )
+    value_cell = ws.cell(row=row + 1, column=col, value=value)
+    value_cell.font = Font(bold=True, size=20, color="0F172A")
+    value_cell.alignment = Alignment(
+        horizontal="left", vertical="center", indent=1,
+    )
+    value_cell.fill = PatternFill("solid", fgColor="FFFFFF")
+    ws.row_dimensions[row + 1].height = 34
+
+    # Sub row
+    ws.merge_cells(
+        start_row=row + 2, start_column=col,
+        end_row=row + 2, end_column=end_col,
+    )
+    sub_cell = ws.cell(row=row + 2, column=col, value=sub)
+    sub_cell.font = Font(italic=True, size=9, color="64748B")
+    sub_cell.alignment = Alignment(
+        horizontal="left", vertical="center", indent=1,
+    )
+    sub_cell.fill = PatternFill("solid", fgColor="FFFFFF")
+    ws.row_dimensions[row + 2].height = 16
+
+    # Outer border on every cell of the card (top/bottom/sides only on
+    # the outermost edges). Simpler: thin border on all card cells.
+    thin = Side(style="thin", color="CBD5E1")
+    box = Border(left=thin, right=thin, top=thin, bottom=thin)
+    for r in range(row, row + 3):
+        for c in range(col, end_col + 1):
+            ws.cell(row=r, column=c).border = box
+
+
+def _fmt_int_tr(n) -> str:
+    try:
+        return f"{int(round(float(n))):,}".replace(",", ".")
+    except (TypeError, ValueError):
+        return str(n)
+
+
+def _fmt_dec_tr(n, digits: int = 1) -> str:
+    try:
+        v = float(n)
+    except (TypeError, ValueError):
+        return str(n)
+    formatted = f"{v:,.{digits}f}"
+    return formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def _build_dashboard_sheet(
+    wb: Workbook,
+    rows: list[dict[str, Any]],
+    week_iso: str,
+    week_human: str,
+) -> None:
+    """First sheet: one-page summary of the selected week."""
     ws = wb.active
-    ws.title = "Renk Kırılımı"
+    ws.title = "Dashboard"
+
+    # Title banner ---------------------------------------------------------
+    ws.merge_cells("A1:L1")
+    title_cell = ws["A1"]
+    title_cell.value = "Konteyner Sayım Dashboard"
+    title_cell.font = Font(bold=True, size=20, color="FFFFFF")
+    title_cell.fill = PatternFill("solid", fgColor="1F3A8A")
+    title_cell.alignment = Alignment(
+        horizontal="left", vertical="center", indent=1,
+    )
+    ws.row_dimensions[1].height = 38
+
+    ws.merge_cells("A2:L2")
+    sub_cell = ws["A2"]
+    sub_cell.value = f"{week_iso} — {week_human}"
+    sub_cell.font = Font(italic=True, size=11, color="475569")
+    sub_cell.alignment = Alignment(
+        horizontal="left", vertical="center", indent=1,
+    )
+    ws.row_dimensions[2].height = 20
+
+    # Set column widths once
+    for c in range(1, 13):
+        ws.column_dimensions[get_column_letter(c)].width = 12
+
+    if not rows:
+        ws["A4"] = "Bu hafta için kayıt yok."
+        ws["A4"].font = Font(italic=True, color="64748B")
+        return
+
+    kpis = _compute_week_kpis(rows)
+
+    # First row of cards: A4..L6 (4 cards × 3 cols = 12 cols) -------------
+    _kpi_card_excel(
+        ws, row=4, col=1, width=3,
+        label="Toplam Konteyner",
+        value=_fmt_int_tr(kpis["total_containers"]),
+        sub="Boş + Dolu + Hurdaya Ayrılacak",
+        tone="slate",
+    )
+    _kpi_card_excel(
+        ws, row=4, col=4, width=3,
+        label="Boş Konteyner",
+        value=_fmt_int_tr(kpis["empty"]),
+        sub="Kullanılabilir kasa",
+        tone="green",
+    )
+    _kpi_card_excel(
+        ws, row=4, col=7, width=3,
+        label="Dolu Konteyner",
+        value=_fmt_int_tr(kpis["full"]),
+        sub=(
+            f"Kanban: {_fmt_int_tr(kpis['kanban'])} "
+            f"(%{_fmt_dec_tr(kpis['kanban_pct'])})"
+        ),
+        tone="blue",
+    )
+    _kpi_card_excel(
+        ws, row=4, col=10, width=3,
+        label="Hurdaya Ayrılacak",
+        value=_fmt_int_tr(kpis["scrap"]),
+        sub="Artık kullanılmayacak",
+        tone="rose",
+    )
+
+    # Spacer row 7 + second row of cards: A8..L10 (3 cards × 4 cols) ------
+    ws.row_dimensions[7].height = 10
+    _kpi_card_excel(
+        ws, row=8, col=1, width=4,
+        label="Toplam Tonaj",
+        value=f"{_fmt_dec_tr(kpis['tonnage'])} t",
+        sub="Seçili hafta gerçekleşen",
+        tone="amber",
+    )
+    _kpi_card_excel(
+        ws, row=8, col=5, width=4,
+        label="Ort. Dolu Konteyner Ağırlığı",
+        value=f"{_fmt_int_tr(kpis['avg_kg_per_full'])} kg",
+        sub="Üretim yeri ortalamalarının ortalaması",
+        tone="amber",
+    )
+    _kpi_card_excel(
+        ws, row=8, col=9, width=4,
+        label="Kanban Oranı",
+        value=f"%{_fmt_dec_tr(kpis['kanban_pct'])}",
+        sub="Kanban / Dolu",
+        tone="slate",
+    )
+
+    # Top sites table — rows 13+ ------------------------------------------
+    ws.row_dimensions[11].height = 10
+
+    section_cell = ws.cell(row=12, column=1, value="Üretim Yeri Özeti")
+    section_cell.font = Font(bold=True, size=13, color="0F172A")
+    ws.merge_cells("A12:L12")
+
+    headers = [
+        "Üretim Yeri", "Boş", "Dolu", "Hurdaya Ayrılacak",
+        "Toplam", "Toplam Tonaj", "Ort. kg / Dolu",
+    ]
+    for j, h in enumerate(headers, start=1):
+        c = ws.cell(row=13, column=j, value=h)
+        c.fill = _HEADER_FILL
+        c.font = _HEADER_FONT
+        c.alignment = _CENTER
+        c.border = _BORDER
+    ws.row_dimensions[13].height = 24
+
+    # Per-site aggregate from rows.
+    site_agg: dict[str, dict[str, float]] = {}
+    seen_subs: set[int] = set()
+    for r in rows:
+        site = r.get("Üretim Yeri") or ""
+        s = site_agg.setdefault(
+            site,
+            {"empty": 0, "full": 0, "scrap": 0, "tonnage": 0.0},
+        )
+        s["empty"] += int(r.get("Boş") or 0)
+        s["full"] += int(r.get("Dolu") or 0)
+        s["scrap"] += int(r.get("Hurda") or 0)
+        sub_id = r.get("Submission ID")
+        if sub_id is not None and (site, sub_id) not in seen_subs:
+            seen_subs.add((site, sub_id))
+            ton = r.get("Gerçekleşen Tonaj")
+            if ton is not None:
+                try:
+                    s["tonnage"] += float(ton)
+                except (TypeError, ValueError):
+                    pass
+
+    sorted_sites = sorted(
+        site_agg.items(), key=lambda kv: _site_sort_key(kv[0]),
+    )
+    for idx, (site, s) in enumerate(sorted_sites, start=14):
+        bdh = s["empty"] + s["full"] + s["scrap"]
+        kg_per = (s["tonnage"] * 1000.0 / s["full"]) if s["full"] else 0.0
+
+        values = [site, s["empty"], s["full"], s["scrap"], bdh, s["tonnage"], kg_per]
+        zebra = (idx % 2 == 0)
+        for j, v in enumerate(values, start=1):
+            cell = ws.cell(row=idx, column=j, value=v)
+            cell.border = _BORDER
+            if zebra:
+                cell.fill = _ZEBRA_FILL
+            if j == 1:
+                cell.alignment = _LEFT
+            elif j in (2, 3, 4, 5):
+                cell.alignment = _RIGHT
+                cell.number_format = "[$-tr-TR]#,##0"
+            elif j == 6:
+                cell.alignment = _RIGHT
+                cell.number_format = "[$-tr-TR]#,##0.0"
+            elif j == 7:
+                cell.alignment = _RIGHT
+                cell.number_format = "[$-tr-TR]#,##0"
+
+    # TOPLAM row at bottom
+    total_row = 14 + len(sorted_sites)
+    grand = {
+        "empty": sum(s["empty"] for _, s in sorted_sites),
+        "full": sum(s["full"] for _, s in sorted_sites),
+        "scrap": sum(s["scrap"] for _, s in sorted_sites),
+        "tonnage": sum(s["tonnage"] for _, s in sorted_sites),
+    }
+    grand_bdh = grand["empty"] + grand["full"] + grand["scrap"]
+    grand_kg_per = (grand["tonnage"] * 1000.0 / grand["full"]) if grand["full"] else 0.0
+    total_values = [
+        "TOPLAM",
+        grand["empty"], grand["full"], grand["scrap"],
+        grand_bdh, grand["tonnage"], grand_kg_per,
+    ]
+    for j, v in enumerate(total_values, start=1):
+        cell = ws.cell(row=total_row, column=j, value=v)
+        cell.fill = _TOTAL_FILL
+        cell.font = _TOTAL_FONT
+        cell.border = _BORDER
+        if j == 1:
+            cell.alignment = _RIGHT
+        elif j == 6:
+            cell.alignment = _RIGHT
+            cell.number_format = "[$-tr-TR]#,##0.0"
+        else:
+            cell.alignment = _RIGHT
+            cell.number_format = "[$-tr-TR]#,##0"
+
+    ws.column_dimensions["A"].width = 22
+
+
+def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
+    """Detail per (department × color) for the selected week."""
+    ws = wb.create_sheet("Renk Kırılımı")
 
     headers = [
         "Üretim Yeri", "Bölüm", "Renk",
@@ -1509,6 +1856,7 @@ def build_week_excel(
     call sites but no longer surfaced in a 'Bilgi' cover sheet.
     """
     wb = Workbook()
+    _build_dashboard_sheet(wb, rows, week_iso, week_human)
     _build_renk_kirilim_sheet(wb, rows)
     dept_aggs = _build_uretim_yeri_kirilim_sheet(wb, rows)
     _build_uretim_yeri_ozeti_sheet(wb, dept_aggs)
