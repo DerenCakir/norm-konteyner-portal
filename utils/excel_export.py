@@ -7,7 +7,7 @@ Per-week workbook (``build_week_excel``) layout:
     3. Üretim Yeri Özeti       — selected week, per-site aggregate with %
                                  and ton/dolu KPI
     4. Renk Özeti              — selected week, per-color aggregate
-    5. GRAFİKLER               — ALL weeks, charts only
+    5. Grafikler               — ALL weeks, charts only
     6. Üretim Yeri Karşılaştırma — ALL weeks, site-summary tables placed
                                  side by side for visual comparison
 
@@ -854,8 +854,8 @@ def _build_ozet_charts_sheet(
     visible ÖZET sheet shows the title and the four charts and nothing
     else. Hidden-but-referenced cells continue to feed the charts.
     """
-    ws = wb.create_sheet("GRAFİKLER")
-    ws["A1"] = "GRAFİKLER — Tüm Haftaların Görüntüsü"
+    ws = wb.create_sheet("Grafikler")
+    ws["A1"] = "Grafikler — Tüm Haftaların Görüntüsü"
     ws["A1"].font = Font(bold=True, size=16, color="1F3A8A")
     ws.merge_cells("A1:K1")
     ws["A2"] = "Aşağıdaki grafikler tüm haftaların verisi üzerinden hesaplanır."
@@ -1227,19 +1227,15 @@ def _build_uretim_yeri_karsilastirma_sheet(
         ws["A3"] = "Henüz veri yok."
         return
 
-    # Manual-only weeks have no Kanban / Hurda / Tonaj so most of the
-    # comparison columns would be zeros; exclude them so the side-by-side
-    # comparison stays meaningful. They still show up in the Grafik 1
-    # weekly totals breakdown.
     _, weekly_site, _, _, manual_only_weeks = _aggregate_all_weeks(
         all_rows, manual_aggs,
     )
     # Newest week at the top — admins typically open this sheet to compare
-    # 'this week' against the recent past.
-    weeks = sorted(
-        (w for w in weekly_site.keys() if w not in manual_only_weeks),
-        reverse=True,
-    )
+    # 'this week' against the recent past. Manual-only weeks (e.g. W17)
+    # are included with a 'Manuel veri' tag in the title so admins know
+    # the Kanban / Hurda / Tonaj columns will be zero by design (those
+    # fields don't exist in the historical input).
+    weeks = sorted(weekly_site.keys(), reverse=True)
 
     sub_headers = [
         "Üretim Yeri", "Boş", "Dolu", "Dolu içindeki Kanban", "Hurdaya ayrılacak",
@@ -1257,8 +1253,13 @@ def _build_uretim_yeri_karsilastirma_sheet(
 
     start_row = 3
     for w in weeks:
-        # Week title row, merged across the table width.
-        title_cell = ws.cell(row=start_row, column=1, value=w)
+        # Week title row, merged across the table width. Manual-only
+        # weeks get a '(Manuel veri)' suffix so admins know the
+        # Kanban / Hurda / Tonaj columns are zero by design.
+        title_text = (
+            f"{w} (Manuel veri)" if w in manual_only_weeks else w
+        )
+        title_cell = ws.cell(row=start_row, column=1, value=title_text)
         title_cell.font = Font(bold=True, size=12, color="1F3A8A")
         title_cell.alignment = _CENTER
         title_cell.fill = _TOTAL_FILL
@@ -1386,6 +1387,12 @@ def build_week_excel(
         wb, all_weeks_rows or [], manual_aggs or []
     )
 
+    # Klavuz çizgilerini kapat — workbook bittiğinde dosya bir rapor
+    # gibi görünsün, ham tablo gibi değil. (View > Gridlines'ın isteğe
+    # bağlı işaretlenmesinin tersi.)
+    for _ws in wb.worksheets:
+        _ws.sheet_view.showGridLines = False
+
     buf = BytesIO()
     wb.save(buf)
     return buf.getvalue()
@@ -1511,6 +1518,10 @@ def build_all_weeks_excel(rows: list[dict[str, Any]]) -> bytes:
         info.cell(row=r, column=1).font = Font(bold=True)
         info.cell(row=r, column=1).alignment = _LEFT
         info.cell(row=r, column=2).alignment = _LEFT
+
+    # Klavuz çizgilerini kapat — kalan workbook gibi temiz dursun.
+    for _ws in wb.worksheets:
+        _ws.sheet_view.showGridLines = False
 
     buf = BytesIO()
     wb.save(buf)
