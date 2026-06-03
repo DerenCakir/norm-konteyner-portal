@@ -1268,13 +1268,19 @@ def _build_uretim_yeri_karsilastirma_sheet(
             end_row=start_row, end_column=cols_per_table,
         )
 
-        # Column header row
+        # Column header row — wrap text so long titles like 'Dolu
+        # Konteyner Başına Yük' and 'Hurdaya ayrılacak' break onto a
+        # second line instead of running into the next cell.
         header_row = start_row + 1
+        ws.row_dimensions[header_row].height = 38
+        wrap_center = Alignment(
+            horizontal="center", vertical="center", wrap_text=True,
+        )
         for j, h in enumerate(sub_headers):
             cell = ws.cell(row=header_row, column=1 + j, value=h)
             cell.fill = _HEADER_FILL
             cell.font = _HEADER_FONT
-            cell.alignment = _CENTER
+            cell.alignment = wrap_center
             cell.border = _BORDER
 
         sites_in_week = weekly_site[w]
