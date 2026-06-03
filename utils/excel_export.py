@@ -27,10 +27,12 @@ from openpyxl.chart import BarChart, LineChart, Reference
 from openpyxl.chart.data_source import NumFmt
 from openpyxl.chart.label import DataLabelList
 from openpyxl.chart.layout import Layout, ManualLayout
+from openpyxl.chart.legend import LegendEntry
 from openpyxl.chart.marker import Marker
 from openpyxl.chart.shapes import GraphicalProperties
 from openpyxl.chart.text import RichText, Text
 from openpyxl.chart.title import Title
+from openpyxl.drawing.colors import ColorChoice
 from openpyxl.drawing.line import LineProperties
 from openpyxl.drawing.text import (
     CharacterProperties,
@@ -768,6 +770,83 @@ def _horizontal_axis_title(text: str) -> Title:
     return Title(tx=tx, layout=layout, overlay=False)
 
 
+def _make_chart_title(text: str, size_pt: int = 13) -> Title:
+    """Standard chart title: bold, ``size_pt`` (default 13pt), top-center.
+
+    Replaces the implicit string-to-Title conversion openpyxl does when
+    you assign ``chart.title = "..."``; with that path the title is
+    rendered at the default 18pt non-bold. We pass an explicit Title
+    instead so every chart in the workbook gets a consistent 13pt bold
+    heading.
+    """
+    body_pr = RichTextProperties(rot=0, vert="horz")
+    char_props = CharacterProperties(b=True, sz=size_pt * 100)
+    para_props = ParagraphProperties(defRPr=char_props)
+    run = RegularTextRun(t=text)
+    para = Paragraph(pPr=para_props, r=[run])
+    rt = RichText(bodyPr=body_pr, p=[para])
+    tx = Text(rich=rt)
+    return Title(tx=tx, overlay=False)
+
+
+def _apply_chart_frame(chart, *, color: str = "475569", width_emu: int = 22000):
+    """Give the chart a thick outer frame so it pops on the sheet.
+
+    ``width_emu``: 1 pt ≈ 12700 EMU. 22000 EMU ≈ 1.75pt.
+    """
+    try:
+        gp = GraphicalProperties()
+        gp.line = LineProperties(w=width_emu, solidFill=color)
+        chart.graphical_properties = gp
+    except Exception:
+        # openpyxl version differences — just skip the frame styling.
+        pass
+
+
+def _white_bold_label_props() -> RichText:
+    """Text properties for stacked-segment labels — bold white so the
+    number stands out against the colored fill of the bar."""
+    char_props = CharacterProperties(
+        b=True, sz=1000, solidFill="FFFFFF",
+    )
+    para_props = ParagraphProperties(defRPr=char_props)
+    return RichText(
+        bodyPr=RichTextProperties(rot=0, vert="horz"),
+        p=[Paragraph(pPr=para_props)],
+    )
+
+
+def _bold_large_label_props(size_pt: int = 11) -> RichText:
+    """Text properties for the Toplam overlay label — bold and slightly
+    bigger than the body so the total reads as the headline number for
+    each cluster / stack."""
+    char_props = CharacterProperties(
+        b=True, sz=size_pt * 100,
+    )
+    para_props = ParagraphProperties(defRPr=char_props)
+    return RichText(
+        bodyPr=RichTextProperties(rot=0, vert="horz"),
+        p=[Paragraph(pPr=para_props)],
+    )
+
+
+def _hide_last_series_from_legend(chart) -> None:
+    """Drop the LAST series (typically the invisible Toplam overlay)
+    from the chart legend.
+
+    For chart 1 and chart 4 we overlay an invisible LineChart whose
+    only job is to host the Toplam data label; we don't want it
+    showing up as a 'Toplam' entry in the legend swatch row.
+    """
+    if not chart.series:
+        return
+    last_idx = len(chart.series) - 1
+    try:
+        chart.legend.legendEntry = [LegendEntry(idx=last_idx, delete=True)]
+    except Exception:
+        pass
+
+
 def _top_left_chart_title(text: str) -> Title:
     """Chart title anchored at the top-left corner instead of top-center.
 
@@ -813,7 +892,9 @@ def _end_x_axis_title(text: str) -> Title:
 
 
 def _value_only_labels(
-    position: str, num_format: str = "[$-tr-TR]#,##0"
+    position: str,
+    num_format: str = "[$-tr-TR]#,##0",
+    txPr: RichText | None = None,
 ) -> DataLabelList:
     """Data labels that show ONLY the numeric value.
 
@@ -830,6 +911,10 @@ def _value_only_labels(
     effect, ALSO call ``cell.number_format = num_format`` on the
     backing ``_veri`` sheet cells. The string passed here is
     redundant-but-harmless fallback.
+
+    ``txPr`` lets the caller override the label text style (color,
+    bold, size) — used for the white bold labels inside stacked
+    bars and the slightly larger bold Toplam label.
     """
     return DataLabelList(
         showVal=True,
@@ -840,6 +925,7 @@ def _value_only_labels(
         showBubbleSize=False,
         dLblPos=position,
         numFmt=num_format,
+        txPr=txPr,
     )
 
 
@@ -933,7 +1019,7 @@ def _build_ozet_charts_sheet(
     chart1.style = 2
     chart1.grouping = "stacked"
     chart1.overlap = 100
-    chart1.title = "Haftalık Toplam Konteyner Dağılımı"
+    chart1.title = _make_chart_title("Haftalık Toplam Konteyner Dağılımı")
     chart1.y_axis.title = _horizontal_axis_title("Konteyner Adedi")
     chart1.x_axis.title = _end_x_axis_title("Hafta")
     data_ref = Reference(
@@ -948,18 +1034,23 @@ def _build_ozet_charts_sheet(
     _clean_axis(chart1.y_axis)
     # Turkish thousand-separated format on Y-axis tick labels (5000 → 5.000)
     chart1.y_axis.numFmt = "[$-tr-TR]#,##0"
-    # Per-segment data labels centered inside each stack segment so the
-    # user sees Boş / Dolu / Hurda values without breaking the stack
-    # visual. Toplam still goes on top via the overlay line.
-    chart1.dataLabels = _value_only_labels("ctr")
+    # Per-segment data labels centered inside each stack segment — white
+    # bold so they pop against the colored fill. Small segments may have
+    # the label spill outside, where readability falls back to the chart
+    # background (acceptable trade-off; user accepted this).
+    chart1.dataLabels = _value_only_labels(
+        "ctr", txPr=_white_bold_label_props(),
+    )
     chart1.legend.position = "b"
     chart1.legend.overlay = False
     chart1.height = 11
     chart1.width = 26
+    _apply_chart_frame(chart1)
 
     # Invisible "Toplam" line at the top of each stack — same value as
     # the stack height (B + D + H), so the data label lands right at
-    # the stack top.
+    # the stack top. Bigger bold label so the headline total reads as
+    # the cluster summary.
     total_line = LineChart()
     total_ref = Reference(
         data_ws,
@@ -973,8 +1064,13 @@ def _build_ozet_charts_sheet(
         gp.line = LineProperties(noFill=True)
         s.graphicalProperties = gp
         s.marker = Marker(symbol="none")
-    total_line.dataLabels = _value_only_labels("t")
+    total_line.dataLabels = _value_only_labels(
+        "t", txPr=_bold_large_label_props(size_pt=12),
+    )
     chart1 += total_line
+    # Drop the 'Toplam' series from the legend (it's just an overlay
+    # for the label; the bars below already cover the colored swatches).
+    _hide_last_series_from_legend(chart1)
 
     ws.add_chart(chart1, "A4")
 
@@ -999,7 +1095,9 @@ def _build_ozet_charts_sheet(
 
     chart2 = LineChart()
     chart2.style = 2
-    chart2.title = "Dolu Konteyner Başına Yük — Genel (Haftalık)"
+    chart2.title = _make_chart_title(
+        "Dolu Konteyner Başına Tonaj — Genel (Haftalık)"
+    )
     chart2.y_axis.title = _horizontal_axis_title("Ton / Dolu Konteyner")
     chart2.x_axis.title = _end_x_axis_title("Hafta")
     data_ref = Reference(
@@ -1032,7 +1130,10 @@ def _build_ozet_charts_sheet(
     chart2.legend = None  # single series — legend is just noise
     chart2.height = 11
     chart2.width = 26
-    ws.add_chart(chart2, "A26")
+    _apply_chart_frame(chart2)
+    # Side-by-side with chart 1: chart 1 occupies cols A..~Q (≈17 cols
+    # at 26cm width), leave a 3-column visual gap, then anchor chart 2.
+    ws.add_chart(chart2, "U4")
 
     # ================================================================
     # Chart 3 — Clustered column: ton/Dolu per site for last 3 weeks
@@ -1057,7 +1158,9 @@ def _build_ozet_charts_sheet(
     chart3.type = "col"
     chart3.style = 2
     chart3.grouping = "clustered"
-    chart3.title = "Dolu Konteyner Başına Yük — Üretim Yeri Kırılımı (Son 3 Hafta)"
+    chart3.title = _make_chart_title(
+        "Dolu Konteyner Başına Tonaj — Üretim Yeri Kırılımı (Son 3 Hafta)"
+    )
     chart3.y_axis.title = _horizontal_axis_title("Ton / Dolu Konteyner")
     chart3.x_axis.title = _end_x_axis_title("Üretim Yeri")
     if last_3_weeks and all_sites:
@@ -1082,7 +1185,9 @@ def _build_ozet_charts_sheet(
     # legible without overlapping.
     chart3.height = 13
     chart3.width = 38
-    ws.add_chart(chart3, "A48")
+    _apply_chart_frame(chart3)
+    # Anchor below charts 1+2 (which occupy rows 4..~26 at height 11cm).
+    ws.add_chart(chart3, "A30")
 
     # ================================================================
     # Chart 4 — Stacked column: color breakdown per site (latest week)
@@ -1143,10 +1248,11 @@ def _build_ozet_charts_sheet(
     chart4.grouping = "stacked"
     chart4.overlap = 100
     title_suffix = f" ({_short_week(latest_week)})" if latest_week else ""
-    # Top-left positioning so the title doesn't sit above the tallest
-    # stack and collide with that stack's Toplam label (Uysal Salihli
-    # routinely hits the centered-title zone).
-    chart4.title = _top_left_chart_title(
+    # Standard top-center bold title — chart 4 is now offset to the
+    # right of column A (anchored at G), so the title-vs-label
+    # collision the top-left layout was originally solving no longer
+    # applies (the chart has its own left margin now).
+    chart4.title = _make_chart_title(
         f"Üretim Yerleri Renk Dağılımı{title_suffix}"
     )
     chart4.y_axis.title = _horizontal_axis_title("Konteyner Adedi")
@@ -1176,14 +1282,13 @@ def _build_ozet_charts_sheet(
     # label above each stack via an invisible overlay line (below).
     chart4.legend.position = "b"
     chart4.legend.overlay = False
-    # Taller chart gives the Toplam labels room above the stacks so the
-    # title (now anchored top-left) and the labels don't fight for the
-    # same vertical band.
     chart4.height = 16
     chart4.width = 38
+    _apply_chart_frame(chart4)
 
     # Invisible 'Toplam' line that sits at the top of each stack and
-    # carries the total-count data label. Mirrors the chart-1 pattern.
+    # carries the total-count data label (bigger / bold so it reads as
+    # the per-site headline). Mirrors the chart-1 pattern.
     if chart4_colors and chart4_sites:
         chart4_total_line = LineChart()
         total_ref4 = Reference(
@@ -1198,10 +1303,17 @@ def _build_ozet_charts_sheet(
             gp.line = LineProperties(noFill=True)
             s.graphicalProperties = gp
             s.marker = Marker(symbol="none")
-        chart4_total_line.dataLabels = _value_only_labels("t")
+        chart4_total_line.dataLabels = _value_only_labels(
+            "t", txPr=_bold_large_label_props(size_pt=12),
+        )
         chart4 += chart4_total_line
+        # Drop 'Toplam' from the legend swatches.
+        _hide_last_series_from_legend(chart4)
 
-    ws.add_chart(chart4, "A74")
+    # Centered horizontally on the sheet: chart 4 is 38 cm wide, anchor
+    # at column G so it sits roughly in the middle of the visible area
+    # (matching the side-by-side charts 1+2 above it).
+    ws.add_chart(chart4, "G56")
 
 
 # ---------------------------------------------------------------------------
