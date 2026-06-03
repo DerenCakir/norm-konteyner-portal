@@ -237,27 +237,23 @@ avg_kg_per_full = (
     float(_site_kg_per_full.mean()) if not _site_kg_per_full.empty else 0
 )
 
-# Compound Dolu KPI card: Dolu adedi üstte; alt yarıda Kanban + Dolu'ya
-# oranı. Tek başına 'Kanban' veya 'Kanban Oranı' kartına gerek kalmıyor.
-_dolu_compound = (
-    f'<div class="kpi-card kpi-card-compound kpi-tone-blue">'
-    f'  <div class="kpi-card-top"><div class="kpi-label">Dolu Konteyner</div></div>'
-    f'  <div class="kpi-value kpi-value-lg">{_fmt_tr(total_full)}</div>'
-    f'  <div class="kpi-sub kpi-sub-tight">Ürün / yarı mamul taşıyan</div>'
-    f'  <div class="kpi-compound-row">'
-    f'    <span class="kpi-compound-label">Kanban</span>'
-    f'    <span class="kpi-compound-value">'
-    f'      <strong>{_fmt_tr(total_kanban)}</strong>'
-    f'      <span class="kpi-compound-pct">%{_fmt_tr_decimal(kanban_rate)}</span>'
-    f'    </span>'
-    f'  </div>'
-    f'</div>'
+# Dolu kartı: Kanban bilgisi alt satırda (sub: Kanban adedi, delta: %
+# rozeti). Compound özel yerleşim kaldırıldı — tüm 4 kart aynı boyut.
+_dolu_kanban_sub = (
+    f"Kanban: {_fmt_tr(total_kanban)}"
 )
+_dolu_kanban_delta = f"%{_fmt_tr_decimal(kanban_rate)}"
 
 primary_cards = [
     kpi_card("Toplam Konteyner", _fmt_tr(total_containers), sub="Boş + Dolu + Hurdaya Ayrılacak"),
     kpi_card("Boş Konteyner", _fmt_tr(total_empty), sub="Kullanılabilir kasa"),
-    _dolu_compound,
+    kpi_card(
+        "Dolu Konteyner",
+        _fmt_tr(total_full),
+        sub=_dolu_kanban_sub,
+        delta=_dolu_kanban_delta,
+        delta_kind="pill-blue",
+    ),
     kpi_card("Hurdaya Ayrılacak", _fmt_tr(total_scrap)),
 ]
 render_kpis(primary_cards)

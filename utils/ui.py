@@ -537,35 +537,15 @@ section[data-testid="stSidebar"] a[aria-current="page"] {
 .kpi-delta.negative { color: var(--danger); }
 .kpi-delta.neutral  { color: var(--text-muted); }
 
-/* Compound KPI card — used by Dolu Konteyner card to nest Kanban inside.
-   Slightly larger than the standard card so the secondary metric has
-   visual room without crowding the headline number. */
-.kpi-card-compound {
-    padding: 1.15rem 1.3rem;
-    gap: 0.45rem;
-}
-.kpi-value-lg { font-size: 1.85rem; font-weight: 700; }
-.kpi-sub-tight { line-height: 1.2; }
-.kpi-compound-row {
-    display: flex; justify-content: space-between; align-items: center;
-    margin-top: 0.7rem; padding-top: 0.7rem;
-    border-top: 1px solid var(--border-soft);
-    font-size: 0.85rem;
-}
-.kpi-compound-label {
-    color: var(--text-muted);
-    font-size: 0.78rem; font-weight: 500;
-    text-transform: uppercase; letter-spacing: 0.04em;
-}
-.kpi-compound-value { display: flex; align-items: center; gap: 0.5rem; }
-.kpi-compound-value strong { color: var(--text); font-weight: 700; font-size: 1rem; }
-.kpi-compound-pct {
+/* Dolu kartı için Kanban yüzdesini küçük mavi "pill" olarak göster.
+   Standart neutral/positive/negative tonlarını bozmuyor — sadece bu
+   variant için. delta_kind="pill-blue" ile etkinleşir. */
+.kpi-delta.pill-blue {
     background: rgba(37, 99, 235, 0.10);
     color: rgb(29, 78, 216);
     padding: 0.12rem 0.55rem;
     border-radius: 999px;
     font-size: 0.74rem;
-    font-weight: 600;
 }
 
 /* Status panel */
