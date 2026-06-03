@@ -830,19 +830,25 @@ def _bold_large_label_props(size_pt: int = 11) -> RichText:
     )
 
 
-def _hide_last_series_from_legend(chart) -> None:
-    """Drop the LAST series (typically the invisible Toplam overlay)
-    from the chart legend.
+def _hide_overlay_from_legend(chart, overlay) -> None:
+    """Drop the overlay chart's series from the host chart's legend.
 
-    For chart 1 and chart 4 we overlay an invisible LineChart whose
-    only job is to host the Toplam data label; we don't want it
-    showing up as a 'Toplam' entry in the legend swatch row.
+    After ``chart += overlay``, the overlay's series sit AFTER the
+    host chart's series in the legend ordering — but
+    ``chart.series`` keeps returning only the host's count. Adding
+    the overlay's series count finds the real legend index. We
+    assign a *list* because openpyxl's Legend.legendEntry is a
+    Sequence; assigning a single LegendEntry silently no-ops.
     """
-    if not chart.series:
+    primary = len(chart.series)
+    secondary = len(getattr(overlay, "series", []))
+    total = primary + secondary
+    if total == 0:
         return
-    last_idx = len(chart.series) - 1
     try:
-        chart.legend.legendEntry = [LegendEntry(idx=last_idx, delete=True)]
+        chart.legend.legendEntry = [
+            LegendEntry(idx=total - 1, delete=True),
+        ]
     except Exception:
         pass
 
@@ -1070,7 +1076,16 @@ def _build_ozet_charts_sheet(
     chart1 += total_line
     # Drop the 'Toplam' series from the legend (it's just an overlay
     # for the label; the bars below already cover the colored swatches).
-    _hide_last_series_from_legend(chart1)
+    _hide_overlay_from_legend(chart1, total_line)
+
+    # Hurda values are tiny compared to Boş / Dolu so the centered
+    # white label sometimes overflows the colored segment onto the
+    # white chart background and becomes unreadable. Drop Hurda's
+    # per-segment labels entirely; the Toplam overlay above the stack
+    # plus the data tables in the other sheets still surface the
+    # Hurda number when the user needs it.
+    if len(chart1.series) >= 3:
+        chart1.series[2].dLbls = DataLabelList(delete=True)
 
     ws.add_chart(chart1, "A4")
 
@@ -1095,9 +1110,7 @@ def _build_ozet_charts_sheet(
 
     chart2 = LineChart()
     chart2.style = 2
-    chart2.title = _make_chart_title(
-        "Dolu Konteyner Başına Tonaj — Genel (Haftalık)"
-    )
+    chart2.title = _make_chart_title("Dolu Konteyner Başına Tonaj")
     chart2.y_axis.title = _horizontal_axis_title("Ton / Dolu Konteyner")
     chart2.x_axis.title = _end_x_axis_title("Hafta")
     data_ref = Reference(
@@ -1308,7 +1321,7 @@ def _build_ozet_charts_sheet(
         )
         chart4 += chart4_total_line
         # Drop 'Toplam' from the legend swatches.
-        _hide_last_series_from_legend(chart4)
+        _hide_overlay_from_legend(chart4, chart4_total_line)
 
     # Centered horizontally on the sheet: chart 4 is 38 cm wide, anchor
     # at column G so it sits roughly in the middle of the visible area
