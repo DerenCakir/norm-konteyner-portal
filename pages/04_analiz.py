@@ -71,13 +71,27 @@ def _tr_axis(integer: bool = True) -> alt.Axis:
     """Altair Y-axis with Turkish number format (1.234 instead of 1,234).
 
     Vega-Lite's default ``,d`` / ``,.1f`` uses ``,`` as the thousands
-    separator. ``labelExpr`` runs inside Vega's expression language and
-    rewrites the rendered label client-side so values read TR-natural.
+    separator and ``.`` as the decimal mark. ``labelExpr`` runs inside
+    Vega's expression language and swaps both characters so labels
+    read TR-natural:
+
+      ``12,000.5`` → ``12.000,5``
+
+    The triple replace uses a temporary placeholder (``|``) to avoid
+    a one-way clobber where ``,`` → ``.`` would leave the decimal
+    point also looking like a thousand separator.
+
+    For decimals we use ``,.1~f`` — the ``~`` is d3-format's "trim
+    trailing zeros" modifier so whole-number tonnages like ``12000``
+    render as ``12.000`` instead of ``12.000,0``.
     """
-    fmt = ",d" if integer else ",.1f"
+    fmt = ",d" if integer else ",.1~f"
     return alt.Axis(
         format=fmt,
-        labelExpr="replace(datum.label, ',', '.')",
+        labelExpr=(
+            "replace(replace(replace(datum.label, ',', '|'),"
+            " '.', ','), '|', '.')"
+        ),
         grid=True,
     )
 
