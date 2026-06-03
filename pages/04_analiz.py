@@ -875,43 +875,6 @@ with st.expander("Üretim Yeri Trend Sapma", expanded=False):
         if _c is not None:
             st.altair_chart(_c, use_container_width=True)
 
-    site_change = site_weekly.merge(
-        site_tonnage_weekly[["week_iso", "Gerçekleşen", "Hedef", "Fazla"]],
-        on="week_iso",
-        how="left",
-    ).sort_values("week_iso")
-    diff_cols = ["Boş", "Dolu", "Kanban", "Toplam", "Gerçekleşen", "Hedef", "Fazla"]
-    if "Hurdaya Ayrılacak" in site_change.columns:
-        diff_cols.append("Hurdaya Ayrılacak")
-    for col in diff_cols:
-        site_change[f"{col} Δ"] = site_change[col].diff()
-
-    st.markdown("**Haftalık değişim tablosu**")
-    table_cols = [
-        "week_iso", "Boş", "Boş Δ", "Dolu", "Dolu Δ",
-        "Kanban", "Kanban Δ", "Kanban Oranı (%)",
-    ]
-    if "Hurdaya Ayrılacak" in site_change.columns:
-        table_cols.extend(["Hurdaya Ayrılacak", "Hurdaya Ayrılacak Δ"])
-    table_cols.extend(["Toplam", "Toplam Δ", "Gerçekleşen", "Hedef", "Fazla"])
-    st.dataframe(
-        site_change[table_cols].rename(columns={
-            "week_iso": "Hafta",
-            "Boş Δ": "Boş Değişim",
-            "Dolu Δ": "Dolu Değişim",
-            "Kanban Δ": "Kanban Değişim",
-            "Toplam Δ": "Toplam Değişim",
-            "Gerçekleşen": "Gerçekleşen Tonaj",
-        }).style.format({
-            "Kanban Oranı (%)": _fmt_tr_decimal,
-            "Gerçekleşen Tonaj": _fmt_tr,
-            "Hedef": _fmt_tr,
-            "Fazla": _fmt_tr,
-        }, na_rep="-"),
-        use_container_width=True,
-        hide_index=True,
-    )
-
     # Anormal artış uyarısı: son haftanın "Fazla" değeri,
     # önceki haftaların ortalamasının %20+ üstünde mi?
     if len(site_tonnage_weekly) >= 4:
