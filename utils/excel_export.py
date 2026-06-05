@@ -1675,6 +1675,82 @@ def _build_ozet_charts_sheet(
     # (matching the side-by-side charts 1+2 above it).
     ws.add_chart(chart4, "G56")
 
+    # ================================================================
+    # Chart 5 — Tesis Bazlı Boş Konteyner Trendi (LineChart)
+    #   X = weeks (all, including manual-only entries so W17 shows up)
+    #   Series = one line per production site, _SITE_ORDER colored
+    #   Y = Boş konteyner adedi
+    #
+    # Purpose: per Selim Bey's meeting brief — the whole reason this
+    # workbook exists is to spot a facility's empty-container trend
+    # heading toward the danger zone WEEKS in advance, before
+    # production stops. This chart is the early-warning view.
+    # ================================================================
+    t5_col = t4_total_col + 2  # leave a gap past chart 4's data
+    data_ws.cell(row=1, column=t5_col, value="Hafta")
+    for j, site in enumerate(all_sites):
+        data_ws.cell(row=1, column=t5_col + 1 + j, value=site)
+    for i, w in enumerate(weeks):
+        data_ws.cell(row=2 + i, column=t5_col, value=_short_week(w))
+        sites_map = weekly_site.get(w, {})
+        for j, site in enumerate(all_sites):
+            sd = sites_map.get(site)
+            empty_val = int(sd["empty"]) if sd else 0
+            cell = data_ws.cell(
+                row=2 + i, column=t5_col + 1 + j, value=empty_val,
+            )
+            cell.number_format = "[$-tr-TR]#,##0"
+    t5_last = 1 + len(weeks)
+
+    chart5 = LineChart()
+    chart5.style = 2
+    chart5.title = _make_chart_title("Tesis Bazlı Boş Konteyner Trendi")
+    chart5.y_axis.title = _horizontal_axis_title("Boş Konteyner Adedi")
+    chart5.x_axis.title = _end_x_axis_title("Hafta")
+    if all_sites and weeks:
+        data_ref = Reference(
+            data_ws,
+            min_col=t5_col + 1, min_row=1,
+            max_col=t5_col + len(all_sites), max_row=t5_last,
+        )
+        chart5.add_data(data_ref, titles_from_data=True)
+        cats_ref5 = Reference(
+            data_ws, min_col=t5_col, min_row=2, max_row=t5_last,
+        )
+        chart5.set_categories(cats_ref5)
+        # Distinct line colors per facility — the order matches the
+        # _SITE_ORDER constant so İzmir / Salihli pairs stay tonally
+        # similar (blue / green / orange families).
+        site_line_colors = [
+            "2563EB",  # Norm Cıvata İzmir   — blue
+            "1D4ED8",  # Norm Cıvata Salihli — darker blue
+            "16A34A",  # Norm Somun İzmir    — green
+            "15803D",  # Norm Somun Salihli  — darker green
+            "F97316",  # Uysal İzmir         — orange
+            "EA580C",  # Uysal Salihli       — darker orange
+            "8B5CF6",  # MS Vida             — purple
+            "B45309",  # Nedu                — amber
+            "BE123C",  # Sac Şekillendirme   — rose
+            "6B7280",  # Sıcak Dövme         — gray
+            "1F2937",  # Norm Holding        — slate
+        ]
+        for series, color in zip(chart5.series, site_line_colors):
+            try:
+                _set_line_series_color(series, color)
+                series.marker = Marker(symbol="circle", size=5)
+            except Exception:
+                pass
+    _clean_axis(chart5.x_axis)
+    _clean_axis(chart5.y_axis)
+    chart5.y_axis.numFmt = "[$-tr-TR]#,##0"
+    chart5.legend.position = "b"
+    chart5.legend.overlay = False
+    chart5.height = 14
+    chart5.width = 38
+    _apply_chart_frame(chart5)
+    # Anchor below chart 4 (which is at G56, height 16cm ≈ 30 rows).
+    ws.add_chart(chart5, "A90")
+
 
 # ---------------------------------------------------------------------------
 # Üretim Yeri Karşılaştırma — weekly site-summary tables side by side
