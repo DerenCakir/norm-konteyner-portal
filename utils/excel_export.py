@@ -1676,76 +1676,58 @@ def _build_ozet_charts_sheet(
     ws.add_chart(chart4, "G56")
 
     # ================================================================
-    # Chart 5 — Tesis Bazlı Boş Konteyner Trendi (LineChart)
-    #   X = weeks (all, including manual-only entries so W17 shows up)
-    #   Series = one line per production site, _SITE_ORDER colored
-    #   Y = Boş konteyner adedi
-    #
-    # Purpose: per Selim Bey's meeting brief — the whole reason this
-    # workbook exists is to spot a facility's empty-container trend
-    # heading toward the danger zone WEEKS in advance, before
-    # production stops. This chart is the early-warning view.
+    # Chart 5 — Tesis Bazlı Boş Konteyner (Son 3 Hafta)
+    #   Mirrors chart 3's layout: X axis = production sites, three
+    #   clustered bars per site (last 3 weeks), value labels on top.
+    #   The 'Boş' counterpart to chart 3's ton/Dolu view — per
+    #   Selim Bey's brief, this is the early-warning view that tells
+    #   us 'Salih Cıvata'nın boş'u 5000 → 4000 → 2800' before
+    #   production stops.
     # ================================================================
     t5_col = t4_total_col + 2  # leave a gap past chart 4's data
-    data_ws.cell(row=1, column=t5_col, value="Hafta")
-    for j, site in enumerate(all_sites):
-        data_ws.cell(row=1, column=t5_col + 1 + j, value=site)
-    for i, w in enumerate(weeks):
-        data_ws.cell(row=2 + i, column=t5_col, value=_short_week(w))
-        sites_map = weekly_site.get(w, {})
-        for j, site in enumerate(all_sites):
-            sd = sites_map.get(site)
+    data_ws.cell(row=1, column=t5_col, value="Üretim Yeri")
+    for j, w in enumerate(last_3_weeks):
+        data_ws.cell(row=1, column=t5_col + 1 + j, value=_short_week(w))
+    for i, site in enumerate(all_sites):
+        data_ws.cell(row=2 + i, column=t5_col, value=site)
+        for j, w in enumerate(last_3_weeks):
+            sd = weekly_site.get(w, {}).get(site)
             empty_val = int(sd["empty"]) if sd else 0
             cell = data_ws.cell(
                 row=2 + i, column=t5_col + 1 + j, value=empty_val,
             )
             cell.number_format = "[$-tr-TR]#,##0"
-    t5_last = 1 + len(weeks)
+    t5_last = 1 + len(all_sites)
 
-    chart5 = LineChart()
+    chart5 = BarChart()
+    chart5.type = "col"
     chart5.style = 2
-    chart5.title = _make_chart_title("Tesis Bazlı Boş Konteyner Trendi")
+    chart5.grouping = "clustered"
+    chart5.title = _make_chart_title(
+        "Tesis Bazlı Boş Konteyner (Son 3 Hafta)"
+    )
     chart5.y_axis.title = _horizontal_axis_title("Boş Konteyner Adedi")
-    chart5.x_axis.title = _end_x_axis_title("Hafta")
-    if all_sites and weeks:
+    chart5.x_axis.title = _end_x_axis_title("Üretim Yeri")
+    if last_3_weeks and all_sites:
         data_ref = Reference(
             data_ws,
             min_col=t5_col + 1, min_row=1,
-            max_col=t5_col + len(all_sites), max_row=t5_last,
+            max_col=t5_col + len(last_3_weeks), max_row=t5_last,
         )
         chart5.add_data(data_ref, titles_from_data=True)
         cats_ref5 = Reference(
             data_ws, min_col=t5_col, min_row=2, max_row=t5_last,
         )
         chart5.set_categories(cats_ref5)
-        # Distinct line colors per facility — the order matches the
-        # _SITE_ORDER constant so İzmir / Salihli pairs stay tonally
-        # similar (blue / green / orange families).
-        site_line_colors = [
-            "2563EB",  # Norm Cıvata İzmir   — blue
-            "1D4ED8",  # Norm Cıvata Salihli — darker blue
-            "16A34A",  # Norm Somun İzmir    — green
-            "15803D",  # Norm Somun Salihli  — darker green
-            "F97316",  # Uysal İzmir         — orange
-            "EA580C",  # Uysal Salihli       — darker orange
-            "8B5CF6",  # MS Vida             — purple
-            "B45309",  # Nedu                — amber
-            "BE123C",  # Sac Şekillendirme   — rose
-            "6B7280",  # Sıcak Dövme         — gray
-            "1F2937",  # Norm Holding        — slate
-        ]
-        for series, color in zip(chart5.series, site_line_colors):
-            try:
-                _set_line_series_color(series, color)
-                series.marker = Marker(symbol="circle", size=5)
-            except Exception:
-                pass
     _clean_axis(chart5.x_axis)
     _clean_axis(chart5.y_axis)
     chart5.y_axis.numFmt = "[$-tr-TR]#,##0"
+    # Value labels on top of each bar — same outEnd / bold styling
+    # as chart 3 so the two clustered charts read consistently.
+    chart5.dataLabels = _value_only_labels("outEnd")
     chart5.legend.position = "b"
     chart5.legend.overlay = False
-    chart5.height = 14
+    chart5.height = 13
     chart5.width = 38
     _apply_chart_frame(chart5)
     # Anchor below chart 4 (which is at G56, height 16cm ≈ 30 rows).
