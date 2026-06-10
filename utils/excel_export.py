@@ -182,7 +182,7 @@ def _compute_week_kpis(rows: list[dict[str, Any]]) -> dict[str, Any]:
     surfaced on the Dashboard (matches the portal Analiz page logic).
     """
     total_empty = sum(int(r.get("Boş") or 0) for r in rows)
-    total_wip = sum(int(r.get("WIP") or 0) for r in rows)
+    total_wip = sum(int(r.get("Proseste") or 0) for r in rows)
     total_full = sum(int(r.get("Dolu") or 0) for r in rows)
     total_kanban = sum(int(r.get("Kanban") or 0) for r in rows)
     total_scrap = sum(int(r.get("Hurda") or 0) for r in rows)
@@ -386,7 +386,7 @@ def _build_dashboard_sheet(
     )
     _kpi_card_excel(
         ws, row=4, col=5, width=2,
-        label="WIP Konteyner",
+        label="Proseste Konteyner",
         value=_fmt_int_tr(kpis["wip"]),
         sub="İşlem görüyor",
         tone="amber",
@@ -441,7 +441,7 @@ def _build_dashboard_sheet(
     ws.merge_cells("A12:L12")
 
     headers = [
-        "Üretim Yeri", "Boş", "WIP", "Dolu", "Hurdaya Ayrılacak",
+        "Üretim Yeri", "Boş", "Proseste", "Dolu", "Hurdaya Ayrılacak",
         "Toplam", "Toplam Tonaj", "Ort. kg / Dolu",
     ]
     for j, h in enumerate(headers, start=1):
@@ -462,7 +462,7 @@ def _build_dashboard_sheet(
             {"empty": 0, "wip": 0, "full": 0, "scrap": 0, "tonnage": 0.0},
         )
         s["empty"] += int(r.get("Boş") or 0)
-        s["wip"] += int(r.get("WIP") or 0)
+        s["wip"] += int(r.get("Proseste") or 0)
         s["full"] += int(r.get("Dolu") or 0)
         s["scrap"] += int(r.get("Hurda") or 0)
         sub_id = r.get("Submission ID")
@@ -540,7 +540,7 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
 
     headers = [
         "Üretim Yeri", "Bölüm", "Renk",
-        "Boş", "WIP", "Dolu", "Dolu İçindeki Kanban", "Hurdaya Ayrılacak",
+        "Boş", "Proseste", "Dolu", "Dolu İçindeki Kanban", "Hurdaya Ayrılacak",
         "Toplam Konteyner", "Durum",
         "Giren Kullanıcı", "Sayım Tarihi", "Sayım Saati", "Gönderim Zamanı",
     ]
@@ -555,7 +555,7 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
         fill = _LATE_FILL if is_late else (_ZEBRA_FILL if zebra else None)
 
         bos_v = int(row.get("Boş") or 0)
-        wip_v = int(row.get("WIP") or 0)
+        wip_v = int(row.get("Proseste") or 0)
         dolu_v = int(row.get("Dolu") or 0)
         kanban_v = int(row.get("Kanban") or 0)
         hurda_v = int(row.get("Hurda") or 0)
@@ -563,7 +563,7 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
 
         values = [
             row.get("Üretim Yeri", ""), row.get("Bölüm", ""), row.get("Renk", ""),
-            row.get("Boş"), row.get("WIP"),
+            row.get("Boş"), row.get("Proseste"),
             row.get("Dolu"), row.get("Kanban"), row.get("Hurda"),
             bdh_v,
             _STATUS_LABEL.get(row.get("Durum"), row.get("Durum", "")),
@@ -631,7 +631,7 @@ def _build_uretim_yeri_kirilim_sheet(
 
     headers = [
         "Üretim Yeri", "Bölüm",
-        "Boş", "WIP", "Dolu", "Dolu İçindeki Kanban", "Hurdaya ayrılacak",
+        "Boş", "Proseste", "Dolu", "Dolu İçindeki Kanban", "Hurdaya ayrılacak",
         "Toplam Konteyner", "Toplam Tonaj",
         "Durum", "Giren Kullanıcı", "Sayım Gönderim Zamanı",
     ]
@@ -649,7 +649,7 @@ def _build_uretim_yeri_kirilim_sheet(
             "submitted_at": row.get("Gönderim Zamanı"),
         })
         agg["empty"] += int(row.get("Boş") or 0)
-        agg["wip"] += int(row.get("WIP") or 0)
+        agg["wip"] += int(row.get("Proseste") or 0)
         agg["full"] += int(row.get("Dolu") or 0)
         agg["kanban"] += int(row.get("Kanban") or 0)
         agg["scrap"] += int(row.get("Hurda") or 0)
@@ -740,7 +740,7 @@ def _build_uretim_yeri_ozeti_sheet(
     ws = wb.create_sheet("Üretim Yeri Özeti")
     headers = [
         "Üretim Yeri",
-        "Boş", "WIP", "Dolu", "Dolu içindeki Kanban", "Hurdaya ayrılacak",
+        "Boş", "Proseste", "Dolu", "Dolu içindeki Kanban", "Hurdaya ayrılacak",
         "Toplam Konteyner", "Toplam (%)",
         "Toplam Tonaj", "Dolu Konteyner Başına Yük (ton/konteyner)",
     ]
@@ -849,7 +849,7 @@ def _build_renk_ozeti_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
     """Sheet 4: per-color aggregate for the selected week."""
     ws = wb.create_sheet("Renk Özeti")
     headers = [
-        "Renk", "Boş", "WIP", "Dolu", "Dolu içindeki Kanban",
+        "Renk", "Boş", "Proseste", "Dolu", "Dolu içindeki Kanban",
         "Hurdaya ayrılacak", "Toplam Konteyner",
     ]
     ws.append(headers)
@@ -864,7 +864,7 @@ def _build_renk_ozeti_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
             color_order.append(color)
         c = color_aggs[color]
         c["empty"] += int(row.get("Boş") or 0)
-        c["wip"] += int(row.get("WIP") or 0)
+        c["wip"] += int(row.get("Proseste") or 0)
         c["full"] += int(row.get("Dolu") or 0)
         c["kanban"] += int(row.get("Kanban") or 0)
         c["scrap"] += int(row.get("Hurda") or 0)
@@ -963,7 +963,7 @@ def _aggregate_all_weeks(
             submission_weeks.add(week)
 
         empty_v = int(r.get("Boş") or 0)
-        wip_v = int(r.get("WIP") or 0)
+        wip_v = int(r.get("Proseste") or 0)
         full_v = int(r.get("Dolu") or 0)
         kanban_v = int(r.get("Kanban") or 0)
         scrap_v = int(r.get("Hurda") or 0)
@@ -1373,7 +1373,7 @@ def _build_ozet_charts_sheet(
     # hâlâ Dolu'nun alt kümesi olduğu için bu grafikte ayrı bir
     # kategori değil — 4 ayrık kategori stackleniyor.
     t1_col = 1
-    t1_headers = ["Hafta", "Boş", "WIP", "Dolu", "Hurdaya Ayrılacak", "Toplam"]
+    t1_headers = ["Hafta", "Boş", "Proseste", "Dolu", "Hurdaya Ayrılacak", "Toplam"]
     for j, h in enumerate(t1_headers):
         data_ws.cell(row=1, column=t1_col + j, value=h)
     for i, w in enumerate(weeks):
@@ -1777,14 +1777,14 @@ def _build_ozet_charts_sheet(
     ws.add_chart(chart5, "A90")
 
     # ================================================================
-    # Chart 6 — WIP Konteyner Başına Tonaj (LineChart)
+    # Chart 6 — Proseste Konteyner Başına Tonaj (LineChart)
     #   Same structure as chart 2 (Dolu Konteyner Başına Tonaj) but
     #   driven by WIP counts. Useful for tracking how heavy the
     #   in-progress load per container has been across recent weeks.
     # ================================================================
     t6_col = t5_col + len(last_3_weeks) + 3 if last_3_weeks else t5_col + 4
     data_ws.cell(row=1, column=t6_col, value="Hafta")
-    data_ws.cell(row=1, column=t6_col + 1, value="Ton / WIP Konteyner")
+    data_ws.cell(row=1, column=t6_col + 1, value="Ton / Proseste Konteyner")
     for i, w in enumerate(full_weeks):
         wt = weekly_totals[w]
         wip_total = wt.get("wip", 0)
@@ -1796,8 +1796,8 @@ def _build_ozet_charts_sheet(
 
     chart6 = LineChart()
     chart6.style = 2
-    chart6.title = _make_chart_title("WIP Konteyner Başına Tonaj")
-    chart6.y_axis.title = _horizontal_axis_title("Ton / WIP Konteyner")
+    chart6.title = _make_chart_title("Proseste Konteyner Başına Tonaj")
+    chart6.y_axis.title = _horizontal_axis_title("Ton / Proseste Konteyner")
     chart6.x_axis.title = _end_x_axis_title("Hafta")
     if full_weeks:
         data_ref = Reference(
@@ -1832,7 +1832,7 @@ def _build_ozet_charts_sheet(
     ws.add_chart(chart6, "A116")
 
     # ================================================================
-    # Chart 7 — Tesis Bazlı WIP Konteyner (Son 3 Hafta)
+    # Chart 7 — Tesis Bazlı Proseste Konteyner (Son 3 Hafta)
     #   Same structure as chart 5 (Tesis Bazlı Boş) but for WIP. Shows
     #   the recent-week trend of WIP containers per facility.
     # ================================================================
@@ -1856,9 +1856,9 @@ def _build_ozet_charts_sheet(
     chart7.style = 2
     chart7.grouping = "clustered"
     chart7.title = _make_chart_title(
-        "Tesis Bazlı WIP Konteyner (Son 3 Hafta)"
+        "Tesis Bazlı Proseste Konteyner (Son 3 Hafta)"
     )
-    chart7.y_axis.title = _horizontal_axis_title("WIP Konteyner Adedi")
+    chart7.y_axis.title = _horizontal_axis_title("Proseste Konteyner Adedi")
     chart7.x_axis.title = _end_x_axis_title("Üretim Yeri")
     if last_3_weeks and all_sites:
         data_ref = Reference(
@@ -1920,7 +1920,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
     weeks = sorted(weekly_site.keys(), reverse=True)
 
     sub_headers = [
-        "Üretim Yeri", "Boş", "WIP", "Dolu", "Dolu içindeki Kanban",
+        "Üretim Yeri", "Boş", "Proseste", "Dolu", "Dolu içindeki Kanban",
         "Hurdaya ayrılacak",
         "Toplam Konteyner", "Toplam (%)", "Toplam Tonaj",
         "Dolu Konteyner Başına Yük",
@@ -2112,7 +2112,7 @@ def build_all_weeks_excel(rows: list[dict[str, Any]]) -> bytes:
         "Bölüm",
         "Renk",
         "Boş",
-        "WIP",
+        "Proseste",
         "Dolu",
         "Kanban",
         "Hurdaya Ayrılacak",
@@ -2142,7 +2142,7 @@ def build_all_weeks_excel(rows: list[dict[str, Any]]) -> bytes:
         hafta_araligi, ay, yil = _week_iso_to_human(week_iso)
 
         bos_v = int(row.get("Boş") or 0)
-        wip_v = int(row.get("WIP") or 0)
+        wip_v = int(row.get("Proseste") or 0)
         dolu_v = int(row.get("Dolu") or 0)
         hurda_v = int(row.get("Hurda") or 0)
         bdh_v = bos_v + wip_v + dolu_v + hurda_v
@@ -2156,7 +2156,7 @@ def build_all_weeks_excel(rows: list[dict[str, Any]]) -> bytes:
             row.get("Bölüm", ""),
             row.get("Renk", ""),
             row.get("Boş"),
-            row.get("WIP"),
+            row.get("Proseste"),
             row.get("Dolu"),
             row.get("Kanban"),
             row.get("Hurda"),

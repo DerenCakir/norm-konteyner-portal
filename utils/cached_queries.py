@@ -355,7 +355,7 @@ def get_all_weeks_export_rows() -> list[dict[str, Any]]:
             "Dolu": row.full_count,
             "Kanban": row.kanban_count,
             "Hurda": row.scrap_count,
-            "WIP": row.wip_count,
+            "Proseste": row.wip_count,
             "Gerçekleşen Tonaj": (
                 float(row.actual_tonnage) if row.actual_tonnage is not None else None
             ),
@@ -413,7 +413,7 @@ def get_week_export_rows(week_iso: str) -> list[dict[str, Any]]:
             "Dolu": row.full_count,
             "Kanban": row.kanban_count,
             "Hurda": row.scrap_count,
-            "WIP": row.wip_count,
+            "Proseste": row.wip_count,
             "Gerçekleşen Tonaj": (
                 float(row.actual_tonnage) if row.actual_tonnage is not None else None
             ),

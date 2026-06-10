@@ -442,7 +442,7 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
     h1, h2, h3, h4, h5, h6 = st.columns([2, 1, 1.1, 1, 1.2, 1.4])
     h1.markdown('<div class="color-table-head">Renk</div>', unsafe_allow_html=True)
     h2.markdown('<div class="color-table-head">Boş</div>', unsafe_allow_html=True)
-    h3.markdown('<div class="color-table-head">WIP</div>', unsafe_allow_html=True)
+    h3.markdown('<div class="color-table-head">Proseste</div>', unsafe_allow_html=True)
     h4.markdown('<div class="color-table-head">Dolu (toplam)</div>', unsafe_allow_html=True)
     h5.markdown('<div class="color-table-head">Kanban</div>', unsafe_allow_html=True)
     h6.markdown('<div class="color-table-head">Hurdaya Ayrılacak</div>', unsafe_allow_html=True)
@@ -471,7 +471,7 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
             placeholder="0",
         )
         wip_v = c3.number_input(
-            f"{color.name} — WIP",
+            f"{color.name} — Proseste",
             key=f"sayim_wip_{form_scope}_{color.id}",
             value=prev_wip, min_value=0, step=1,
             label_visibility="collapsed", disabled=not can_submit,

@@ -2093,7 +2093,7 @@ if _is_active("override"):
             h1, h2, h3, h4, h5, h6 = st.columns([2, 1, 1, 1, 1, 1])
             h1.markdown("**Renk**")
             h2.markdown("**Boş**")
-            h3.markdown("**WIP**")
+            h3.markdown("**Proseste**")
             h4.markdown("**Dolu**")
             h5.markdown("**Kanban**")
             h6.markdown("**Hurda**")
@@ -2112,7 +2112,7 @@ if _is_active("override"):
                     label_visibility="collapsed",
                 )
                 wip_value = c3.number_input(
-                    f"{color.name} — WIP",
+                    f"{color.name} — Proseste",
                     key=f"override_wip_{override_scope}_{color.id}",
                     min_value=0,
                     value=previous.wip_count if previous else 0,
