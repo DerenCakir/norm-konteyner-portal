@@ -1369,111 +1369,44 @@ def _build_ozet_charts_sheet(
     last_3_weeks = full_weeks[-3:] if len(full_weeks) >= 3 else full_weeks[:]
     latest_week = full_weeks[-1] if full_weeks else None
 
-    # ================================================================
-    # TOP KPI BAND — latest-week snapshot, same card style as the
-    # Dashboard sheet so the two tabs read as siblings.
-    # ================================================================
+    # Latest-week snapshot used by per-chart KPI side panels.
     if latest_week:
         latest_rows_only = [
             r for r in all_rows if r.get("Hafta") == latest_week
         ]
         latest_kpis = _compute_week_kpis(latest_rows_only)
 
-        # Subtitle: which week these KPIs reflect.
-        ws.merge_cells("A2:U2")
+        # Subtitle: which week the KPIs reflect.
+        ws.merge_cells("A2:V2")
         sub_cell = ws["A2"]
         sub_cell.value = (
             f"Son Hafta: {_short_week(latest_week)} — "
-            f"KPI kartları bu haftanın anlık fotoğrafı; "
-            f"grafikler tüm haftalardaki trendi gösterir."
+            f"Her grafiğin yanındaki kartlar o grafiğin KPI'larını gösterir."
         )
         sub_cell.font = Font(italic=True, size=11, color="475569")
         sub_cell.alignment = Alignment(
             horizontal="left", vertical="center", indent=1,
         )
         ws.row_dimensions[2].height = 20
+    else:
+        latest_kpis = None
 
-        # Tight column widths for a denser dashboard. With width 10
-        # (~1.7 cm) and 22 cols, the dashboard runs ~37 cm wide and the
-        # side KPI cards sit immediately to the right of chart 2 and 6.
-        for c in range(1, 23):
-            ws.column_dimensions[get_column_letter(c)].width = 10
+    # Tight column widths so chart + side KPI panel fit in the
+    # standard dashboard width.
+    for c in range(1, 23):
+        ws.column_dimensions[get_column_letter(c)].width = 10
 
-        # Primary row of 5 cards (Toplam / Boş / Proseste / Dolu+Kanban / Hurda)
-        _kpi_card_excel(
-            ws, row=4, col=1, width=3,
-            label="Toplam Konteyner",
-            value=_fmt_int_tr(latest_kpis["total_containers"]),
-            sub="B + Proseste + D + H",
-            tone="slate",
-        )
-        _kpi_card_excel(
-            ws, row=4, col=4, width=3,
-            label="Boş Konteyner",
-            value=_fmt_int_tr(latest_kpis["empty"]),
-            sub="Kullanılabilir kasa",
-            tone="green",
-        )
-        _kpi_card_excel(
-            ws, row=4, col=7, width=3,
-            label="Proseste Konteyner",
-            value=_fmt_int_tr(latest_kpis["wip"]),
-            sub="İşlem görüyor",
-            tone="amber",
-        )
-        _kpi_card_excel(
-            ws, row=4, col=10, width=3,
-            label="Dolu Konteyner",
-            value=_fmt_int_tr(latest_kpis["full"]),
-            sub=(
-                f"Kanban: {_fmt_int_tr(latest_kpis['kanban'])} "
-                f"(%{_fmt_dec_tr(latest_kpis['kanban_pct'])})"
-            ),
-            tone="blue",
-        )
-        _kpi_card_excel(
-            ws, row=4, col=13, width=3,
-            label="Hurdaya Ayrılacak",
-            value=_fmt_int_tr(latest_kpis["scrap"]),
-            sub="Artık kullanılmayacak",
-            tone="rose",
-        )
-
-        # Secondary row of 3 cards (Toplam Tonaj / Ort kg / Kanban Oranı)
-        ws.row_dimensions[7].height = 10
-        _kpi_card_excel(
-            ws, row=8, col=1, width=4,
-            label="Toplam Tonaj",
-            value=f"{_fmt_dec_tr(latest_kpis['tonnage'])} t",
-            sub="Son hafta gerçekleşen",
-            tone="amber",
-        )
-        _kpi_card_excel(
-            ws, row=8, col=5, width=4,
-            label="Ort. Dolu Konteyner Ağırlığı",
-            value=f"{_fmt_int_tr(latest_kpis['avg_kg_per_full'])} kg",
-            sub="Üretim yeri ortalamalarının ortalaması",
-            tone="amber",
-        )
-        _kpi_card_excel(
-            ws, row=8, col=9, width=4,
-            label="Kanban Oranı",
-            value=f"%{_fmt_dec_tr(latest_kpis['kanban_pct'])}",
-            sub="Kanban / Dolu",
-            tone="slate",
-        )
-
-        # Section header before the trend charts band.
-        ws.merge_cells("A11:V11")
-        sec_cell = ws["A11"]
+    # Section header before the trend charts band (row 4).
+    if latest_week:
+        ws.merge_cells("A4:V4")
+        sec_cell = ws["A4"]
         sec_cell.value = "Haftalık Trendler"
         sec_cell.font = Font(bold=True, size=13, color="1F3A8A")
         sec_cell.fill = PatternFill("solid", fgColor="E2E8F0")
         sec_cell.alignment = Alignment(
             horizontal="left", vertical="center", indent=1,
         )
-        ws.row_dimensions[11].height = 24
-    _CHART_BASE_ROW = 12
+        ws.row_dimensions[4].height = 24
 
     # ================================================================
     # Chart 1 — Clustered column: weekly total split by category
@@ -1544,10 +1477,9 @@ def _build_ozet_charts_sheet(
     )
     chart1.legend.position = "b"
     chart1.legend.overlay = False
-    # Chart 1 spans the full dashboard width (~ 37 cm = 22 cols at
-    # width 10). Matches the underlying KPI band visually.
+    # Chart 1 narrowed to 26 cm so the side KPI panel fits at col Q.
     chart1.height = 10
-    chart1.width = 37
+    chart1.width = 26
     _apply_chart_frame(chart1)
 
     # Invisible "Toplam" line at the top of each stack — same value as
@@ -1586,7 +1518,44 @@ def _build_ozet_charts_sheet(
     if len(chart1.series) >= 4:
         chart1.series[3].dLbls = DataLabelList(delete=True)
 
-    ws.add_chart(chart1, "A12")
+    chart1_anchor_row = 5
+    ws.add_chart(chart1, f"A{chart1_anchor_row}")
+
+    # Side KPI panel for chart 1 — categories shown in the stack
+    # (Toplam = stack top, Boş / Proseste / Dolu / Hurda are the
+    # stacked bars). All values reflect the latest week.
+    if latest_kpis:
+        _kpi_card_excel(
+            ws, row=chart1_anchor_row, col=17, width=6,
+            label="Toplam Konteyner",
+            value=_fmt_int_tr(latest_kpis["total_containers"]),
+            sub=f"Son hafta: {_short_week(latest_week)}",
+            tone="slate",
+        )
+        _kpi_card_excel(
+            ws, row=chart1_anchor_row + 4, col=17, width=6,
+            label="Boş",
+            value=_fmt_int_tr(latest_kpis["empty"]),
+            sub="Kullanılabilir kasa",
+            tone="green",
+        )
+        _kpi_card_excel(
+            ws, row=chart1_anchor_row + 8, col=17, width=6,
+            label="Proseste",
+            value=_fmt_int_tr(latest_kpis["wip"]),
+            sub="İşlem görüyor",
+            tone="amber",
+        )
+        _kpi_card_excel(
+            ws, row=chart1_anchor_row + 12, col=17, width=6,
+            label="Dolu (Kanban dahil)",
+            value=_fmt_int_tr(latest_kpis["full"]),
+            sub=(
+                f"Kanban: {_fmt_int_tr(latest_kpis['kanban'])} "
+                f"(%{_fmt_dec_tr(latest_kpis['kanban_pct'])})"
+            ),
+            tone="blue",
+        )
 
     # ================================================================
     # Chart 2 — Line chart: overall ton/Dolu per week
@@ -1646,11 +1615,8 @@ def _build_ozet_charts_sheet(
     chart2.height = 11
     chart2.width = 26
     _apply_chart_frame(chart2)
-    # Chart 2 anchor row sits just below chart 1 (which is 10cm ≈ 20
-    # rows tall starting at row 12). Side KPI cards anchor immediately
-    # to the right of chart 2 at col 17 (Q) — chart spans cols A-P at
-    # 26 cm × 1.7 cm/col, KPIs from Q on.
-    chart2_anchor_row = 34
+    # Chart 2 sits below chart 1 panel.
+    chart2_anchor_row = 24
     ws.add_chart(chart2, f"A{chart2_anchor_row}")
 
     # Side KPI cards for chart 2 — Bu Hafta / En Yüksek / En Düşük /
@@ -1748,16 +1714,54 @@ def _build_ozet_charts_sheet(
     chart3.height = 13
     chart3.width = 38
     _apply_chart_frame(chart3)
-    # Section divider before the wide tesis-comparison charts.
-    ws.merge_cells("A74:V74")
-    sec3 = ws["A74"]
+    # Narrower than before (26 cm instead of 38) so a side KPI panel
+    # fits to the right with the other charts.
+    chart3.width = 26
+    # Section divider before the tesis-comparison charts.
+    ws.merge_cells("A62:V62")
+    sec3 = ws["A62"]
     sec3.value = "Tesis Karşılaştırma"
     sec3.font = Font(bold=True, size=13, color="1F3A8A")
     sec3.fill = PatternFill("solid", fgColor="E2E8F0")
     sec3.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.row_dimensions[74].height = 24
-    # Chart 3 wide goes directly below the section header.
-    ws.add_chart(chart3, "A75")
+    ws.row_dimensions[62].height = 24
+    chart3_anchor_row = 63
+    ws.add_chart(chart3, f"A{chart3_anchor_row}")
+
+    # Side KPI panel for chart 3 — per-site ton/Dolu in the latest
+    # full week.
+    if latest_week:
+        site_ton_per = []
+        for site in all_sites:
+            sd = weekly_site.get(latest_week, {}).get(site)
+            if sd and sd.get("full"):
+                site_ton_per.append((site, sd["tonnage"] / sd["full"]))
+        if site_ton_per:
+            high = max(site_ton_per, key=lambda v: v[1])
+            low = min(site_ton_per, key=lambda v: v[1])
+            avg = sum(v[1] for v in site_ton_per) / len(site_ton_per)
+
+            _kpi_card_excel(
+                ws, row=chart3_anchor_row, col=17, width=6,
+                label="En Yüksek Tesis",
+                value=f"{_fmt_dec_tr(high[1], digits=2)} t",
+                sub=f"{high[0]} — {_short_week(latest_week)}",
+                tone="green",
+            )
+            _kpi_card_excel(
+                ws, row=chart3_anchor_row + 4, col=17, width=6,
+                label="En Düşük Tesis",
+                value=f"{_fmt_dec_tr(low[1], digits=2)} t",
+                sub=f"{low[0]} — {_short_week(latest_week)}",
+                tone="rose",
+            )
+            _kpi_card_excel(
+                ws, row=chart3_anchor_row + 8, col=17, width=6,
+                label="Tüm Tesis Ortalaması",
+                value=f"{_fmt_dec_tr(avg, digits=2)} t",
+                sub=f"{len(site_ton_per)} tesisin ortalaması",
+                tone="slate",
+            )
 
     # ================================================================
     # Chart 4 — Stacked column: color breakdown per site (latest week)
@@ -1881,16 +1885,69 @@ def _build_ozet_charts_sheet(
         _hide_overlay_from_legend(chart4, chart4_total_line)
 
     # Section divider before the color breakdown chart.
-    ws.merge_cells("A150:V150")
-    sec4 = ws["A150"]
+    ws.merge_cells("A121:V121")
+    sec4 = ws["A121"]
     sec4.value = "Renk Dağılımı"
     sec4.font = Font(bold=True, size=13, color="1F3A8A")
     sec4.fill = PatternFill("solid", fgColor="E2E8F0")
     sec4.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.row_dimensions[150].height = 24
-    # Chart 4 anchored at A so it aligns with the wide charts above
-    # rather than floating off-center.
-    ws.add_chart(chart4, "A151")
+    ws.row_dimensions[121].height = 24
+    chart4.width = 26
+    chart4_anchor_row = 122
+    ws.add_chart(chart4, f"A{chart4_anchor_row}")
+
+    # Side KPI panel for chart 4 — color totals across all sites in
+    # the latest week.
+    if latest_week:
+        color_totals_lw: dict[str, int] = {}
+        for r in all_rows:
+            if r.get("Hafta") != latest_week:
+                continue
+            color = r.get("Renk") or ""
+            cnt = (
+                int(r.get("Boş") or 0)
+                + int(r.get("WIP") or 0)
+                + int(r.get("Dolu") or 0)
+                + int(r.get("Hurda") or 0)
+            )
+            color_totals_lw[color] = color_totals_lw.get(color, 0) + cnt
+
+        if color_totals_lw:
+            sorted_colors = sorted(
+                color_totals_lw.items(), key=lambda kv: kv[1], reverse=True,
+            )
+            most = sorted_colors[0]
+            least = sorted_colors[-1]
+            grand_total = sum(color_totals_lw.values())
+
+            _kpi_card_excel(
+                ws, row=chart4_anchor_row, col=17, width=6,
+                label="Toplam Konteyner",
+                value=_fmt_int_tr(grand_total),
+                sub=f"{_short_week(latest_week)} — tüm renkler",
+                tone="slate",
+            )
+            _kpi_card_excel(
+                ws, row=chart4_anchor_row + 4, col=17, width=6,
+                label="En Çok Renk",
+                value=_fmt_int_tr(most[1]),
+                sub=f"{most[0]}",
+                tone="green",
+            )
+            _kpi_card_excel(
+                ws, row=chart4_anchor_row + 8, col=17, width=6,
+                label="En Az Renk",
+                value=_fmt_int_tr(least[1]),
+                sub=f"{least[0]}",
+                tone="rose",
+            )
+            _kpi_card_excel(
+                ws, row=chart4_anchor_row + 12, col=17, width=6,
+                label="Farklı Renk Sayısı",
+                value=_fmt_int_tr(len(color_totals_lw)),
+                sub="Latest week aktif renkler",
+                tone="amber",
+            )
 
     # ================================================================
     # Chart 5 — Tesis Bazlı Boş Konteyner (Son 3 Hafta)
@@ -1949,8 +2006,43 @@ def _build_ozet_charts_sheet(
     chart5.height = 13
     chart5.width = 38
     _apply_chart_frame(chart5)
-    # Below chart 3.
-    ws.add_chart(chart5, "A100")
+    chart5.width = 26
+    chart5_anchor_row = 82
+    ws.add_chart(chart5, f"A{chart5_anchor_row}")
+
+    # Side KPI panel for chart 5 — Boş counts per site in latest week.
+    if latest_week:
+        site_empty = []
+        for site in all_sites:
+            sd = weekly_site.get(latest_week, {}).get(site)
+            if sd:
+                site_empty.append((site, int(sd.get("empty", 0))))
+        if site_empty:
+            total_empty_lw = sum(v[1] for v in site_empty)
+            high = max(site_empty, key=lambda v: v[1])
+            low = min(site_empty, key=lambda v: v[1])
+
+            _kpi_card_excel(
+                ws, row=chart5_anchor_row, col=17, width=6,
+                label="Toplam Boş",
+                value=_fmt_int_tr(total_empty_lw),
+                sub=f"{_short_week(latest_week)} — tüm tesisler",
+                tone="slate",
+            )
+            _kpi_card_excel(
+                ws, row=chart5_anchor_row + 4, col=17, width=6,
+                label="En Çok Boş Olan Tesis",
+                value=_fmt_int_tr(high[1]),
+                sub=f"{high[0]}",
+                tone="green",
+            )
+            _kpi_card_excel(
+                ws, row=chart5_anchor_row + 8, col=17, width=6,
+                label="En Az Boş Olan Tesis",
+                value=_fmt_int_tr(low[1]),
+                sub=f"{low[0]}",
+                tone="rose",
+            )
 
     # ================================================================
     # Chart 6 — Proseste Konteyner Başına Tonaj (LineChart)
@@ -2006,7 +2098,7 @@ def _build_ozet_charts_sheet(
     _apply_chart_frame(chart6)
     # Chart 6 sits directly below chart 2 with side KPI cards mirroring
     # the chart 2 panel — same structure but for ton-per-Proseste.
-    chart6_anchor_row = 54
+    chart6_anchor_row = 43
     ws.add_chart(chart6, f"A{chart6_anchor_row}")
 
     # Side KPI cards for chart 6 — same template as chart 2 but Proseste.
@@ -2103,8 +2195,43 @@ def _build_ozet_charts_sheet(
     chart7.height = 13
     chart7.width = 38
     _apply_chart_frame(chart7)
-    # Below chart 5.
-    ws.add_chart(chart7, "A125")
+    chart7.width = 26
+    chart7_anchor_row = 101
+    ws.add_chart(chart7, f"A{chart7_anchor_row}")
+
+    # Side KPI panel for chart 7 — Proseste counts per site latest week.
+    if latest_week:
+        site_wip = []
+        for site in all_sites:
+            sd = weekly_site.get(latest_week, {}).get(site)
+            if sd:
+                site_wip.append((site, int(sd.get("wip", 0))))
+        if site_wip:
+            total_wip_lw = sum(v[1] for v in site_wip)
+            high = max(site_wip, key=lambda v: v[1])
+            low = min(site_wip, key=lambda v: v[1])
+
+            _kpi_card_excel(
+                ws, row=chart7_anchor_row, col=17, width=6,
+                label="Toplam Proseste",
+                value=_fmt_int_tr(total_wip_lw),
+                sub=f"{_short_week(latest_week)} — tüm tesisler",
+                tone="amber",
+            )
+            _kpi_card_excel(
+                ws, row=chart7_anchor_row + 4, col=17, width=6,
+                label="En Çok Proseste Olan Tesis",
+                value=_fmt_int_tr(high[1]),
+                sub=f"{high[0]}",
+                tone="green",
+            )
+            _kpi_card_excel(
+                ws, row=chart7_anchor_row + 8, col=17, width=6,
+                label="En Az Proseste Olan Tesis",
+                value=_fmt_int_tr(low[1]),
+                sub=f"{low[0]}",
+                tone="rose",
+            )
 
 
 # ---------------------------------------------------------------------------
