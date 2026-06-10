@@ -1393,9 +1393,11 @@ def _build_ozet_charts_sheet(
         )
         ws.row_dimensions[2].height = 20
 
-        # Set column widths once for the whole dashboard area.
-        for c in range(1, 22):
-            ws.column_dimensions[get_column_letter(c)].width = 12
+        # Tight column widths for a denser dashboard. With width 10
+        # (~1.7 cm) and 22 cols, the dashboard runs ~37 cm wide and the
+        # side KPI cards sit immediately to the right of chart 2 and 6.
+        for c in range(1, 23):
+            ws.column_dimensions[get_column_letter(c)].width = 10
 
         # Primary row of 5 cards (Toplam / Boş / Proseste / Dolu+Kanban / Hurda)
         _kpi_card_excel(
@@ -1461,9 +1463,16 @@ def _build_ozet_charts_sheet(
             tone="slate",
         )
 
-        # Spacer row before charts begin.
-        ws.row_dimensions[11].height = 10
-    # Charts start at row 12.
+        # Section header before the trend charts band.
+        ws.merge_cells("A11:V11")
+        sec_cell = ws["A11"]
+        sec_cell.value = "Haftalık Trendler"
+        sec_cell.font = Font(bold=True, size=13, color="1F3A8A")
+        sec_cell.fill = PatternFill("solid", fgColor="E2E8F0")
+        sec_cell.alignment = Alignment(
+            horizontal="left", vertical="center", indent=1,
+        )
+        ws.row_dimensions[11].height = 24
     _CHART_BASE_ROW = 12
 
     # ================================================================
@@ -1535,8 +1544,10 @@ def _build_ozet_charts_sheet(
     )
     chart1.legend.position = "b"
     chart1.legend.overlay = False
-    chart1.height = 12
-    chart1.width = 30
+    # Chart 1 spans the full dashboard width (~ 37 cm = 22 cols at
+    # width 10). Matches the underlying KPI band visually.
+    chart1.height = 10
+    chart1.width = 37
     _apply_chart_frame(chart1)
 
     # Invisible "Toplam" line at the top of each stack — same value as
@@ -1633,10 +1644,13 @@ def _build_ozet_charts_sheet(
         series.graphicalProperties = gp
     chart2.legend = None  # single series — legend is just noise
     chart2.height = 11
-    chart2.width = 22
+    chart2.width = 26
     _apply_chart_frame(chart2)
-    # Chart 2 below chart 1, leaving cols Q-V free for side KPI cards.
-    chart2_anchor_row = 36
+    # Chart 2 anchor row sits just below chart 1 (which is 10cm ≈ 20
+    # rows tall starting at row 12). Side KPI cards anchor immediately
+    # to the right of chart 2 at col 17 (Q) — chart spans cols A-P at
+    # 26 cm × 1.7 cm/col, KPIs from Q on.
+    chart2_anchor_row = 34
     ws.add_chart(chart2, f"A{chart2_anchor_row}")
 
     # Side KPI cards for chart 2 — Bu Hafta / En Yüksek / En Düşük /
@@ -1655,28 +1669,28 @@ def _build_ozet_charts_sheet(
             avg_v = sum(v[1] for v in ton_dolu_series) / len(ton_dolu_series)
 
             _kpi_card_excel(
-                ws, row=chart2_anchor_row, col=17, width=5,
+                ws, row=chart2_anchor_row, col=17, width=6,
                 label="Bu Hafta",
                 value=f"{_fmt_dec_tr(latest_v[1], digits=2)} t",
                 sub=f"{_short_week(latest_v[0])} — ton / Dolu",
                 tone="blue",
             )
             _kpi_card_excel(
-                ws, row=chart2_anchor_row + 4, col=17, width=5,
+                ws, row=chart2_anchor_row + 4, col=17, width=6,
                 label="En Yüksek",
                 value=f"{_fmt_dec_tr(max_v[1], digits=2)} t",
                 sub=f"{_short_week(max_v[0])} haftası",
                 tone="green",
             )
             _kpi_card_excel(
-                ws, row=chart2_anchor_row + 8, col=17, width=5,
+                ws, row=chart2_anchor_row + 8, col=17, width=6,
                 label="En Düşük",
                 value=f"{_fmt_dec_tr(min_v[1], digits=2)} t",
                 sub=f"{_short_week(min_v[0])} haftası",
                 tone="rose",
             )
             _kpi_card_excel(
-                ws, row=chart2_anchor_row + 12, col=17, width=5,
+                ws, row=chart2_anchor_row + 12, col=17, width=6,
                 label="Tüm Hafta Ortalama",
                 value=f"{_fmt_dec_tr(avg_v, digits=2)} t",
                 sub=f"{len(ton_dolu_series)} hafta hesabı",
@@ -1734,9 +1748,16 @@ def _build_ozet_charts_sheet(
     chart3.height = 13
     chart3.width = 38
     _apply_chart_frame(chart3)
-    # Chart 3 wide goes below chart 6 (which we'll move next to chart 2
-    # at row 58). Anchor at row 82.
-    ws.add_chart(chart3, "A82")
+    # Section divider before the wide tesis-comparison charts.
+    ws.merge_cells("A74:V74")
+    sec3 = ws["A74"]
+    sec3.value = "Tesis Karşılaştırma"
+    sec3.font = Font(bold=True, size=13, color="1F3A8A")
+    sec3.fill = PatternFill("solid", fgColor="E2E8F0")
+    sec3.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.row_dimensions[74].height = 24
+    # Chart 3 wide goes directly below the section header.
+    ws.add_chart(chart3, "A75")
 
     # ================================================================
     # Chart 4 — Stacked column: color breakdown per site (latest week)
@@ -1859,10 +1880,17 @@ def _build_ozet_charts_sheet(
         # Drop 'Toplam' from the legend swatches.
         _hide_overlay_from_legend(chart4, chart4_total_line)
 
-    # Centered horizontally on the sheet: chart 4 is 38 cm wide, anchor
-    # at column G so it sits roughly in the middle of the visible area.
-    # Positioned at the bottom of the dashboard after all trend charts.
-    ws.add_chart(chart4, "G160")
+    # Section divider before the color breakdown chart.
+    ws.merge_cells("A150:V150")
+    sec4 = ws["A150"]
+    sec4.value = "Renk Dağılımı"
+    sec4.font = Font(bold=True, size=13, color="1F3A8A")
+    sec4.fill = PatternFill("solid", fgColor="E2E8F0")
+    sec4.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.row_dimensions[150].height = 24
+    # Chart 4 anchored at A so it aligns with the wide charts above
+    # rather than floating off-center.
+    ws.add_chart(chart4, "A151")
 
     # ================================================================
     # Chart 5 — Tesis Bazlı Boş Konteyner (Son 3 Hafta)
@@ -1921,8 +1949,8 @@ def _build_ozet_charts_sheet(
     chart5.height = 13
     chart5.width = 38
     _apply_chart_frame(chart5)
-    # Anchor below chart 3 in the wide-chart row.
-    ws.add_chart(chart5, "A108")
+    # Below chart 3.
+    ws.add_chart(chart5, "A100")
 
     # ================================================================
     # Chart 6 — Proseste Konteyner Başına Tonaj (LineChart)
@@ -1974,11 +2002,11 @@ def _build_ozet_charts_sheet(
         series.graphicalProperties = gp
     chart6.legend = None  # single series — legend is just noise
     chart6.height = 11
-    chart6.width = 22
+    chart6.width = 26
     _apply_chart_frame(chart6)
-    # Chart 6 sits below chart 2 with side KPI cards mirroring the
-    # chart 2 panel — same structure but for ton-per-Proseste.
-    chart6_anchor_row = 58
+    # Chart 6 sits directly below chart 2 with side KPI cards mirroring
+    # the chart 2 panel — same structure but for ton-per-Proseste.
+    chart6_anchor_row = 54
     ws.add_chart(chart6, f"A{chart6_anchor_row}")
 
     # Side KPI cards for chart 6 — same template as chart 2 but Proseste.
@@ -1996,28 +2024,28 @@ def _build_ozet_charts_sheet(
             avg_v = sum(v[1] for v in ton_wip_series) / len(ton_wip_series)
 
             _kpi_card_excel(
-                ws, row=chart6_anchor_row, col=17, width=5,
+                ws, row=chart6_anchor_row, col=17, width=6,
                 label="Bu Hafta",
                 value=f"{_fmt_dec_tr(latest_v[1], digits=2)} t",
                 sub=f"{_short_week(latest_v[0])} — ton / Proseste",
                 tone="blue",
             )
             _kpi_card_excel(
-                ws, row=chart6_anchor_row + 4, col=17, width=5,
+                ws, row=chart6_anchor_row + 4, col=17, width=6,
                 label="En Yüksek",
                 value=f"{_fmt_dec_tr(max_v[1], digits=2)} t",
                 sub=f"{_short_week(max_v[0])} haftası",
                 tone="green",
             )
             _kpi_card_excel(
-                ws, row=chart6_anchor_row + 8, col=17, width=5,
+                ws, row=chart6_anchor_row + 8, col=17, width=6,
                 label="En Düşük",
                 value=f"{_fmt_dec_tr(min_v[1], digits=2)} t",
                 sub=f"{_short_week(min_v[0])} haftası",
                 tone="rose",
             )
             _kpi_card_excel(
-                ws, row=chart6_anchor_row + 12, col=17, width=5,
+                ws, row=chart6_anchor_row + 12, col=17, width=6,
                 label="Tüm Hafta Ortalama",
                 value=f"{_fmt_dec_tr(avg_v, digits=2)} t",
                 sub=f"{len(ton_wip_series)} hafta hesabı",
@@ -2075,9 +2103,8 @@ def _build_ozet_charts_sheet(
     chart7.height = 13
     chart7.width = 38
     _apply_chart_frame(chart7)
-    # Below chart 5 in the wide-chart row at the bottom of the
-    # dashboard.
-    ws.add_chart(chart7, "A134")
+    # Below chart 5.
+    ws.add_chart(chart7, "A125")
 
 
 # ---------------------------------------------------------------------------
