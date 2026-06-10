@@ -241,7 +241,8 @@ class CountDetail(Base):
         UniqueConstraint("submission_id", "color_id", name="count_details_sub_color_key"),
         CheckConstraint(
             "empty_count >= 0 AND full_count >= 0 "
-            "AND kanban_count >= 0 AND scrap_count >= 0",
+            "AND kanban_count >= 0 AND scrap_count >= 0 "
+            "AND wip_count >= 0",
             name="non_negative",
         ),
         CheckConstraint("kanban_count <= full_count", name="kanban_le_full"),
@@ -258,6 +259,9 @@ class CountDetail(Base):
     full_count: Mapped[int] = mapped_column(default=0, server_default="0")
     kanban_count: Mapped[int] = mapped_column(default=0, server_default="0")
     scrap_count: Mapped[int] = mapped_column(default=0, server_default="0")
+    # WIP: Work In Progress. Process içindeki / yarı işlenmiş konteynerler.
+    # Boş ve Dolu'dan ayrı bir kategori. Toplam Konteyner = B + WIP + D + H.
+    wip_count: Mapped[int] = mapped_column(default=0, server_default="0")
 
     submission: Mapped["CountSubmission"] = relationship(back_populates="details")
     color: Mapped["Color"] = relationship(back_populates="details")

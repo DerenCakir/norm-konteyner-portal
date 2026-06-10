@@ -182,10 +182,12 @@ def _compute_week_kpis(rows: list[dict[str, Any]]) -> dict[str, Any]:
     surfaced on the Dashboard (matches the portal Analiz page logic).
     """
     total_empty = sum(int(r.get("Boş") or 0) for r in rows)
+    total_wip = sum(int(r.get("WIP") or 0) for r in rows)
     total_full = sum(int(r.get("Dolu") or 0) for r in rows)
     total_kanban = sum(int(r.get("Kanban") or 0) for r in rows)
     total_scrap = sum(int(r.get("Hurda") or 0) for r in rows)
-    total_containers = total_empty + total_full + total_scrap
+    # Yeni Toplam Konteyner tanımı: Boş + WIP + Dolu + Hurda.
+    total_containers = total_empty + total_wip + total_full + total_scrap
 
     # Tonnage: once per submission_id (color rows share the submission tonnage).
     seen_subs: set[int] = set()
@@ -226,6 +228,7 @@ def _compute_week_kpis(rows: list[dict[str, Any]]) -> dict[str, Any]:
 
     return {
         "empty": total_empty,
+        "wip": total_wip,
         "full": total_full,
         "kanban": total_kanban,
         "scrap": total_scrap,
@@ -365,20 +368,28 @@ def _build_dashboard_sheet(
 
     kpis = _compute_week_kpis(rows)
 
-    # First row of cards: A4..L6 (4 cards × 3 cols = 12 cols) -------------
+    # First row of cards: 5 cards x ~2.4 cols (12 cols / 5 = 2.4, use 2 + extras)
+    # Toplam | Boş | WIP | Dolu (with Kanban) | Hurda
     _kpi_card_excel(
-        ws, row=4, col=1, width=3,
+        ws, row=4, col=1, width=2,
         label="Toplam Konteyner",
         value=_fmt_int_tr(kpis["total_containers"]),
-        sub="Boş + Dolu + Hurdaya Ayrılacak",
+        sub="B + WIP + D + H",
         tone="slate",
     )
     _kpi_card_excel(
-        ws, row=4, col=4, width=3,
+        ws, row=4, col=3, width=2,
         label="Boş Konteyner",
         value=_fmt_int_tr(kpis["empty"]),
         sub="Kullanılabilir kasa",
         tone="green",
+    )
+    _kpi_card_excel(
+        ws, row=4, col=5, width=2,
+        label="WIP Konteyner",
+        value=_fmt_int_tr(kpis["wip"]),
+        sub="İşlem görüyor",
+        tone="amber",
     )
     _kpi_card_excel(
         ws, row=4, col=7, width=3,
@@ -430,7 +441,7 @@ def _build_dashboard_sheet(
     ws.merge_cells("A12:L12")
 
     headers = [
-        "Üretim Yeri", "Boş", "Dolu", "Hurdaya Ayrılacak",
+        "Üretim Yeri", "Boş", "WIP", "Dolu", "Hurdaya Ayrılacak",
         "Toplam", "Toplam Tonaj", "Ort. kg / Dolu",
     ]
     for j, h in enumerate(headers, start=1):
@@ -443,14 +454,15 @@ def _build_dashboard_sheet(
 
     # Per-site aggregate from rows.
     site_agg: dict[str, dict[str, float]] = {}
-    seen_subs: set[int] = set()
+    seen_subs: set = set()
     for r in rows:
         site = r.get("Üretim Yeri") or ""
         s = site_agg.setdefault(
             site,
-            {"empty": 0, "full": 0, "scrap": 0, "tonnage": 0.0},
+            {"empty": 0, "wip": 0, "full": 0, "scrap": 0, "tonnage": 0.0},
         )
         s["empty"] += int(r.get("Boş") or 0)
+        s["wip"] += int(r.get("WIP") or 0)
         s["full"] += int(r.get("Dolu") or 0)
         s["scrap"] += int(r.get("Hurda") or 0)
         sub_id = r.get("Submission ID")
@@ -467,10 +479,10 @@ def _build_dashboard_sheet(
         site_agg.items(), key=lambda kv: _site_sort_key(kv[0]),
     )
     for idx, (site, s) in enumerate(sorted_sites, start=14):
-        bdh = s["empty"] + s["full"] + s["scrap"]
+        bdh = s["empty"] + s["wip"] + s["full"] + s["scrap"]
         kg_per = (s["tonnage"] * 1000.0 / s["full"]) if s["full"] else 0.0
 
-        values = [site, s["empty"], s["full"], s["scrap"], bdh, s["tonnage"], kg_per]
+        values = [site, s["empty"], s["wip"], s["full"], s["scrap"], bdh, s["tonnage"], kg_per]
         zebra = (idx % 2 == 0)
         for j, v in enumerate(values, start=1):
             cell = ws.cell(row=idx, column=j, value=v)
@@ -479,13 +491,13 @@ def _build_dashboard_sheet(
                 cell.fill = _ZEBRA_FILL
             if j == 1:
                 cell.alignment = _LEFT
-            elif j in (2, 3, 4, 5):
+            elif j in (2, 3, 4, 5, 6):
                 cell.alignment = _RIGHT
                 cell.number_format = "[$-tr-TR]#,##0"
-            elif j == 6:
+            elif j == 7:  # Toplam Tonaj
                 cell.alignment = _RIGHT
                 cell.number_format = "[$-tr-TR]#,##0.0"
-            elif j == 7:
+            elif j == 8:  # Ort. kg / Dolu
                 cell.alignment = _RIGHT
                 cell.number_format = "[$-tr-TR]#,##0"
 
@@ -493,15 +505,16 @@ def _build_dashboard_sheet(
     total_row = 14 + len(sorted_sites)
     grand = {
         "empty": sum(s["empty"] for _, s in sorted_sites),
+        "wip": sum(s["wip"] for _, s in sorted_sites),
         "full": sum(s["full"] for _, s in sorted_sites),
         "scrap": sum(s["scrap"] for _, s in sorted_sites),
         "tonnage": sum(s["tonnage"] for _, s in sorted_sites),
     }
-    grand_bdh = grand["empty"] + grand["full"] + grand["scrap"]
+    grand_bdh = grand["empty"] + grand["wip"] + grand["full"] + grand["scrap"]
     grand_kg_per = (grand["tonnage"] * 1000.0 / grand["full"]) if grand["full"] else 0.0
     total_values = [
         "TOPLAM",
-        grand["empty"], grand["full"], grand["scrap"],
+        grand["empty"], grand["wip"], grand["full"], grand["scrap"],
         grand_bdh, grand["tonnage"], grand_kg_per,
     ]
     for j, v in enumerate(total_values, start=1):
@@ -511,7 +524,7 @@ def _build_dashboard_sheet(
         cell.border = _BORDER
         if j == 1:
             cell.alignment = _RIGHT
-        elif j == 6:
+        elif j == 7:
             cell.alignment = _RIGHT
             cell.number_format = "[$-tr-TR]#,##0.0"
         else:
@@ -527,14 +540,14 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
 
     headers = [
         "Üretim Yeri", "Bölüm", "Renk",
-        "Boş", "Dolu", "Dolu İçindeki Kanban", "Hurdaya Ayrılacak",
-        "Toplam (B+D+H)", "Durum",
+        "Boş", "WIP", "Dolu", "Dolu İçindeki Kanban", "Hurdaya Ayrılacak",
+        "Toplam Konteyner", "Durum",
         "Giren Kullanıcı", "Sayım Tarihi", "Sayım Saati", "Gönderim Zamanı",
     ]
     ws.append(headers)
     _style_header_row(ws, len(headers))
 
-    totals = {"empty": 0, "full": 0, "kanban": 0, "scrap": 0, "bdh": 0}
+    totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0, "bdh": 0}
 
     for idx, row in enumerate(rows, start=2):
         is_late = row.get("Durum") == "late_submitted"
@@ -542,14 +555,16 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
         fill = _LATE_FILL if is_late else (_ZEBRA_FILL if zebra else None)
 
         bos_v = int(row.get("Boş") or 0)
+        wip_v = int(row.get("WIP") or 0)
         dolu_v = int(row.get("Dolu") or 0)
         kanban_v = int(row.get("Kanban") or 0)
         hurda_v = int(row.get("Hurda") or 0)
-        bdh_v = bos_v + dolu_v + hurda_v
+        bdh_v = bos_v + wip_v + dolu_v + hurda_v
 
         values = [
             row.get("Üretim Yeri", ""), row.get("Bölüm", ""), row.get("Renk", ""),
-            row.get("Boş"), row.get("Dolu"), row.get("Kanban"), row.get("Hurda"),
+            row.get("Boş"), row.get("WIP"),
+            row.get("Dolu"), row.get("Kanban"), row.get("Hurda"),
             bdh_v,
             _STATUS_LABEL.get(row.get("Durum"), row.get("Durum", "")),
             row.get("Giren Kullanıcı", ""),
@@ -558,6 +573,7 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
         ]
         ws.append(values)
         totals["empty"] += bos_v
+        totals["wip"] += wip_v
         totals["full"] += dolu_v
         totals["kanban"] += kanban_v
         totals["scrap"] += hurda_v
@@ -568,10 +584,11 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
             cell.border = _BORDER
             if fill:
                 cell.fill = fill
-            if col_idx in (4, 5, 6, 7, 8):
+            # Sayısal sütunlar: 4=Boş, 5=WIP, 6=Dolu, 7=Kanban, 8=Hurda, 9=Toplam
+            if col_idx in (4, 5, 6, 7, 8, 9):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 9:
+            elif col_idx == 10:  # Durum
                 cell.alignment = _CENTER
                 if is_late:
                     cell.font = Font(bold=True, color="92400E")
@@ -582,8 +599,8 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
         total_row_idx = ws.max_row + 1
         ws.append([
             "TOPLAM", "", "",
-            totals["empty"], totals["full"], totals["kanban"], totals["scrap"],
-            totals["bdh"],
+            totals["empty"], totals["wip"], totals["full"],
+            totals["kanban"], totals["scrap"], totals["bdh"],
             "", "", "", "", "",
         ])
         for col_idx in range(1, len(headers) + 1):
@@ -591,7 +608,7 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
             cell.fill = _TOTAL_FILL
             cell.font = _TOTAL_FONT
             cell.border = _BORDER
-            if col_idx in (4, 5, 6, 7, 8):
+            if col_idx in (4, 5, 6, 7, 8, 9):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
             elif col_idx == 1:
@@ -614,7 +631,7 @@ def _build_uretim_yeri_kirilim_sheet(
 
     headers = [
         "Üretim Yeri", "Bölüm",
-        "Boş", "Dolu", "Dolu İçindeki Kanban", "Hurdaya ayrılacak",
+        "Boş", "WIP", "Dolu", "Dolu İçindeki Kanban", "Hurdaya ayrılacak",
         "Toplam Konteyner", "Toplam Tonaj",
         "Durum", "Giren Kullanıcı", "Sayım Gönderim Zamanı",
     ]
@@ -625,18 +642,19 @@ def _build_uretim_yeri_kirilim_sheet(
     for row in rows:
         key = (row.get("Üretim Yeri", ""), row.get("Bölüm", ""))
         agg = aggregates.setdefault(key, {
-            "empty": 0, "full": 0, "kanban": 0, "scrap": 0,
+            "empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0,
             "tonnage": row.get("Gerçekleşen Tonaj"),
             "status": row.get("Durum"),
             "user": row.get("Giren Kullanıcı", ""),
             "submitted_at": row.get("Gönderim Zamanı"),
         })
         agg["empty"] += int(row.get("Boş") or 0)
+        agg["wip"] += int(row.get("WIP") or 0)
         agg["full"] += int(row.get("Dolu") or 0)
         agg["kanban"] += int(row.get("Kanban") or 0)
         agg["scrap"] += int(row.get("Hurda") or 0)
 
-    totals = {"empty": 0, "full": 0, "kanban": 0, "scrap": 0, "bdh": 0, "tonnage": 0.0}
+    totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0, "bdh": 0, "tonnage": 0.0}
 
     for idx, ((site, dept), agg) in enumerate(
         sorted(
@@ -647,11 +665,14 @@ def _build_uretim_yeri_kirilim_sheet(
     ):
         is_late = agg["status"] == "late_submitted"
         fill = _LATE_FILL if is_late else (_ZEBRA_FILL if idx % 2 == 0 else None)
-        bdh = int(agg["empty"] or 0) + int(agg["full"] or 0) + int(agg["scrap"] or 0)
+        bdh = (
+            int(agg["empty"] or 0) + int(agg["wip"] or 0)
+            + int(agg["full"] or 0) + int(agg["scrap"] or 0)
+        )
         ton = agg["tonnage"]
         values = [
             site, dept,
-            agg["empty"], agg["full"], agg["kanban"], agg["scrap"],
+            agg["empty"], agg["wip"], agg["full"], agg["kanban"], agg["scrap"],
             bdh, ton,
             _STATUS_LABEL.get(agg["status"], agg["status"] or ""),
             agg["user"],
@@ -659,6 +680,7 @@ def _build_uretim_yeri_kirilim_sheet(
         ]
         ws.append(values)
         totals["empty"] += int(agg["empty"] or 0)
+        totals["wip"] += int(agg["wip"] or 0)
         totals["full"] += int(agg["full"] or 0)
         totals["kanban"] += int(agg["kanban"] or 0)
         totals["scrap"] += int(agg["scrap"] or 0)
@@ -674,13 +696,11 @@ def _build_uretim_yeri_kirilim_sheet(
             cell.border = _BORDER
             if fill:
                 cell.fill = fill
-            if col_idx in (3, 4, 5, 6, 7):
+            # Sayısal: 3=Boş, 4=WIP, 5=Dolu, 6=Kanban, 7=Hurda, 8=Toplam, 9=Tonaj
+            if col_idx in (3, 4, 5, 6, 7, 8, 9):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 8:
-                cell.alignment = _RIGHT
-                cell.number_format = "#,##0"
-            elif col_idx == 9:
+            elif col_idx == 10:  # Durum
                 cell.alignment = _CENTER
                 if is_late:
                     cell.font = Font(bold=True, color="92400E")
@@ -691,7 +711,8 @@ def _build_uretim_yeri_kirilim_sheet(
         total_row_idx = ws.max_row + 1
         ws.append([
             "TOPLAM", "",
-            totals["empty"], totals["full"], totals["kanban"], totals["scrap"],
+            totals["empty"], totals["wip"], totals["full"],
+            totals["kanban"], totals["scrap"],
             totals["bdh"], totals["tonnage"],
             "", "", "",
         ])
@@ -700,7 +721,7 @@ def _build_uretim_yeri_kirilim_sheet(
             cell.fill = _TOTAL_FILL
             cell.font = _TOTAL_FONT
             cell.border = _BORDER
-            if col_idx in (3, 4, 5, 6, 7, 8):
+            if col_idx in (3, 4, 5, 6, 7, 8, 9):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
             elif col_idx == 1:
@@ -719,7 +740,7 @@ def _build_uretim_yeri_ozeti_sheet(
     ws = wb.create_sheet("Üretim Yeri Özeti")
     headers = [
         "Üretim Yeri",
-        "Boş", "Dolu", "Dolu içindeki Kanban", "Hurdaya ayrılacak",
+        "Boş", "WIP", "Dolu", "Dolu içindeki Kanban", "Hurdaya ayrılacak",
         "Toplam Konteyner", "Toplam (%)",
         "Toplam Tonaj", "Dolu Konteyner Başına Yük (ton/konteyner)",
     ]
@@ -729,9 +750,10 @@ def _build_uretim_yeri_ozeti_sheet(
     site_aggs: dict[str, dict[str, Any]] = {}
     for (site, _dept), agg in dept_aggs.items():
         s = site_aggs.setdefault(site, {
-            "empty": 0, "full": 0, "kanban": 0, "scrap": 0, "tonnage": 0.0,
+            "empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0, "tonnage": 0.0,
         })
         s["empty"] += int(agg["empty"] or 0)
+        s["wip"] += int(agg.get("wip") or 0)
         s["full"] += int(agg["full"] or 0)
         s["kanban"] += int(agg["kanban"] or 0)
         s["scrap"] += int(agg["scrap"] or 0)
@@ -742,27 +764,28 @@ def _build_uretim_yeri_ozeti_sheet(
                 pass
 
     grand_total_bdh = sum(
-        s["empty"] + s["full"] + s["scrap"] for s in site_aggs.values()
+        s["empty"] + s["wip"] + s["full"] + s["scrap"] for s in site_aggs.values()
     )
 
-    totals = {"empty": 0, "full": 0, "kanban": 0, "scrap": 0, "bdh": 0, "tonnage": 0.0}
+    totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0, "bdh": 0, "tonnage": 0.0}
     for idx, (site, s) in enumerate(
         sorted(site_aggs.items(), key=lambda kv: _site_sort_key(kv[0])),
         start=2,
     ):
         zebra = _ZEBRA_FILL if idx % 2 == 0 else None
-        bdh = s["empty"] + s["full"] + s["scrap"]
+        bdh = s["empty"] + s["wip"] + s["full"] + s["scrap"]
         pct = (bdh / grand_total_bdh) if grand_total_bdh else 0  # stored as fraction
         ton_per = (s["tonnage"] / s["full"]) if s["full"] else 0
 
         values = [
             site,
-            s["empty"], s["full"], s["kanban"], s["scrap"],
+            s["empty"], s["wip"], s["full"], s["kanban"], s["scrap"],
             bdh, pct,
             s["tonnage"], ton_per,
         ]
         ws.append(values)
         totals["empty"] += s["empty"]
+        totals["wip"] += s["wip"]
         totals["full"] += s["full"]
         totals["kanban"] += s["kanban"]
         totals["scrap"] += s["scrap"]
@@ -774,16 +797,17 @@ def _build_uretim_yeri_ozeti_sheet(
             cell.border = _BORDER
             if zebra:
                 cell.fill = zebra
-            if col_idx in (2, 3, 4, 5, 6):
+            # Sayısal: 2=Boş, 3=WIP, 4=Dolu, 5=Kanban, 6=Hurda, 7=Toplam
+            if col_idx in (2, 3, 4, 5, 6, 7):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 7:  # Toplam %
+            elif col_idx == 8:  # Toplam %
                 cell.alignment = _RIGHT
                 cell.number_format = "0.0%"
-            elif col_idx == 8:  # Toplam Tonaj
+            elif col_idx == 9:  # Toplam Tonaj
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 9:  # ton/konteyner
+            elif col_idx == 10:  # ton/konteyner
                 cell.alignment = _RIGHT
                 cell.number_format = "0.00"
             else:
@@ -794,7 +818,8 @@ def _build_uretim_yeri_ozeti_sheet(
         ton_per_total = (totals["tonnage"] / totals["full"]) if totals["full"] else 0
         ws.append([
             "TOPLAM",
-            totals["empty"], totals["full"], totals["kanban"], totals["scrap"],
+            totals["empty"], totals["wip"], totals["full"],
+            totals["kanban"], totals["scrap"],
             totals["bdh"], 1.0,
             totals["tonnage"], ton_per_total,
         ])
@@ -803,13 +828,13 @@ def _build_uretim_yeri_ozeti_sheet(
             cell.fill = _TOTAL_FILL
             cell.font = _TOTAL_FONT
             cell.border = _BORDER
-            if col_idx in (2, 3, 4, 5, 6, 8):
+            if col_idx in (2, 3, 4, 5, 6, 7, 9):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 7:
+            elif col_idx == 8:
                 cell.alignment = _RIGHT
                 cell.number_format = "0.0%"
-            elif col_idx == 9:
+            elif col_idx == 10:
                 cell.alignment = _RIGHT
                 cell.number_format = "0.00"
             elif col_idx == 1:
@@ -824,7 +849,7 @@ def _build_renk_ozeti_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
     """Sheet 4: per-color aggregate for the selected week."""
     ws = wb.create_sheet("Renk Özeti")
     headers = [
-        "Renk", "Boş", "Dolu", "Dolu içindeki Kanban",
+        "Renk", "Boş", "WIP", "Dolu", "Dolu içindeki Kanban",
         "Hurdaya ayrılacak", "Toplam Konteyner",
     ]
     ws.append(headers)
@@ -835,21 +860,23 @@ def _build_renk_ozeti_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
     for row in rows:
         color = row.get("Renk", "") or ""
         if color not in color_aggs:
-            color_aggs[color] = {"empty": 0, "full": 0, "kanban": 0, "scrap": 0}
+            color_aggs[color] = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0}
             color_order.append(color)
         c = color_aggs[color]
         c["empty"] += int(row.get("Boş") or 0)
+        c["wip"] += int(row.get("WIP") or 0)
         c["full"] += int(row.get("Dolu") or 0)
         c["kanban"] += int(row.get("Kanban") or 0)
         c["scrap"] += int(row.get("Hurda") or 0)
 
-    totals = {"empty": 0, "full": 0, "kanban": 0, "scrap": 0, "bdh": 0}
+    totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0, "bdh": 0}
     for idx, color in enumerate(color_order, start=2):
         c = color_aggs[color]
-        bdh = c["empty"] + c["full"] + c["scrap"]
-        values = [color, c["empty"], c["full"], c["kanban"], c["scrap"], bdh]
+        bdh = c["empty"] + c["wip"] + c["full"] + c["scrap"]
+        values = [color, c["empty"], c["wip"], c["full"], c["kanban"], c["scrap"], bdh]
         ws.append(values)
         totals["empty"] += c["empty"]
+        totals["wip"] += c["wip"]
         totals["full"] += c["full"]
         totals["kanban"] += c["kanban"]
         totals["scrap"] += c["scrap"]
@@ -871,7 +898,7 @@ def _build_renk_ozeti_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
         total_row_idx = ws.max_row + 1
         ws.append([
             "TOPLAM",
-            totals["empty"], totals["full"], totals["kanban"],
+            totals["empty"], totals["wip"], totals["full"], totals["kanban"],
             totals["scrap"], totals["bdh"],
         ])
         for col_idx in range(1, len(headers) + 1):
@@ -936,26 +963,30 @@ def _aggregate_all_weeks(
             submission_weeks.add(week)
 
         empty_v = int(r.get("Boş") or 0)
+        wip_v = int(r.get("WIP") or 0)
         full_v = int(r.get("Dolu") or 0)
         kanban_v = int(r.get("Kanban") or 0)
         scrap_v = int(r.get("Hurda") or 0)
-        bdh_v = empty_v + full_v + scrap_v
+        # Toplam Konteyner = Boş + WIP + Dolu + Hurda (yeni tanım).
+        bdh_v = empty_v + wip_v + full_v + scrap_v
 
         wt = weekly_totals.setdefault(week, {
-            "empty": 0, "full": 0, "kanban": 0, "scrap": 0,
+            "empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0,
             "bdh": 0, "tonnage": 0.0,
         })
         wt["empty"] += empty_v
+        wt["wip"] += wip_v
         wt["full"] += full_v
         wt["kanban"] += kanban_v
         wt["scrap"] += scrap_v
         wt["bdh"] += bdh_v
 
         ws_agg = weekly_site.setdefault(week, {}).setdefault(site, {
-            "empty": 0, "full": 0, "kanban": 0, "scrap": 0,
+            "empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0,
             "bdh": 0, "tonnage": 0.0,
         })
         ws_agg["empty"] += empty_v
+        ws_agg["wip"] += wip_v
         ws_agg["full"] += full_v
         ws_agg["kanban"] += kanban_v
         ws_agg["scrap"] += scrap_v
@@ -991,23 +1022,26 @@ def _aggregate_all_weeks(
             empty_v = int(m.get("empty") or 0)
             full_v = int(m.get("full") or 0)
             scrap_v = int(m.get("scrap") or 0)
-            bdh_v = empty_v + full_v + scrap_v
+            wip_v = int(m.get("wip") or 0)
+            bdh_v = empty_v + wip_v + full_v + scrap_v
             tonnage_v = m.get("tonnage")
 
             wt = weekly_totals.setdefault(week, {
-                "empty": 0, "full": 0, "kanban": 0, "scrap": 0,
+                "empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0,
                 "bdh": 0, "tonnage": 0.0,
             })
             wt["empty"] += empty_v
+            wt["wip"] += wip_v
             wt["full"] += full_v
             wt["scrap"] += scrap_v
             wt["bdh"] += bdh_v
 
             ws_agg = weekly_site.setdefault(week, {}).setdefault(site, {
-                "empty": 0, "full": 0, "kanban": 0, "scrap": 0,
+                "empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0,
                 "bdh": 0, "tonnage": 0.0,
             })
             ws_agg["empty"] += empty_v
+            ws_agg["wip"] += wip_v
             ws_agg["full"] += full_v
             ws_agg["scrap"] += scrap_v
             ws_agg["bdh"] += bdh_v
@@ -1335,11 +1369,11 @@ def _build_ozet_charts_sheet(
     #   Series order: Boş, Dolu, Dolu İçindeki Kanban, Hurda (matches
     #   the per-week tables elsewhere in the workbook)
     # ================================================================
-    # Kanban analitik olarak Dolu'nun alt kümesidir; bu grafikte ayrı
-    # bir kategori olarak göstermek yanıltıcı toplam üretirdi. Yalnızca
-    # üç AYRIK kategori stackleniyor: Boş, Dolu (Kanban dahil), Hurda.
+    # Yeni 'Toplam Konteyner' tanımı: Boş + WIP + Dolu + Hurda. Kanban
+    # hâlâ Dolu'nun alt kümesi olduğu için bu grafikte ayrı bir
+    # kategori değil — 4 ayrık kategori stackleniyor.
     t1_col = 1
-    t1_headers = ["Hafta", "Boş", "Dolu", "Hurdaya Ayrılacak", "Toplam"]
+    t1_headers = ["Hafta", "Boş", "WIP", "Dolu", "Hurdaya Ayrılacak", "Toplam"]
     for j, h in enumerate(t1_headers):
         data_ws.cell(row=1, column=t1_col + j, value=h)
     for i, w in enumerate(weeks):
@@ -1351,18 +1385,20 @@ def _build_ozet_charts_sheet(
         # chart data labels (which Excel pulls via sourceLinked=true)
         # inherit the format. See _value_only_labels() for rationale.
         for col_offset, key in enumerate(
-            ["empty", "full", "scrap"], start=1
+            ["empty", "wip", "full", "scrap"], start=1
         ):
             cell = data_ws.cell(
-                row=2 + i, column=t1_col + col_offset, value=wt[key]
+                row=2 + i, column=t1_col + col_offset, value=wt.get(key, 0),
             )
             cell.number_format = "[$-tr-TR]#,##0"
-        # Toplam = B + D + H (workbook genelinde tutarlı tanım; stack
-        # yüksekliği de aynı bu üç kategorinin toplamı, dolayısıyla
-        # overlay etiketi stack tepesine birebir oturur).
-        total = wt["empty"] + wt["full"] + wt["scrap"]
+        # Toplam = Boş + WIP + Dolu + Hurda. Aynı stack yüksekliği,
+        # dolayısıyla overlay etiketi stack tepesine birebir oturur.
+        total = (
+            wt.get("empty", 0) + wt.get("wip", 0)
+            + wt.get("full", 0) + wt.get("scrap", 0)
+        )
         total_cell = data_ws.cell(
-            row=2 + i, column=t1_col + 4, value=total
+            row=2 + i, column=t1_col + 5, value=total
         )
         total_cell.number_format = "[$-tr-TR]#,##0"
     t1_last = 1 + len(weeks)
@@ -1378,7 +1414,7 @@ def _build_ozet_charts_sheet(
     data_ref = Reference(
         data_ws,
         min_col=t1_col + 1, min_row=1,
-        max_col=t1_col + 3, max_row=t1_last,
+        max_col=t1_col + 4, max_row=t1_last,
     )
     chart1.add_data(data_ref, titles_from_data=True)
     cats_ref = Reference(data_ws, min_col=t1_col, min_row=2, max_row=t1_last)
@@ -1401,14 +1437,14 @@ def _build_ozet_charts_sheet(
     _apply_chart_frame(chart1)
 
     # Invisible "Toplam" line at the top of each stack — same value as
-    # the stack height (B + D + H), so the data label lands right at
-    # the stack top. Bigger bold label so the headline total reads as
-    # the cluster summary.
+    # the stack height (B + WIP + D + H), so the data label lands
+    # right at the stack top. Bigger bold label so the headline total
+    # reads as the cluster summary.
     total_line = LineChart()
     total_ref = Reference(
         data_ws,
-        min_col=t1_col + 4, min_row=1,
-        max_col=t1_col + 4, max_row=t1_last,
+        min_col=t1_col + 5, min_row=1,
+        max_col=t1_col + 5, max_row=t1_last,
     )
     total_line.add_data(total_ref, titles_from_data=True)
     total_line.set_categories(cats_ref)
@@ -1425,14 +1461,16 @@ def _build_ozet_charts_sheet(
     # for the label; the bars below already cover the colored swatches).
     _hide_overlay_from_legend(chart1, total_line)
 
-    # Hurda values are tiny compared to Boş / Dolu so the centered
-    # white label sometimes overflows the colored segment onto the
+    # Hurda values are tiny compared to Boş / WIP / Dolu so the
+    # centered white label overflows the colored segment onto the
     # white chart background and becomes unreadable. Drop Hurda's
-    # per-segment labels entirely; the Toplam overlay above the stack
-    # plus the data tables in the other sheets still surface the
-    # Hurda number when the user needs it.
-    if len(chart1.series) >= 3:
-        chart1.series[2].dLbls = DataLabelList(delete=True)
+    # per-segment labels entirely; the Toplam overlay above the
+    # stack plus the data tables in the other sheets still surface
+    # the Hurda number when the user needs it.
+    # Bar series order matches the stack bottom-up: 0=Boş, 1=WIP,
+    # 2=Dolu, 3=Hurdaya Ayrılacak.
+    if len(chart1.series) >= 4:
+        chart1.series[3].dLbls = DataLabelList(delete=True)
 
     ws.add_chart(chart1, "A4")
 
@@ -1478,7 +1516,10 @@ def _build_ozet_charts_sheet(
     # that Excel's auto-scale would otherwise flatten.
     chart2.y_axis.scaling.min = 0.20
     chart2.y_axis.scaling.max = 0.90
-    chart2.dataLabels = _value_only_labels("t", "[$-tr-TR]#,##0.00")
+    chart2.dataLabels = _value_only_labels(
+        "t", "[$-tr-TR]#,##0.00",
+        txPr=_bold_large_label_props(size_pt=10),
+    )
     for series in chart2.series:
         series.marker = Marker(symbol="circle", size=7)
         # Force a single solid line color (navy blue) so the line reads
@@ -1722,9 +1763,11 @@ def _build_ozet_charts_sheet(
     _clean_axis(chart5.x_axis)
     _clean_axis(chart5.y_axis)
     chart5.y_axis.numFmt = "[$-tr-TR]#,##0"
-    # Value labels on top of each bar — same outEnd / bold styling
-    # as chart 3 so the two clustered charts read consistently.
-    chart5.dataLabels = _value_only_labels("outEnd")
+    # Value labels on top of each bar — same outEnd styling as chart 3
+    # so the two clustered charts read consistently. Bold for emphasis.
+    chart5.dataLabels = _value_only_labels(
+        "outEnd", txPr=_bold_large_label_props(size_pt=10),
+    )
     chart5.legend.position = "b"
     chart5.legend.overlay = False
     chart5.height = 13
@@ -1732,6 +1775,115 @@ def _build_ozet_charts_sheet(
     _apply_chart_frame(chart5)
     # Anchor below chart 4 (which is at G56, height 16cm ≈ 30 rows).
     ws.add_chart(chart5, "A90")
+
+    # ================================================================
+    # Chart 6 — WIP Konteyner Başına Tonaj (LineChart)
+    #   Same structure as chart 2 (Dolu Konteyner Başına Tonaj) but
+    #   driven by WIP counts. Useful for tracking how heavy the
+    #   in-progress load per container has been across recent weeks.
+    # ================================================================
+    t6_col = t5_col + len(last_3_weeks) + 3 if last_3_weeks else t5_col + 4
+    data_ws.cell(row=1, column=t6_col, value="Hafta")
+    data_ws.cell(row=1, column=t6_col + 1, value="Ton / WIP Konteyner")
+    for i, w in enumerate(full_weeks):
+        wt = weekly_totals[w]
+        wip_total = wt.get("wip", 0)
+        ton_per = (wt["tonnage"] / wip_total) if wip_total else None
+        data_ws.cell(row=2 + i, column=t6_col, value=_short_week(w))
+        cell = data_ws.cell(row=2 + i, column=t6_col + 1, value=ton_per)
+        cell.number_format = "[$-tr-TR]#,##0.00"
+    t6_last = 1 + len(full_weeks)
+
+    chart6 = LineChart()
+    chart6.style = 2
+    chart6.title = _make_chart_title("WIP Konteyner Başına Tonaj")
+    chart6.y_axis.title = _horizontal_axis_title("Ton / WIP Konteyner")
+    chart6.x_axis.title = _end_x_axis_title("Hafta")
+    if full_weeks:
+        data_ref = Reference(
+            data_ws,
+            min_col=t6_col + 1, min_row=1,
+            max_col=t6_col + 1, max_row=t6_last,
+        )
+        chart6.add_data(data_ref, titles_from_data=True)
+        cats_ref6 = Reference(
+            data_ws, min_col=t6_col, min_row=2, max_row=t6_last,
+        )
+        chart6.set_categories(cats_ref6)
+    _clean_axis(chart6.x_axis)
+    _clean_axis(chart6.y_axis)
+    chart6.y_axis.numFmt = "[$-tr-TR]#,##0.00"
+    chart6.dataLabels = _value_only_labels(
+        "t", "[$-tr-TR]#,##0.00",
+        txPr=_bold_large_label_props(size_pt=10),
+    )
+    for series in chart6.series:
+        series.marker = Marker(symbol="circle", size=7)
+        gp = GraphicalProperties()
+        # Match chart 2's navy but slightly different hue (teal) so the
+        # WIP chart reads as a sibling, not a duplicate.
+        gp.line = LineProperties(solidFill="0E7490", w=22000)
+        series.graphicalProperties = gp
+    chart6.legend = None  # single series — legend is just noise
+    chart6.height = 11
+    chart6.width = 26
+    _apply_chart_frame(chart6)
+    # Below chart 5 with a small gap.
+    ws.add_chart(chart6, "A116")
+
+    # ================================================================
+    # Chart 7 — Tesis Bazlı WIP Konteyner (Son 3 Hafta)
+    #   Same structure as chart 5 (Tesis Bazlı Boş) but for WIP. Shows
+    #   the recent-week trend of WIP containers per facility.
+    # ================================================================
+    t7_col = t6_col + 3
+    data_ws.cell(row=1, column=t7_col, value="Üretim Yeri")
+    for j, w in enumerate(last_3_weeks):
+        data_ws.cell(row=1, column=t7_col + 1 + j, value=_short_week(w))
+    for i, site in enumerate(all_sites):
+        data_ws.cell(row=2 + i, column=t7_col, value=site)
+        for j, w in enumerate(last_3_weeks):
+            sd = weekly_site.get(w, {}).get(site)
+            wip_val = int(sd.get("wip", 0)) if sd else 0
+            cell = data_ws.cell(
+                row=2 + i, column=t7_col + 1 + j, value=wip_val,
+            )
+            cell.number_format = "[$-tr-TR]#,##0"
+    t7_last = 1 + len(all_sites)
+
+    chart7 = BarChart()
+    chart7.type = "col"
+    chart7.style = 2
+    chart7.grouping = "clustered"
+    chart7.title = _make_chart_title(
+        "Tesis Bazlı WIP Konteyner (Son 3 Hafta)"
+    )
+    chart7.y_axis.title = _horizontal_axis_title("WIP Konteyner Adedi")
+    chart7.x_axis.title = _end_x_axis_title("Üretim Yeri")
+    if last_3_weeks and all_sites:
+        data_ref = Reference(
+            data_ws,
+            min_col=t7_col + 1, min_row=1,
+            max_col=t7_col + len(last_3_weeks), max_row=t7_last,
+        )
+        chart7.add_data(data_ref, titles_from_data=True)
+        cats_ref7 = Reference(
+            data_ws, min_col=t7_col, min_row=2, max_row=t7_last,
+        )
+        chart7.set_categories(cats_ref7)
+    _clean_axis(chart7.x_axis)
+    _clean_axis(chart7.y_axis)
+    chart7.y_axis.numFmt = "[$-tr-TR]#,##0"
+    chart7.dataLabels = _value_only_labels(
+        "outEnd", txPr=_bold_large_label_props(size_pt=10),
+    )
+    chart7.legend.position = "b"
+    chart7.legend.overlay = False
+    chart7.height = 13
+    chart7.width = 38
+    _apply_chart_frame(chart7)
+    # Below chart 6 (which is 11cm tall ≈ 21 rows).
+    ws.add_chart(chart7, "A140")
 
 
 # ---------------------------------------------------------------------------
@@ -1768,7 +1920,8 @@ def _build_uretim_yeri_karsilastirma_sheet(
     weeks = sorted(weekly_site.keys(), reverse=True)
 
     sub_headers = [
-        "Üretim Yeri", "Boş", "Dolu", "Dolu içindeki Kanban", "Hurdaya ayrılacak",
+        "Üretim Yeri", "Boş", "WIP", "Dolu", "Dolu içindeki Kanban",
+        "Hurdaya ayrılacak",
         "Toplam Konteyner", "Toplam (%)", "Toplam Tonaj",
         "Dolu Konteyner Başına Yük",
     ]
@@ -1815,9 +1968,10 @@ def _build_uretim_yeri_karsilastirma_sheet(
 
         sites_in_week = weekly_site[w]
         grand_total_bdh = sum(
-            s["empty"] + s["full"] + s["scrap"] for s in sites_in_week.values()
+            s["empty"] + s.get("wip", 0) + s["full"] + s["scrap"]
+            for s in sites_in_week.values()
         )
-        totals = {"empty": 0, "full": 0, "kanban": 0, "scrap": 0,
+        totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0,
                   "bdh": 0, "tonnage": 0.0}
 
         for r_offset, (site, agg) in enumerate(
@@ -1827,13 +1981,14 @@ def _build_uretim_yeri_karsilastirma_sheet(
             ),
             start=header_row + 1,
         ):
-            bdh = agg["empty"] + agg["full"] + agg["scrap"]
+            wip_v = agg.get("wip", 0)
+            bdh = agg["empty"] + wip_v + agg["full"] + agg["scrap"]
             pct = (bdh / grand_total_bdh) if grand_total_bdh else 0
             ton_per = (agg["tonnage"] / agg["full"]) if agg["full"] else 0
 
             values = [
                 site,
-                agg["empty"], agg["full"], agg["kanban"], agg["scrap"],
+                agg["empty"], wip_v, agg["full"], agg["kanban"], agg["scrap"],
                 bdh, pct, agg["tonnage"], ton_per,
             ]
             for j, val in enumerate(values):
@@ -1841,10 +1996,10 @@ def _build_uretim_yeri_karsilastirma_sheet(
                 cell.border = _BORDER
                 if j == 0:
                     cell.alignment = _LEFT
-                elif j == 6:
+                elif j == 7:  # Toplam (%)
                     cell.alignment = _RIGHT
                     cell.number_format = "0.0%"
-                elif j == 8:
+                elif j == 9:  # Dolu Konteyner Başına Yük
                     cell.alignment = _RIGHT
                     cell.number_format = "0.00"
                 else:
@@ -1852,6 +2007,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
                     cell.number_format = "#,##0"
 
             totals["empty"] += agg["empty"]
+            totals["wip"] += wip_v
             totals["full"] += agg["full"]
             totals["kanban"] += agg["kanban"]
             totals["scrap"] += agg["scrap"]
@@ -1862,7 +2018,8 @@ def _build_uretim_yeri_karsilastirma_sheet(
         ton_per_total = (totals["tonnage"] / totals["full"]) if totals["full"] else 0
         total_values = [
             "TOPLAM",
-            totals["empty"], totals["full"], totals["kanban"], totals["scrap"],
+            totals["empty"], totals["wip"], totals["full"],
+            totals["kanban"], totals["scrap"],
             totals["bdh"], 1.0, totals["tonnage"], ton_per_total,
         ]
         for j, val in enumerate(total_values):
@@ -1872,10 +2029,10 @@ def _build_uretim_yeri_karsilastirma_sheet(
             cell.border = _BORDER
             if j == 0:
                 cell.alignment = _RIGHT
-            elif j == 6:
+            elif j == 7:
                 cell.alignment = _RIGHT
                 cell.number_format = "0.0%"
-            elif j == 8:
+            elif j == 9:
                 cell.alignment = _RIGHT
                 cell.number_format = "0.00"
             else:
@@ -1955,10 +2112,11 @@ def build_all_weeks_excel(rows: list[dict[str, Any]]) -> bytes:
         "Bölüm",
         "Renk",
         "Boş",
+        "WIP",
         "Dolu",
         "Kanban",
         "Hurdaya Ayrılacak",
-        "Toplam (B+D+H)",
+        "Toplam Konteyner",
         "Gerçekleşen Tonaj (t)",
         "Durum",
         "Giren Kullanıcı",
@@ -1984,9 +2142,10 @@ def build_all_weeks_excel(rows: list[dict[str, Any]]) -> bytes:
         hafta_araligi, ay, yil = _week_iso_to_human(week_iso)
 
         bos_v = int(row.get("Boş") or 0)
+        wip_v = int(row.get("WIP") or 0)
         dolu_v = int(row.get("Dolu") or 0)
         hurda_v = int(row.get("Hurda") or 0)
-        bdh_v = bos_v + dolu_v + hurda_v
+        bdh_v = bos_v + wip_v + dolu_v + hurda_v
 
         values = [
             week_iso,
@@ -1997,6 +2156,7 @@ def build_all_weeks_excel(rows: list[dict[str, Any]]) -> bytes:
             row.get("Bölüm", ""),
             row.get("Renk", ""),
             row.get("Boş"),
+            row.get("WIP"),
             row.get("Dolu"),
             row.get("Kanban"),
             row.get("Hurda"),
@@ -2015,13 +2175,11 @@ def build_all_weeks_excel(rows: list[dict[str, Any]]) -> bytes:
             cell.border = _BORDER
             if fill:
                 cell.fill = fill
-            if col_idx in (8, 9, 10, 11, 12):
+            # Sayısal: 8=Boş, 9=WIP, 10=Dolu, 11=Kanban, 12=Hurda, 13=Toplam, 14=Tonaj
+            if col_idx in (8, 9, 10, 11, 12, 13, 14):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 13:
-                cell.alignment = _RIGHT
-                cell.number_format = "#,##0"
-            elif col_idx == 14:
+            elif col_idx == 15:  # Durum
                 cell.alignment = _CENTER
                 if is_late:
                     cell.font = Font(bold=True, color="92400E")

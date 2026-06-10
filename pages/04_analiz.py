@@ -222,6 +222,7 @@ total_empty = int(df_week["empty_count"].sum())
 total_full = int(df_week["full_count"].sum())
 total_kanban = int(df_week["kanban_count"].sum())
 total_scrap = int(df_week["scrap_count"].sum()) if "scrap_count" in df_week.columns else 0
+total_wip = int(df_week["wip_count"].sum()) if "wip_count" in df_week.columns else 0
 
 # Tonaj — submission başına bir kez (renkler aynı tonajı tekrar etmesin)
 sub_unique = df_week.drop_duplicates(subset=["submission_id"])
@@ -235,7 +236,9 @@ total_dept_count = get_active_department_count()
 missing_count = total_dept_count - submitted_dept_count
 
 st.markdown(f"#### Seçili Hafta: {format_week_human(selected_week)}")
-total_containers = total_empty + total_full + total_scrap  # kanban dolu'nun alt kümesi, ayrı sayma
+# Yeni "Toplam Konteyner" tanımı: Boş + WIP + Dolu + Hurda. Kanban
+# hâlâ Dolu'nun alt kümesi olduğu için toplama dahil değil.
+total_containers = total_empty + total_wip + total_full + total_scrap
 completion_pct = (submitted_dept_count / total_dept_count * 100) if total_dept_count else 0
 kanban_rate = (total_kanban / total_full * 100) if total_full else 0
 
@@ -259,8 +262,9 @@ _dolu_kanban_sub = (
 _dolu_kanban_delta = f"%{_fmt_tr_decimal(kanban_rate)}"
 
 primary_cards = [
-    kpi_card("Toplam Konteyner", _fmt_tr(total_containers), sub="Boş + Dolu + Hurdaya Ayrılacak"),
+    kpi_card("Toplam Konteyner", _fmt_tr(total_containers), sub="Boş + WIP + Dolu + Hurda"),
     kpi_card("Boş Konteyner", _fmt_tr(total_empty), sub="Kullanılabilir kasa"),
+    kpi_card("WIP Konteyner", _fmt_tr(total_wip), sub="İşlem görmekte / yarı işlenmiş"),
     kpi_card(
         "Dolu Konteyner",
         _fmt_tr(total_full),
@@ -295,38 +299,46 @@ st.markdown("<div style='height:0.75rem'></div>", unsafe_allow_html=True)
 render_kpis(secondary_cards)
 st.markdown("<br>", unsafe_allow_html=True)
 
-site_signal = (
-    df_week.groupby("site")
-    .agg(
-        Dolu=("full_count", "sum"),
-        Boş=("empty_count", "sum"),
-        Kanban=("kanban_count", "sum"),
-        **({"Hurdaya_Ayrılacak": ("scrap_count", "sum")} if "scrap_count" in df_week.columns else {}),
-        Giren_Bölüm=("department_id", "nunique"),
-    )
-    .reset_index()
+_site_agg_kwargs = dict(
+    Boş=("empty_count", "sum"),
+    Dolu=("full_count", "sum"),
+    Kanban=("kanban_count", "sum"),
+    Giren_Bölüm=("department_id", "nunique"),
 )
+if "wip_count" in df_week.columns:
+    _site_agg_kwargs["WIP"] = ("wip_count", "sum")
+if "scrap_count" in df_week.columns:
+    _site_agg_kwargs["Hurdaya_Ayrılacak"] = ("scrap_count", "sum")
+site_signal = df_week.groupby("site").agg(**_site_agg_kwargs).reset_index()
 if not site_signal.empty:
-    # Toplam (B+D+H) — hurda da dahil
-    if "Hurdaya_Ayrılacak" in site_signal.columns:
-        site_signal["Toplam (B+D+H)"] = (
-            site_signal["Boş"] + site_signal["Dolu"] + site_signal["Hurdaya_Ayrılacak"]
-        )
-    else:
-        site_signal["Toplam (B+D+H)"] = site_signal["Boş"] + site_signal["Dolu"]
+    # Toplam Konteyner = B + WIP + D + H (yeni tanım).
+    _wip_series = site_signal["WIP"] if "WIP" in site_signal.columns else 0
+    _scrap_series = (
+        site_signal["Hurdaya_Ayrılacak"]
+        if "Hurdaya_Ayrılacak" in site_signal.columns else 0
+    )
+    site_signal["Toplam Konteyner"] = (
+        site_signal["Boş"] + _wip_series + site_signal["Dolu"] + _scrap_series
+    )
     site_signal["Kanban Oranı (%)"] = (
         site_signal["Kanban"] / site_signal["Dolu"].replace(0, pd.NA) * 100
     ).fillna(0)
     data_panel("Öne Çıkan Üretim Yerleri", "Dolu konteyner ve toplam yoğunluğa göre ilk üretim yerleri.")
-    cols = ["Üretim Yeri", "Toplam (B+D+H)", "Dolu", "Boş", "Kanban"]
+    # Sütun sırası: Boş'tan sonra WIP, sonra Dolu / Kanban / Hurda.
+    cols = ["Üretim Yeri", "Toplam Konteyner", "Boş"]
+    if "WIP" in site_signal.columns:
+        cols.append("WIP")
+    cols.extend(["Dolu", "Kanban"])
     if "Hurdaya_Ayrılacak" in site_signal.columns:
         cols.append("Hurdaya Ayrılacak")
     cols.extend(["Kanban Oranı (%)", "Giren Bölüm"])
-    site_num_cols = ["Toplam (B+D+H)", "Dolu", "Boş", "Kanban", "Giren Bölüm"]
+    site_num_cols = ["Toplam Konteyner", "Boş", "Dolu", "Kanban", "Giren Bölüm"]
+    if "WIP" in site_signal.columns:
+        site_num_cols.append("WIP")
     if "Hurdaya_Ayrılacak" in site_signal.columns:
         site_num_cols.append("Hurdaya Ayrılacak")
     st.dataframe(
-        site_signal.sort_values(["Dolu", "Toplam (B+D+H)"], ascending=False)
+        site_signal.sort_values(["Dolu", "Toplam Konteyner"], ascending=False)
         .head(8)
         .rename(columns={
             "site": "Üretim Yeri",
@@ -542,6 +554,8 @@ _dept_agg_kwargs = dict(
     dolu=("full_count", "sum"),
     kanban=("kanban_count", "sum"),
 )
+if "wip_count" in df_week.columns:
+    _dept_agg_kwargs["wip"] = ("wip_count", "sum")
 if "scrap_count" in df_week.columns:
     _dept_agg_kwargs["hurda"] = ("scrap_count", "sum")
 
@@ -562,10 +576,10 @@ dept_summary["sapma"] = dept_summary["actual"] - dept_summary["target"]
 # Bölüm Özeti — kırmızı satır boyaması KALDIRILDI (talep). Sapma sütunu
 # zaten +/- işaretiyle aşımı gösteriyor; satır boyama görsel kirlilik.
 
-# Toplam (B+D+H) kolonu — kullanıcı her sayfada görmek istiyor
+# Toplam Konteyner = B + WIP + D + H (yeni tanım).
 dept_summary["toplam_bdh"] = (
-    dept_summary["boş"] + dept_summary["dolu"]
-    + dept_summary.get("hurda", 0)
+    dept_summary["boş"] + dept_summary.get("wip", 0)
+    + dept_summary["dolu"] + dept_summary.get("hurda", 0)
 )
 
 # Bölüm bazında ortalama dolu konteyner ağırlığı (kg)
@@ -576,15 +590,20 @@ dept_summary["ort_kg"] = (
 # 0 dolu olan bölümlere "—" göstermek için NaN'a çevir
 dept_summary.loc[dept_summary["dolu"] == 0, "ort_kg"] = pd.NA
 
-_summary_cols = ["site", "department", "boş", "dolu", "kanban"]
+_summary_cols = ["site", "department", "boş"]
+if "wip" in dept_summary.columns:
+    _summary_cols.append("wip")
+_summary_cols.extend(["dolu", "kanban"])
 if "hurda" in dept_summary.columns:
     _summary_cols.append("hurda")
 _summary_cols.extend(["toplam_bdh", "actual", "ort_kg", "target", "sapma"])
 
 _num_int_cols = ["Boş", "Dolu", "Kanban"]
+if "wip" in dept_summary.columns:
+    _num_int_cols.append("WIP")
 if "hurda" in dept_summary.columns:
     _num_int_cols.append("Hurdaya Ayrılacak")
-_num_int_cols.append("Toplam (B+D+H)")
+_num_int_cols.append("Toplam Konteyner")
 _num_int_cols.extend(["Gerçekleşen (t)", "Ort. Ağırlık (kg)", "Hedef (t)"])
 
 def _fmt_sapma_tr(n):
@@ -599,9 +618,9 @@ st.dataframe(
     dept_summary[_summary_cols]
     .rename(columns={
         "site": "Üretim Yeri", "department": "Bölüm",
-        "boş": "Boş", "dolu": "Dolu", "kanban": "Kanban",
+        "boş": "Boş", "wip": "WIP", "dolu": "Dolu", "kanban": "Kanban",
         "hurda": "Hurdaya Ayrılacak",
-        "toplam_bdh": "Toplam (B+D+H)",
+        "toplam_bdh": "Toplam Konteyner",
         "actual": "Gerçekleşen (t)",
         "ort_kg": "Ort. Ağırlık (kg)",
         "target": "Hedef (t)", "sapma": "Sapma (t)",
@@ -624,6 +643,8 @@ with st.expander("Üretim Yeri Kırılımı", expanded=False):
         dolu=("full_count", "sum"),
         kanban=("kanban_count", "sum"),
     )
+    if "wip_count" in df_week.columns:
+        _site_agg["wip"] = ("wip_count", "sum")
     if "scrap_count" in df_week.columns:
         _site_agg["hurda"] = ("scrap_count", "sum")
     site_summary = df_week.groupby("site").agg(**_site_agg).reset_index()
@@ -641,8 +662,8 @@ with st.expander("Üretim Yeri Kırılımı", expanded=False):
         df_week.groupby("site")["department_id"].nunique().values
     )
     site_summary["toplam_bdh"] = (
-        site_summary["boş"] + site_summary["dolu"]
-        + site_summary.get("hurda", 0)
+        site_summary["boş"] + site_summary.get("wip", 0)
+        + site_summary["dolu"] + site_summary.get("hurda", 0)
     )
     # Üretim yeri bazında ortalama dolu konteyner ağırlığı (kg)
     site_summary["ort_kg"] = (
@@ -651,19 +672,21 @@ with st.expander("Üretim Yeri Kırılımı", expanded=False):
     site_summary.loc[site_summary["dolu"] == 0, "ort_kg"] = pd.NA
     rename_map = {
         "site": "Üretim Yeri",
-        "boş": "Boş", "dolu": "Dolu", "kanban": "Kanban",
+        "boş": "Boş", "wip": "WIP", "dolu": "Dolu", "kanban": "Kanban",
         "hurda": "Hurdaya Ayrılacak",
-        "toplam_bdh": "Toplam (B+D+H)",
+        "toplam_bdh": "Toplam Konteyner",
         "actual": "Gerçekleşen (t)",
         "ort_kg": "Ort. Ağırlık (kg)",
         "target": "Hedef (t)", "sapma": "Sapma (t)",
         "bölüm_sayısı": "Giren Bölüm",
     }
     site_num_cols = ["Boş", "Dolu", "Kanban"]
+    if "wip" in site_summary.columns:
+        site_num_cols.append("WIP")
     if "hurda" in site_summary.columns:
         site_num_cols.append("Hurdaya Ayrılacak")
     site_num_cols.extend([
-        "Toplam (B+D+H)", "Gerçekleşen (t)",
+        "Toplam Konteyner", "Gerçekleşen (t)",
         "Ort. Ağırlık (kg)", "Hedef (t)", "Giren Bölüm",
     ])
     st.dataframe(
@@ -685,6 +708,8 @@ with st.expander("Renk Kırılımı", expanded=False):
         dolu=("full_count", "sum"),
         kanban=("kanban_count", "sum"),
     )
+    if "wip_count" in df_week.columns:
+        _color_agg["wip"] = ("wip_count", "sum")
     if "scrap_count" in df_week.columns:
         _color_agg["hurda"] = ("scrap_count", "sum")
     # Renk sırasını kayıt sırasında verilen sort_order'a göre yap (alfabetik değil).
@@ -699,18 +724,20 @@ with st.expander("Renk Kırılımı", expanded=False):
     else:
         color_summary = df_week.groupby("color").agg(**_color_agg).reset_index()
     color_summary["toplam"] = (
-        color_summary["boş"] + color_summary["dolu"]
-        + color_summary.get("hurda", 0)
+        color_summary["boş"] + color_summary.get("wip", 0)
+        + color_summary["dolu"] + color_summary.get("hurda", 0)
     )
     rename_map = {
-        "color": "Renk", "boş": "Boş", "dolu": "Dolu",
+        "color": "Renk", "boş": "Boş", "wip": "WIP", "dolu": "Dolu",
         "kanban": "Kanban", "hurda": "Hurdaya Ayrılacak",
-        "toplam": "Toplam (B+D+H)",
+        "toplam": "Toplam Konteyner",
     }
     num_cols = ["Boş", "Dolu", "Kanban"]
+    if "wip" in color_summary.columns:
+        num_cols.append("WIP")
     if "hurda" in color_summary.columns:
         num_cols.append("Hurdaya Ayrılacak")
-    num_cols.append("Toplam (B+D+H)")
+    num_cols.append("Toplam Konteyner")
     st.dataframe(
         color_summary.rename(columns=rename_map)
         .style.format({c: _fmt_tr for c in num_cols}),

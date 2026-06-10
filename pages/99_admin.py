@@ -2047,6 +2047,7 @@ if _is_active("override"):
                                         "full": detail.full_count,
                                         "kanban": detail.kanban_count,
                                         "scrap": detail.scrap_count,
+                                        "wip": detail.wip_count,
                                     }
                                     for detail in sub.details
                                 },
@@ -2089,17 +2090,18 @@ if _is_active("override"):
                 key=f"override_reason_{override_scope}",
             )
 
-            h1, h2, h3, h4, h5 = st.columns([2, 1, 1, 1, 1])
+            h1, h2, h3, h4, h5, h6 = st.columns([2, 1, 1, 1, 1, 1])
             h1.markdown("**Renk**")
             h2.markdown("**Boş**")
-            h3.markdown("**Dolu**")
-            h4.markdown("**Kanban**")
-            h5.markdown("**Hurda**")
+            h3.markdown("**WIP**")
+            h4.markdown("**Dolu**")
+            h5.markdown("**Kanban**")
+            h6.markdown("**Hurda**")
 
             override_counts: dict[int, dict[str, int]] = {}
             for color in override_colors:
                 previous = existing_details.get(color.id)
-                c1, c2, c3, c4, c5 = st.columns([2, 1, 1, 1, 1])
+                c1, c2, c3, c4, c5, c6 = st.columns([2, 1, 1, 1, 1, 1])
                 c1.write(color.name)
                 empty_value = c2.number_input(
                     f"{color.name} — Boş",
@@ -2109,7 +2111,15 @@ if _is_active("override"):
                     step=1,
                     label_visibility="collapsed",
                 )
-                full_value = c3.number_input(
+                wip_value = c3.number_input(
+                    f"{color.name} — WIP",
+                    key=f"override_wip_{override_scope}_{color.id}",
+                    min_value=0,
+                    value=previous.wip_count if previous else 0,
+                    step=1,
+                    label_visibility="collapsed",
+                )
+                full_value = c4.number_input(
                     f"{color.name} — Dolu",
                     key=f"override_full_{override_scope}_{color.id}",
                     min_value=0,
@@ -2117,7 +2127,7 @@ if _is_active("override"):
                     step=1,
                     label_visibility="collapsed",
                 )
-                kanban_value = c4.number_input(
+                kanban_value = c5.number_input(
                     f"{color.name} — Kanban",
                     key=f"override_kanban_{override_scope}_{color.id}",
                     min_value=0,
@@ -2125,7 +2135,7 @@ if _is_active("override"):
                     step=1,
                     label_visibility="collapsed",
                 )
-                scrap_value = c5.number_input(
+                scrap_value = c6.number_input(
                     f"{color.name} — Hurda",
                     key=f"override_scrap_{override_scope}_{color.id}",
                     min_value=0,
@@ -2135,6 +2145,7 @@ if _is_active("override"):
                 )
                 override_counts[color.id] = {
                     "empty": int(empty_value),
+                    "wip": int(wip_value),
                     "full": int(full_value),
                     "kanban": int(kanban_value),
                     "scrap": int(scrap_value),
@@ -2186,6 +2197,7 @@ if _is_active("override"):
                                         "full": detail.full_count,
                                         "kanban": detail.kanban_count,
                                         "scrap": detail.scrap_count,
+                                        "wip": detail.wip_count,
                                     }
                                     for detail in sub.details
                                 },
@@ -2234,6 +2246,7 @@ if _is_active("override"):
                                     "full_count": values["full"],
                                     "kanban_count": values["kanban"],
                                     "scrap_count": values["scrap"],
+                                    "wip_count": values["wip"],
                                 }
                                 for color_id, values in override_counts.items()
                             ],
