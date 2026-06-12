@@ -165,7 +165,7 @@ st.markdown('<div class="section-gap"></div>', unsafe_allow_html=True)
 # ---------------------------------------------------------------------------
 data_panel(
     "Bölüm × Renk Matrisi",
-    "Hücreler boş / dolu / kanban / hurdaya ayrılacak sırasıyla okunur. Tonaj sütunu bölümün haftalık sayım kaydından gelir.",
+    "Hücreler boş / proseste / dolu / kanban / hurdaya ayrılacak sırasıyla okunur. Tonaj sütunu bölümün haftalık sayım kaydından gelir.",
 )
 
 if not active_colors:
@@ -190,18 +190,20 @@ else:
         }
 
         for color in active_colors:
-            column_name = f"{color['name']} (B/D/K/H)"
+            # Sıralama: Boş / Proseste / Dolu / Kanban / Hurda (B/P/D/K/H)
+            column_name = f"{color['name']} (B/P/D/K/H)"
             if sub is None:
                 row[column_name] = "-"
                 continue
 
             detail = detail_map.get((sub["submission_id"], color["color_id"]))
             if detail is None:
-                row[column_name] = "0/0/0/0"
+                row[column_name] = "0/0/0/0/0"
             else:
                 row[column_name] = (
-                    f"{detail['empty_count']}/{detail['full_count']}"
-                    f"/{detail['kanban_count']}/{detail.get('scrap_count', 0)}"
+                    f"{detail['empty_count']}/{detail.get('wip_count', 0)}"
+                    f"/{detail['full_count']}/{detail['kanban_count']}"
+                    f"/{detail.get('scrap_count', 0)}"
                 )
 
         row["Tonaj"] = sub["actual_tonnage"] if sub else None
@@ -210,8 +212,8 @@ else:
     # Sütun genişliklerini açıkça small/medium yapalım — tonaj sağda
     # gizlenip kaydırma çubuğu arkasında kalmasın, hepsi tek bakışta okusun.
     color_col_config = {
-        f"{color['name']} (B/D/K/H)": st.column_config.TextColumn(
-            f"{color['name']} (B/D/K/H)", width="small"
+        f"{color['name']} (B/P/D/K/H)": st.column_config.TextColumn(
+            f"{color['name']} (B/P/D/K/H)", width="small"
         )
         for color in active_colors
     }
@@ -227,7 +229,7 @@ else:
         },
     )
     table_note(
-        "Her renk hücresi: Boş / Dolu / Kanban / Hurdaya Ayrılacak sırasıyla."
+        "Her renk hücresi: Boş / Proseste / Dolu / Kanban / Hurdaya Ayrılacak sırasıyla."
     )
 
 
