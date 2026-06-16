@@ -338,20 +338,20 @@ def _link_button_excel(
         )
     cell = ws.cell(row=row, column=col, value=label)
     cell.font = Font(bold=True, size=font_size, color="FFFFFF")
-    cell.fill = PatternFill("solid", fgColor="1F3A8A")
+    cell.fill = PatternFill("solid", fgColor="94A3B8")
     cell.alignment = Alignment(
         horizontal="center", vertical="center", wrap_text=True,
     )
     cell.hyperlink = f"#'{target_sheet}'!{target_cell}"
 
-    thin = Side(style="thin", color="0F172A")
+    thin = Side(style="thin", color="64748B")
     box = Border(left=thin, right=thin, top=thin, bottom=thin)
     for r in range(row, end_row + 1):
         for c in range(col, end_col + 1):
             cc = ws.cell(row=r, column=c)
             cc.border = box
             if cc is not cell:
-                cc.fill = PatternFill("solid", fgColor="1F3A8A")
+                cc.fill = PatternFill("solid", fgColor="94A3B8")
 
 
 def _fmt_int_tr(n) -> str:
@@ -1168,7 +1168,7 @@ def _build_ozet_charts_sheet(
 
     # Title banner — same styling as Dashboard sheet's banner so the two
     # tabs read as siblings.
-    ws.merge_cells("A1:AA1")
+    ws.merge_cells("A1:X1")
     title_cell = ws["A1"]
     title_cell.value = "Konteyner Dashboard — Haftalık Analiz"
     title_cell.font = Font(bold=True, size=20, color="FFFFFF")
@@ -1227,7 +1227,7 @@ def _build_ozet_charts_sheet(
         latest_kpis = _compute_week_kpis(latest_rows_only)
 
         # Subtitle: which week the KPIs reflect.
-        ws.merge_cells("A2:AA2")
+        ws.merge_cells("A2:X2")
         sub_cell = ws["A2"]
         sub_cell.value = (
             f"Son Hafta: {_short_week(latest_week)} — "
@@ -1242,14 +1242,14 @@ def _build_ozet_charts_sheet(
         latest_kpis = None
 
     # Sol blok (sütun 1..20) grafiklerin ferahça oturduğu alan, sağ
-    # blok (21..27) yandaki KPI panelleri. Grafikler 38 cm genişliğe
-    # yakın, bu yüzden chart bandı daha geniş kolonlara ihtiyaç duyuyor.
-    for c in range(1, 28):
+    # blok (21..24) yandaki KPI panelleri / üretim yeri butonları.
+    # 24'ten sonrası kullanılmıyor.
+    for c in range(1, 25):
         ws.column_dimensions[get_column_letter(c)].width = 11
 
     # Section header before the trend charts band (row 4).
     if latest_week:
-        ws.merge_cells("A4:AA4")
+        ws.merge_cells("A4:X4")
         sec_cell = ws["A4"]
         sec_cell.value = "Haftalık Trendler"
         sec_cell.font = Font(bold=True, size=13, color="1F3A8A")
@@ -1328,9 +1328,9 @@ def _build_ozet_charts_sheet(
     )
     chart1.legend.position = "b"
     chart1.legend.overlay = False
-    # Grafik 38 cm geniş, 14 cm yüksek — yandaki KPI paneli col U
-    # (21) civarında başlıyor, çakışmıyor.
-    chart1.height = 14
+    # Grafik 38 cm geniş, 10 cm yüksek — daha kompakt; yandaki KPI
+    # paneli col U (21) civarında başlıyor, çakışmıyor.
+    chart1.height = 10
     chart1.width = 38
     _apply_chart_frame(chart1)
 
@@ -1378,28 +1378,28 @@ def _build_ozet_charts_sheet(
     # stacked bars). All values reflect the latest week.
     if latest_kpis:
         _kpi_card_excel(
-            ws, row=chart1_anchor_row, col=21, width=6,
+            ws, row=chart1_anchor_row, col=21, width=4,
             label="Toplam Konteyner",
             value=_fmt_int_tr(latest_kpis["total_containers"]),
             sub=f"Son hafta: {_short_week(latest_week)}",
             tone="slate",
         )
         _kpi_card_excel(
-            ws, row=chart1_anchor_row + 4, col=21, width=6,
+            ws, row=chart1_anchor_row + 4, col=21, width=4,
             label="Boş",
             value=_fmt_int_tr(latest_kpis["empty"]),
             sub="Kullanılabilir kasa",
             tone="green",
         )
         _kpi_card_excel(
-            ws, row=chart1_anchor_row + 8, col=21, width=6,
+            ws, row=chart1_anchor_row + 8, col=21, width=4,
             label="Proseste",
             value=_fmt_int_tr(latest_kpis["wip"]),
             sub="İşlem görüyor",
             tone="amber",
         )
         _kpi_card_excel(
-            ws, row=chart1_anchor_row + 12, col=21, width=6,
+            ws, row=chart1_anchor_row + 12, col=21, width=4,
             label="Dolu (Kanban dahil)",
             value=_fmt_int_tr(latest_kpis["full"]),
             sub=(
@@ -1412,7 +1412,7 @@ def _build_ozet_charts_sheet(
         # için Hurda da panelde görünmeli; aksi takdirde dört kartın
         # toplamı Toplam'a denk gelmiyor.
         _kpi_card_excel(
-            ws, row=chart1_anchor_row + 16, col=21, width=6,
+            ws, row=chart1_anchor_row + 16, col=21, width=4,
             label="Hurdaya Ayrılacak",
             value=_fmt_int_tr(latest_kpis["scrap"]),
             sub="Kullanım dışı",
@@ -1461,9 +1461,11 @@ def _build_ozet_charts_sheet(
     # that Excel's auto-scale would otherwise flatten.
     chart2.y_axis.scaling.min = 0.20
     chart2.y_axis.scaling.max = 0.90
+    # Veri etiketleri kalın + 13 pt — küçük (10pt) hâli grafik
+    # üzerinde silikti, daha okunaklı olsun diye büyütüldü.
     chart2.dataLabels = _value_only_labels(
         "t", "[$-tr-TR]#,##0.00",
-        txPr=_bold_large_label_props(size_pt=10),
+        txPr=_bold_large_label_props(size_pt=13),
     )
     for series in chart2.series:
         series.marker = Marker(symbol="circle", size=7)
@@ -1474,11 +1476,11 @@ def _build_ozet_charts_sheet(
         gp.line = LineProperties(solidFill="1F3A8A", w=22000)
         series.graphicalProperties = gp
     chart2.legend = None  # single series — legend is just noise
-    chart2.height = 14
+    chart2.height = 10
     chart2.width = 38
     _apply_chart_frame(chart2)
     # Chart 2 sits below chart 1 panel.
-    chart2_anchor_row = 36
+    chart2_anchor_row = 30
     ws.add_chart(chart2, f"A{chart2_anchor_row}")
 
     # ================================================================
@@ -1533,7 +1535,7 @@ def _build_ozet_charts_sheet(
     chart3.width = 38
     _apply_chart_frame(chart3)
     # Section divider before the tesis-comparison charts.
-    ws.merge_cells("A65:AA65")
+    ws.merge_cells("A65:X65")
     sec3 = ws["A65"]
     sec3.value = "Tesis Karşılaştırma"
     sec3.font = Font(bold=True, size=13, color="1F3A8A")
@@ -1556,7 +1558,7 @@ def _build_ozet_charts_sheet(
             _link_button_excel(
                 ws,
                 row=chart3_anchor_row + start_offset + i * btn_h,
-                col=21, width=6, height=btn_h,
+                col=21, width=4, height=btn_h,
                 label=site,
                 target_sheet="Grafikler",
                 target_cell=f"A{site_anchors[site]}",
@@ -1685,7 +1687,7 @@ def _build_ozet_charts_sheet(
         _hide_overlay_from_legend(chart4, chart4_total_line)
 
     # Section divider before the color breakdown chart.
-    ws.merge_cells("A124:AA124")
+    ws.merge_cells("A124:X124")
     sec4 = ws["A124"]
     sec4.value = "Renk Dağılımı"
     sec4.font = Font(bold=True, size=13, color="1F3A8A")
@@ -1720,28 +1722,28 @@ def _build_ozet_charts_sheet(
             grand_total = sum(color_totals_lw.values())
 
             _kpi_card_excel(
-                ws, row=chart4_anchor_row, col=21, width=6,
+                ws, row=chart4_anchor_row, col=21, width=4,
                 label="Toplam Konteyner",
                 value=_fmt_int_tr(grand_total),
                 sub=f"{_short_week(latest_week)} — tüm renkler",
                 tone="slate",
             )
             _kpi_card_excel(
-                ws, row=chart4_anchor_row + 4, col=21, width=6,
+                ws, row=chart4_anchor_row + 4, col=21, width=4,
                 label="En Çok Renk",
                 value=_fmt_int_tr(most[1]),
                 sub=f"{most[0]}",
                 tone="green",
             )
             _kpi_card_excel(
-                ws, row=chart4_anchor_row + 8, col=21, width=6,
+                ws, row=chart4_anchor_row + 8, col=21, width=4,
                 label="En Az Renk",
                 value=_fmt_int_tr(least[1]),
                 sub=f"{least[0]}",
                 tone="rose",
             )
             _kpi_card_excel(
-                ws, row=chart4_anchor_row + 12, col=21, width=6,
+                ws, row=chart4_anchor_row + 12, col=21, width=4,
                 label="Farklı Renk Sayısı",
                 value=_fmt_int_tr(len(color_totals_lw)),
                 sub="Latest week aktif renkler",
@@ -1821,7 +1823,7 @@ def _build_ozet_charts_sheet(
             _link_button_excel(
                 ws,
                 row=chart5_anchor_row + start_offset + i * btn_h,
-                col=21, width=6, height=btn_h,
+                col=21, width=4, height=btn_h,
                 label=site,
                 target_sheet="Grafikler",
                 target_cell=f"A{site_anchors[site]}",
@@ -1834,7 +1836,7 @@ def _build_ozet_charts_sheet(
     # ================================================================
     if all_sites and full_weeks:
         ws.merge_cells(
-            f"A{detail_section_header_row}:AA{detail_section_header_row}"
+            f"A{detail_section_header_row}:X{detail_section_header_row}"
         )
         sec_d = ws.cell(
             row=detail_section_header_row, column=1,
@@ -1853,7 +1855,7 @@ def _build_ozet_charts_sheet(
             # Banner
             ws.merge_cells(
                 start_row=block_row, start_column=1,
-                end_row=block_row, end_column=27,
+                end_row=block_row, end_column=24,
             )
             bnr = ws.cell(
                 row=block_row, column=1, value=f"{site} — Haftalık Trend",
@@ -1875,16 +1877,23 @@ def _build_ozet_charts_sheet(
             )
             back.alignment = Alignment(horizontal="left", vertical="center")
 
-            # Tablo başlığı
+            # Tablo başlığı — wrap_text ile uzun başlıklar kırılıyor
+            # ve satır yüksekliği başlığı barındıracak şekilde set
+            # ediliyor; aksi takdirde 'Dolu Konteyner Tonajı' ya da
+            # 'Boş Konteyner' tek satırda sığmıyor.
             hdr_row = block_row + 2
+            wrap_center = Alignment(
+                horizontal="center", vertical="center", wrap_text=True,
+            )
             for j, h in enumerate(
-                ["Hafta", "Ton / Dolu Konteyner", "Boş Konteyner"], start=1,
+                ["Hafta", "Dolu Konteyner Tonajı", "Boş Konteyner"], start=1,
             ):
                 c = ws.cell(row=hdr_row, column=j, value=h)
                 c.fill = _HEADER_FILL
                 c.font = _HEADER_FONT
-                c.alignment = _CENTER
+                c.alignment = wrap_center
                 c.border = _BORDER
+            ws.row_dimensions[hdr_row].height = 34
 
             # Veri satırları
             for k, w in enumerate(full_weeks):
@@ -1909,9 +1918,9 @@ def _build_ozet_charts_sheet(
 
             table_end_row = hdr_row + len(full_weeks)
 
-            # Mini chart: ton / Dolu
+            # Mini chart: dolu konteyner tonajı
             ch_ton = LineChart()
-            ch_ton.title = _make_chart_title("Ton / Dolu Konteyner")
+            ch_ton.title = _make_chart_title("Dolu Konteyner Tonajı")
             ch_ton.add_data(
                 Reference(
                     ws, min_col=2, max_col=2,
