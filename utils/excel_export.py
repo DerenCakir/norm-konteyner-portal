@@ -311,6 +311,49 @@ def _kpi_card_excel(
             ws.cell(row=r, column=c).border = box
 
 
+def _link_button_excel(
+    ws,
+    row: int,
+    col: int,
+    width: int,
+    height: int,
+    label: str,
+    target_sheet: str,
+) -> None:
+    """Render a navy 'button' cell with an internal hyperlink.
+
+    openpyxl gerçek form-control buton üretemiyor, ama hücreyi
+    butona benzer şekilde stillendirip ``#'Sheet'!A1`` formatlı
+    iç bağlantı veriyoruz. Tıklanınca Excel hedef sayfaya atlar.
+    """
+    end_col = col + width - 1
+    end_row = row + height - 1
+    if width > 1 or height > 1:
+        ws.merge_cells(
+            start_row=row, start_column=col,
+            end_row=end_row, end_column=end_col,
+        )
+    cell = ws.cell(row=row, column=col, value=label)
+    cell.font = Font(bold=True, size=12, color="FFFFFF")
+    cell.fill = PatternFill("solid", fgColor="1F3A8A")
+    cell.alignment = Alignment(
+        horizontal="center", vertical="center", wrap_text=True,
+    )
+    # Tek tırnaklı hedef sayfa adı — Türkçe karakter / boşluk içeren
+    # sheet adlarında zorunlu.
+    cell.hyperlink = f"#'{target_sheet}'!A1"
+
+    thin = Side(style="thin", color="0F172A")
+    box = Border(left=thin, right=thin, top=thin, bottom=thin)
+    for r in range(row, end_row + 1):
+        for c in range(col, end_col + 1):
+            cc = ws.cell(row=r, column=c)
+            cc.border = box
+            if cc is not cell:
+                cc.fill = PatternFill("solid", fgColor="1F3A8A")
+    ws.row_dimensions[row].height = 28
+
+
 def _fmt_int_tr(n) -> str:
     try:
         return f"{int(round(float(n))):,}".replace(",", ".")
@@ -1425,50 +1468,6 @@ def _build_ozet_charts_sheet(
     chart2_anchor_row = 36
     ws.add_chart(chart2, f"A{chart2_anchor_row}")
 
-    # Side KPI cards for chart 2 — Bu Hafta / En Yüksek / En Düşük /
-    # Ortalama for ton-per-Dolu Konteyner.
-    if full_weeks:
-        ton_dolu_series = []
-        for w in full_weeks:
-            wt = weekly_totals[w]
-            full_total = wt.get("full", 0)
-            if full_total:
-                ton_dolu_series.append((w, wt["tonnage"] / full_total))
-        if ton_dolu_series:
-            latest_v = ton_dolu_series[-1]
-            max_v = max(ton_dolu_series, key=lambda v: v[1])
-            min_v = min(ton_dolu_series, key=lambda v: v[1])
-            avg_v = sum(v[1] for v in ton_dolu_series) / len(ton_dolu_series)
-
-            _kpi_card_excel(
-                ws, row=chart2_anchor_row, col=21, width=6,
-                label="Bu Hafta",
-                value=f"{_fmt_dec_tr(latest_v[1], digits=2)} t",
-                sub=f"{_short_week(latest_v[0])} — ton / Dolu",
-                tone="blue",
-            )
-            _kpi_card_excel(
-                ws, row=chart2_anchor_row + 4, col=21, width=6,
-                label="En Yüksek",
-                value=f"{_fmt_dec_tr(max_v[1], digits=2)} t",
-                sub=f"{_short_week(max_v[0])} haftası",
-                tone="green",
-            )
-            _kpi_card_excel(
-                ws, row=chart2_anchor_row + 8, col=21, width=6,
-                label="En Düşük",
-                value=f"{_fmt_dec_tr(min_v[1], digits=2)} t",
-                sub=f"{_short_week(min_v[0])} haftası",
-                tone="rose",
-            )
-            _kpi_card_excel(
-                ws, row=chart2_anchor_row + 12, col=21, width=6,
-                label="Tüm Hafta Ortalama",
-                value=f"{_fmt_dec_tr(avg_v, digits=2)} t",
-                sub=f"{len(ton_dolu_series)} hafta hesabı",
-                tone="slate",
-            )
-
     # ================================================================
     # Chart 3 — Clustered column: ton/Dolu per site for last 3 weeks
     #   X = production sites
@@ -1531,40 +1530,12 @@ def _build_ozet_charts_sheet(
     chart3_anchor_row = 66
     ws.add_chart(chart3, f"A{chart3_anchor_row}")
 
-    # Side KPI panel for chart 3 — per-site ton/Dolu in the latest
-    # full week.
-    if latest_week:
-        site_ton_per = []
-        for site in all_sites:
-            sd = weekly_site.get(latest_week, {}).get(site)
-            if sd and sd.get("full"):
-                site_ton_per.append((site, sd["tonnage"] / sd["full"]))
-        if site_ton_per:
-            high = max(site_ton_per, key=lambda v: v[1])
-            low = min(site_ton_per, key=lambda v: v[1])
-            avg = sum(v[1] for v in site_ton_per) / len(site_ton_per)
-
-            _kpi_card_excel(
-                ws, row=chart3_anchor_row, col=21, width=6,
-                label="En Yüksek Tesis",
-                value=f"{_fmt_dec_tr(high[1], digits=2)} t",
-                sub=f"{high[0]} — {_short_week(latest_week)}",
-                tone="green",
-            )
-            _kpi_card_excel(
-                ws, row=chart3_anchor_row + 4, col=21, width=6,
-                label="En Düşük Tesis",
-                value=f"{_fmt_dec_tr(low[1], digits=2)} t",
-                sub=f"{low[0]} — {_short_week(latest_week)}",
-                tone="rose",
-            )
-            _kpi_card_excel(
-                ws, row=chart3_anchor_row + 8, col=21, width=6,
-                label="Tüm Tesis Ortalaması",
-                value=f"{_fmt_dec_tr(avg, digits=2)} t",
-                sub=f"{len(site_ton_per)} tesisin ortalaması",
-                tone="slate",
-            )
+    # KPI yerine: ayrı 'Tesis Trend — Yük' sayfasına atan buton.
+    _link_button_excel(
+        ws, row=chart3_anchor_row + 2, col=21, width=6, height=3,
+        label="▶ Üretim Yeri Bazlı Trend\n(Ton / Dolu Konteyner)",
+        target_sheet="Tesis Trend — Yük",
+    )
 
     # ================================================================
     # Chart 4 — Stacked column: color breakdown per site (latest week)
@@ -1811,39 +1782,12 @@ def _build_ozet_charts_sheet(
     chart5_anchor_row = 95
     ws.add_chart(chart5, f"A{chart5_anchor_row}")
 
-    # Side KPI panel for chart 5 — Boş counts per site in latest week.
-    if latest_week:
-        site_empty = []
-        for site in all_sites:
-            sd = weekly_site.get(latest_week, {}).get(site)
-            if sd:
-                site_empty.append((site, int(sd.get("empty", 0))))
-        if site_empty:
-            total_empty_lw = sum(v[1] for v in site_empty)
-            high = max(site_empty, key=lambda v: v[1])
-            low = min(site_empty, key=lambda v: v[1])
-
-            _kpi_card_excel(
-                ws, row=chart5_anchor_row, col=21, width=6,
-                label="Toplam Boş",
-                value=_fmt_int_tr(total_empty_lw),
-                sub=f"{_short_week(latest_week)} — tüm tesisler",
-                tone="slate",
-            )
-            _kpi_card_excel(
-                ws, row=chart5_anchor_row + 4, col=21, width=6,
-                label="En Çok Boş Olan Tesis",
-                value=_fmt_int_tr(high[1]),
-                sub=f"{high[0]}",
-                tone="green",
-            )
-            _kpi_card_excel(
-                ws, row=chart5_anchor_row + 8, col=21, width=6,
-                label="En Az Boş Olan Tesis",
-                value=_fmt_int_tr(low[1]),
-                sub=f"{low[0]}",
-                tone="rose",
-            )
+    # KPI yerine: ayrı 'Tesis Trend — Boş' sayfasına atan buton.
+    _link_button_excel(
+        ws, row=chart5_anchor_row + 2, col=21, width=6, height=3,
+        label="▶ Üretim Yeri Bazlı Trend\n(Boş Konteyner)",
+        target_sheet="Tesis Trend — Boş",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -2032,10 +1976,11 @@ def _build_dolu_yuk_ozeti_sheet(
         all_rows, manual_aggs,
     )
     # Sadece tonajı olan haftalar — manual-only haftalarda tonaj/dolu
-    # yok, sütun olarak gösterirsek hep boş kalır.
+    # yok, sütun olarak gösterirsek hep boş kalır. Kronolojik sıra:
+    # en eski hafta solda, son hafta sağda — sola doğru okurken
+    # zamanda ileri gidiyoruz.
     weeks = sorted(
-        (w for w in weekly_site.keys() if w not in manual_only_weeks),
-        reverse=True,
+        w for w in weekly_site.keys() if w not in manual_only_weeks
     )
     all_sites = sorted(
         {s for sd in weekly_site.values() for s in sd.keys()},
@@ -2112,6 +2057,151 @@ def _build_dolu_yuk_ozeti_sheet(
 
 
 # ---------------------------------------------------------------------------
+# Tesis Trend sheets — drilldown reached via buttons on the Grafikler sheet
+# ---------------------------------------------------------------------------
+
+def _build_tesis_trend_sheet(
+    wb: Workbook,
+    sheet_name: str,
+    title: str,
+    y_axis_label: str,
+    all_rows: list[dict[str, Any]],
+    manual_aggs: list[dict[str, Any]] | None,
+    value_kind: str,
+    num_fmt: str,
+) -> None:
+    """Üretim yeri × hafta matrisi + her tesis için bir trend çizgisi.
+
+    Grafikler sayfasındaki butonların hedefi. ``value_kind`` ile
+    hangi metriğin gösterileceği seçilir:
+      ``"ton_per_full"`` → tonaj / dolu konteyner (chart 3 drilldown)
+      ``"empty"``        → boş konteyner adedi (chart 5 drilldown)
+    """
+    ws = wb.create_sheet(sheet_name)
+
+    # Banner — diğer sayfalarla tutarlı stil.
+    ws.merge_cells("A1:S1")
+    title_cell = ws["A1"]
+    title_cell.value = title
+    title_cell.font = Font(bold=True, size=18, color="FFFFFF")
+    title_cell.fill = PatternFill("solid", fgColor="1F3A8A")
+    title_cell.alignment = Alignment(
+        horizontal="left", vertical="center", indent=1,
+    )
+    ws.row_dimensions[1].height = 36
+
+    # Grafikler sayfasına geri dön bağlantısı.
+    back_cell = ws.cell(row=2, column=1, value="◀ Grafikler sayfasına dön")
+    back_cell.hyperlink = "#'Grafikler'!A1"
+    back_cell.font = Font(
+        bold=True, color="1F3A8A", size=11, underline="single",
+    )
+    back_cell.alignment = Alignment(horizontal="left", vertical="center")
+
+    if not all_rows and not manual_aggs:
+        ws["A4"] = "Henüz veri yok."
+        ws["A4"].font = Font(italic=True, color="64748B")
+        return
+
+    _, weekly_site, _, _, manual_only_weeks = _aggregate_all_weeks(
+        all_rows, manual_aggs,
+    )
+    # Kronolojik sıra — soldan sağa eski → yeni.
+    weeks = sorted(
+        w for w in weekly_site.keys() if w not in manual_only_weeks
+    )
+    all_sites = sorted(
+        {s for sd in weekly_site.values() for s in sd.keys()},
+        key=_site_sort_key,
+    )
+
+    if not weeks or not all_sites:
+        ws["A4"] = "Henüz yeterli sayım verisi yok."
+        ws["A4"].font = Font(italic=True, color="64748B")
+        return
+
+    def _val(sd: dict[str, Any] | None) -> float | int | None:
+        if sd is None:
+            return None
+        if value_kind == "ton_per_full":
+            full_v = int(sd.get("full", 0))
+            ton_v = float(sd.get("tonnage", 0.0))
+            return (ton_v / full_v) if full_v else None
+        if value_kind == "empty":
+            return int(sd.get("empty", 0))
+        return None
+
+    # Veri matrisi — sütun A = üretim yeri (seri başlığı), B+ = haftalar.
+    header_row = 4
+    headers = ["Üretim Yeri"] + [_short_week(w) for w in weeks]
+    for j, h in enumerate(headers, start=1):
+        c = ws.cell(row=header_row, column=j, value=h)
+        c.fill = _HEADER_FILL
+        c.font = _HEADER_FONT
+        c.alignment = _CENTER
+        c.border = _BORDER
+    ws.row_dimensions[header_row].height = 24
+
+    last_data_row = header_row
+    for offset, site in enumerate(all_sites, start=1):
+        idx = header_row + offset
+        zebra = _ZEBRA_FILL if offset % 2 == 0 else None
+        row_vals: list[Any] = [site]
+        for w in weeks:
+            row_vals.append(_val(weekly_site.get(w, {}).get(site)))
+        for j, v in enumerate(row_vals, start=1):
+            cell = ws.cell(row=idx, column=j, value=v)
+            cell.border = _BORDER
+            if zebra:
+                cell.fill = zebra
+            if j == 1:
+                cell.alignment = _LEFT
+            else:
+                cell.alignment = _RIGHT
+                cell.number_format = num_fmt
+        last_data_row = idx
+
+    ws.column_dimensions["A"].width = 24
+    for j in range(2, len(weeks) + 2):
+        ws.column_dimensions[get_column_letter(j)].width = 11
+    ws.freeze_panes = "B5"
+
+    # Line chart — her üretim yeri için bir seri, X = haftalar.
+    chart = LineChart()
+    chart.style = 2
+    chart.title = _make_chart_title(title)
+    chart.y_axis.title = _horizontal_axis_title(y_axis_label)
+    chart.x_axis.title = _end_x_axis_title("Hafta")
+    # from_rows=True + titles_from_data=True: her satır ayrı seri,
+    # satırın ilk hücresi (col A, üretim yeri adı) seri başlığı.
+    data_ref = Reference(
+        ws,
+        min_col=1, max_col=1 + len(weeks),
+        min_row=header_row + 1, max_row=last_data_row,
+    )
+    chart.add_data(data_ref, titles_from_data=True, from_rows=True)
+    cats_ref = Reference(
+        ws,
+        min_col=2, max_col=1 + len(weeks),
+        min_row=header_row, max_row=header_row,
+    )
+    chart.set_categories(cats_ref)
+    _clean_axis(chart.x_axis)
+    _clean_axis(chart.y_axis)
+    chart.y_axis.numFmt = num_fmt
+    for series in chart.series:
+        series.marker = Marker(symbol="circle", size=5)
+    chart.legend.position = "r"
+    chart.legend.overlay = False
+    chart.height = 16
+    chart.width = 32
+    _apply_chart_frame(chart)
+
+    chart_anchor = last_data_row + 3
+    ws.add_chart(chart, f"A{chart_anchor}")
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -2149,6 +2239,28 @@ def build_week_excel(
     _build_dolu_yuk_ozeti_sheet(wb, all_weeks_rows or [], manual_aggs or [])
     _build_uretim_yeri_karsilastirma_sheet(
         wb, all_weeks_rows or [], manual_aggs or []
+    )
+    # Trend drilldown sayfaları — Grafikler sheet'inde butonla
+    # erişilen üretim yeri bazlı haftalık trend görünümleri.
+    _build_tesis_trend_sheet(
+        wb,
+        sheet_name="Tesis Trend — Yük",
+        title="Üretim Yeri Bazlı Trend — Dolu Konteyner Başına Tonaj",
+        y_axis_label="Ton / Dolu Konteyner",
+        all_rows=all_weeks_rows or [],
+        manual_aggs=manual_aggs or [],
+        value_kind="ton_per_full",
+        num_fmt="0.00",
+    )
+    _build_tesis_trend_sheet(
+        wb,
+        sheet_name="Tesis Trend — Boş",
+        title="Üretim Yeri Bazlı Trend — Boş Konteyner",
+        y_axis_label="Boş Konteyner Adedi",
+        all_rows=all_weeks_rows or [],
+        manual_aggs=manual_aggs or [],
+        value_kind="empty",
+        num_fmt="#,##0",
     )
     # Grafikler en son sheet olarak kalsın.
     _build_ozet_charts_sheet(wb, all_weeks_rows or [], manual_aggs or [])
