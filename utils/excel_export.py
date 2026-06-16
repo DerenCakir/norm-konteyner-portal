@@ -1034,13 +1034,17 @@ def _white_bold_label_props() -> RichText:
     )
 
 
-def _bold_large_label_props(size_pt: int = 11) -> RichText:
+def _bold_large_label_props(
+    size_pt: int = 11, color: str | None = None,
+) -> RichText:
     """Text properties for the Toplam overlay label — bold and slightly
     bigger than the body so the total reads as the headline number for
-    each cluster / stack."""
-    char_props = CharacterProperties(
-        b=True, sz=size_pt * 100,
-    )
+    each cluster / stack. ``color`` (hex without #) forces explicit text
+    color; varsayılan Excel auto-renk."""
+    kwargs: dict[str, Any] = {"b": True, "sz": size_pt * 100}
+    if color:
+        kwargs["solidFill"] = color
+    char_props = CharacterProperties(**kwargs)
     para_props = ParagraphProperties(defRPr=char_props)
     return RichText(
         bodyPr=RichTextProperties(rot=0, vert="horz"),
@@ -1212,7 +1216,7 @@ def _build_ozet_charts_sheet(
     # önceden yapıp butonların link hedeflerini buradan veriyoruz.
     _n_weeks = len(full_weeks)
     _block_size = max(_n_weeks + 3, 16) + 4
-    detail_section_header_row = 165
+    detail_section_header_row = 141
     detail_blocks_start_row = detail_section_header_row + 2
     site_anchors: dict[str, int] = {
         site: detail_blocks_start_row + i * _block_size
@@ -1246,6 +1250,11 @@ def _build_ozet_charts_sheet(
     # 24'ten sonrası kullanılmıyor.
     for c in range(1, 25):
         ws.column_dimensions[get_column_letter(c)].width = 11
+    # Tesis Detayı tablolarındaki 3 sütun: 'Hafta', 'Dolu Konteyner
+    # Tonajı', 'Boş Konteyner'. İkincisi/üçüncüsü uzun başlık —
+    # wrap_text bile yetmiyor, kolon genişliği de açılıyor.
+    ws.column_dimensions["B"].width = 18
+    ws.column_dimensions["C"].width = 16
 
     # Section header before the trend charts band (row 4).
     if latest_week:
@@ -1461,11 +1470,12 @@ def _build_ozet_charts_sheet(
     # that Excel's auto-scale would otherwise flatten.
     chart2.y_axis.scaling.min = 0.20
     chart2.y_axis.scaling.max = 0.90
-    # Veri etiketleri kalın + 13 pt — küçük (10pt) hâli grafik
-    # üzerinde silikti, daha okunaklı olsun diye büyütüldü.
+    # Veri etiketleri kalın + 13 pt + koyu lacivert — auto-renk
+    # ile soluk gri tonda kalıyordu, sabit koyu renkle (0F172A)
+    # hem kalın hem yüksek kontrastla okunuyor.
     chart2.dataLabels = _value_only_labels(
         "t", "[$-tr-TR]#,##0.00",
-        txPr=_bold_large_label_props(size_pt=13),
+        txPr=_bold_large_label_props(size_pt=13, color="0F172A"),
     )
     for series in chart2.series:
         series.marker = Marker(symbol="circle", size=7)
@@ -1480,7 +1490,7 @@ def _build_ozet_charts_sheet(
     chart2.width = 38
     _apply_chart_frame(chart2)
     # Chart 2 sits below chart 1 panel.
-    chart2_anchor_row = 30
+    chart2_anchor_row = 27
     ws.add_chart(chart2, f"A{chart2_anchor_row}")
 
     # ================================================================
@@ -1535,14 +1545,14 @@ def _build_ozet_charts_sheet(
     chart3.width = 38
     _apply_chart_frame(chart3)
     # Section divider before the tesis-comparison charts.
-    ws.merge_cells("A65:X65")
-    sec3 = ws["A65"]
+    ws.merge_cells("A48:X48")
+    sec3 = ws["A48"]
     sec3.value = "Tesis Karşılaştırma"
     sec3.font = Font(bold=True, size=13, color="1F3A8A")
     sec3.fill = PatternFill("solid", fgColor="E2E8F0")
     sec3.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.row_dimensions[65].height = 24
-    chart3_anchor_row = 66
+    ws.row_dimensions[48].height = 24
+    chart3_anchor_row = 49
     ws.add_chart(chart3, f"A{chart3_anchor_row}")
 
     # KPI yerine: her üretim yeri için ayrı buton. Tıklanınca o
@@ -1687,14 +1697,14 @@ def _build_ozet_charts_sheet(
         _hide_overlay_from_legend(chart4, chart4_total_line)
 
     # Section divider before the color breakdown chart.
-    ws.merge_cells("A124:X124")
-    sec4 = ws["A124"]
+    ws.merge_cells("A106:X106")
+    sec4 = ws["A106"]
     sec4.value = "Renk Dağılımı"
     sec4.font = Font(bold=True, size=13, color="1F3A8A")
     sec4.fill = PatternFill("solid", fgColor="E2E8F0")
     sec4.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.row_dimensions[124].height = 24
-    chart4_anchor_row = 125
+    ws.row_dimensions[106].height = 24
+    chart4_anchor_row = 107
     ws.add_chart(chart4, f"A{chart4_anchor_row}")
 
     # Side KPI panel for chart 4 — color totals across all sites in
@@ -1807,7 +1817,7 @@ def _build_ozet_charts_sheet(
     chart5.height = 14
     chart5.width = 38
     _apply_chart_frame(chart5)
-    chart5_anchor_row = 95
+    chart5_anchor_row = 78
     ws.add_chart(chart5, f"A{chart5_anchor_row}")
 
     # KPI yerine: chart 3 ile aynı şekilde her üretim yeri için
