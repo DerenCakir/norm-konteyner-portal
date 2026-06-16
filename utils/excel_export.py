@@ -327,212 +327,6 @@ def _fmt_dec_tr(n, digits: int = 1) -> str:
     return formatted.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-def _build_dashboard_sheet(
-    wb: Workbook,
-    rows: list[dict[str, Any]],
-    week_iso: str,
-    week_human: str,
-) -> None:
-    """First sheet: one-page summary of the selected week."""
-    ws = wb.active
-    ws.title = "Dashboard"
-
-    # Title banner ---------------------------------------------------------
-    ws.merge_cells("A1:L1")
-    title_cell = ws["A1"]
-    title_cell.value = "Konteyner Sayım Dashboard"
-    title_cell.font = Font(bold=True, size=20, color="FFFFFF")
-    title_cell.fill = PatternFill("solid", fgColor="1F3A8A")
-    title_cell.alignment = Alignment(
-        horizontal="left", vertical="center", indent=1,
-    )
-    ws.row_dimensions[1].height = 38
-
-    ws.merge_cells("A2:L2")
-    sub_cell = ws["A2"]
-    sub_cell.value = f"{week_iso} — {week_human}"
-    sub_cell.font = Font(italic=True, size=11, color="475569")
-    sub_cell.alignment = Alignment(
-        horizontal="left", vertical="center", indent=1,
-    )
-    ws.row_dimensions[2].height = 20
-
-    # Set column widths once
-    for c in range(1, 13):
-        ws.column_dimensions[get_column_letter(c)].width = 12
-
-    if not rows:
-        ws["A4"] = "Bu hafta için kayıt yok."
-        ws["A4"].font = Font(italic=True, color="64748B")
-        return
-
-    kpis = _compute_week_kpis(rows)
-
-    # First row of cards: 5 cards x ~2.4 cols (12 cols / 5 = 2.4, use 2 + extras)
-    # Toplam | Boş | WIP | Dolu (with Kanban) | Hurda
-    _kpi_card_excel(
-        ws, row=4, col=1, width=2,
-        label="Toplam Konteyner",
-        value=_fmt_int_tr(kpis["total_containers"]),
-        sub="B + WIP + D + H",
-        tone="slate",
-    )
-    _kpi_card_excel(
-        ws, row=4, col=3, width=2,
-        label="Boş Konteyner",
-        value=_fmt_int_tr(kpis["empty"]),
-        sub="Kullanılabilir kasa",
-        tone="green",
-    )
-    _kpi_card_excel(
-        ws, row=4, col=5, width=2,
-        label="Proseste Konteyner",
-        value=_fmt_int_tr(kpis["wip"]),
-        sub="İşlem görüyor",
-        tone="amber",
-    )
-    _kpi_card_excel(
-        ws, row=4, col=7, width=3,
-        label="Dolu Konteyner",
-        value=_fmt_int_tr(kpis["full"]),
-        sub=(
-            f"Kanban: {_fmt_int_tr(kpis['kanban'])} "
-            f"(%{_fmt_dec_tr(kpis['kanban_pct'])})"
-        ),
-        tone="blue",
-    )
-    _kpi_card_excel(
-        ws, row=4, col=10, width=3,
-        label="Hurdaya Ayrılacak",
-        value=_fmt_int_tr(kpis["scrap"]),
-        sub="Artık kullanılmayacak",
-        tone="rose",
-    )
-
-    # Spacer row 7 + second row of cards: A8..L10 (3 cards × 4 cols) ------
-    ws.row_dimensions[7].height = 10
-    _kpi_card_excel(
-        ws, row=8, col=1, width=4,
-        label="Toplam Tonaj",
-        value=f"{_fmt_dec_tr(kpis['tonnage'])} t",
-        sub="Seçili hafta gerçekleşen",
-        tone="amber",
-    )
-    _kpi_card_excel(
-        ws, row=8, col=5, width=4,
-        label="Ort. Dolu Konteyner Ağırlığı",
-        value=f"{_fmt_int_tr(kpis['avg_kg_per_full'])} kg",
-        sub="Üretim yeri ortalamalarının ortalaması",
-        tone="amber",
-    )
-    _kpi_card_excel(
-        ws, row=8, col=9, width=4,
-        label="Kanban Oranı",
-        value=f"%{_fmt_dec_tr(kpis['kanban_pct'])}",
-        sub="Kanban / Dolu",
-        tone="slate",
-    )
-
-    # Top sites table — rows 13+ ------------------------------------------
-    ws.row_dimensions[11].height = 10
-
-    section_cell = ws.cell(row=12, column=1, value="Üretim Yeri Özeti")
-    section_cell.font = Font(bold=True, size=13, color="0F172A")
-    ws.merge_cells("A12:L12")
-
-    headers = [
-        "Üretim Yeri", "Boş", "Proseste", "Dolu", "Hurdaya Ayrılacak",
-        "Toplam", "Toplam Tonaj", "Ort. kg / Dolu",
-    ]
-    for j, h in enumerate(headers, start=1):
-        c = ws.cell(row=13, column=j, value=h)
-        c.fill = _HEADER_FILL
-        c.font = _HEADER_FONT
-        c.alignment = _CENTER
-        c.border = _BORDER
-    ws.row_dimensions[13].height = 24
-
-    # Per-site aggregate from rows.
-    site_agg: dict[str, dict[str, float]] = {}
-    seen_subs: set = set()
-    for r in rows:
-        site = r.get("Üretim Yeri") or ""
-        s = site_agg.setdefault(
-            site,
-            {"empty": 0, "wip": 0, "full": 0, "scrap": 0, "tonnage": 0.0},
-        )
-        s["empty"] += int(r.get("Boş") or 0)
-        s["wip"] += int(r.get("Proseste") or 0)
-        s["full"] += int(r.get("Dolu") or 0)
-        s["scrap"] += int(r.get("Hurda") or 0)
-        sub_id = r.get("Submission ID")
-        if sub_id is not None and (site, sub_id) not in seen_subs:
-            seen_subs.add((site, sub_id))
-            ton = r.get("Gerçekleşen Tonaj")
-            if ton is not None:
-                try:
-                    s["tonnage"] += float(ton)
-                except (TypeError, ValueError):
-                    pass
-
-    sorted_sites = sorted(
-        site_agg.items(), key=lambda kv: _site_sort_key(kv[0]),
-    )
-    for idx, (site, s) in enumerate(sorted_sites, start=14):
-        bdh = s["empty"] + s["wip"] + s["full"] + s["scrap"]
-        kg_per = (s["tonnage"] * 1000.0 / s["full"]) if s["full"] else 0.0
-
-        values = [site, s["empty"], s["wip"], s["full"], s["scrap"], bdh, s["tonnage"], kg_per]
-        zebra = (idx % 2 == 0)
-        for j, v in enumerate(values, start=1):
-            cell = ws.cell(row=idx, column=j, value=v)
-            cell.border = _BORDER
-            if zebra:
-                cell.fill = _ZEBRA_FILL
-            if j == 1:
-                cell.alignment = _LEFT
-            elif j in (2, 3, 4, 5, 6):
-                cell.alignment = _RIGHT
-                cell.number_format = "[$-tr-TR]#,##0"
-            elif j == 7:  # Toplam Tonaj
-                cell.alignment = _RIGHT
-                cell.number_format = "[$-tr-TR]#,##0.0"
-            elif j == 8:  # Ort. kg / Dolu
-                cell.alignment = _RIGHT
-                cell.number_format = "[$-tr-TR]#,##0"
-
-    # TOPLAM row at bottom
-    total_row = 14 + len(sorted_sites)
-    grand = {
-        "empty": sum(s["empty"] for _, s in sorted_sites),
-        "wip": sum(s["wip"] for _, s in sorted_sites),
-        "full": sum(s["full"] for _, s in sorted_sites),
-        "scrap": sum(s["scrap"] for _, s in sorted_sites),
-        "tonnage": sum(s["tonnage"] for _, s in sorted_sites),
-    }
-    grand_bdh = grand["empty"] + grand["wip"] + grand["full"] + grand["scrap"]
-    grand_kg_per = (grand["tonnage"] * 1000.0 / grand["full"]) if grand["full"] else 0.0
-    total_values = [
-        "TOPLAM",
-        grand["empty"], grand["wip"], grand["full"], grand["scrap"],
-        grand_bdh, grand["tonnage"], grand_kg_per,
-    ]
-    for j, v in enumerate(total_values, start=1):
-        cell = ws.cell(row=total_row, column=j, value=v)
-        cell.fill = _TOTAL_FILL
-        cell.font = _TOTAL_FONT
-        cell.border = _BORDER
-        if j == 1:
-            cell.alignment = _RIGHT
-        elif j == 7:
-            cell.alignment = _RIGHT
-            cell.number_format = "[$-tr-TR]#,##0.0"
-        else:
-            cell.alignment = _RIGHT
-            cell.number_format = "[$-tr-TR]#,##0"
-
-    ws.column_dimensions["A"].width = 22
-
 
 def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
     """Detail per (department × color) for the selected week."""
@@ -2212,6 +2006,112 @@ def _build_uretim_yeri_karsilastirma_sheet(
 
 
 # ---------------------------------------------------------------------------
+# Dolu Konteyner Başına Yük Özeti — sites × weeks matrix
+# ---------------------------------------------------------------------------
+
+def _build_dolu_yuk_ozeti_sheet(
+    wb: Workbook,
+    all_rows: list[dict[str, Any]],
+    manual_aggs: list[dict[str, Any]] | None = None,
+) -> None:
+    """Per-site weekly ton/Dolu Konteyner; weeks shown side by side.
+
+    Satırlar üretim yerleri, sütunlar haftalar (yeniden eskiye), her
+    hücre o tesisin o haftaki ``tonaj / dolu konteyner`` oranını gösterir.
+    Son sütun tesis için tüm-hafta ağırlıklı ortalaması; alt satır
+    haftalık ağırlıklı ortalamaları + genel ortalamayı verir.
+    """
+    ws = wb.create_sheet("Dolu Konteyner Başına Yük Özeti")
+
+    if not all_rows and not manual_aggs:
+        ws["A1"] = "Henüz veri yok."
+        ws["A1"].font = Font(italic=True, color="64748B")
+        return
+
+    _, weekly_site, _, _, manual_only_weeks = _aggregate_all_weeks(
+        all_rows, manual_aggs,
+    )
+    # Sadece tonajı olan haftalar — manual-only haftalarda tonaj/dolu
+    # yok, sütun olarak gösterirsek hep boş kalır.
+    weeks = sorted(
+        (w for w in weekly_site.keys() if w not in manual_only_weeks),
+        reverse=True,
+    )
+    all_sites = sorted(
+        {s for sd in weekly_site.values() for s in sd.keys()},
+        key=_site_sort_key,
+    )
+
+    if not weeks or not all_sites:
+        ws["A1"] = "Henüz tonajlı sayım verisi yok."
+        ws["A1"].font = Font(italic=True, color="64748B")
+        return
+
+    headers = ["Üretim Yeri"] + [_short_week(w) for w in weeks] + ["Ortalama"]
+    ws.append(headers)
+    _style_header_row(ws, len(headers))
+
+    for idx, site in enumerate(all_sites, start=2):
+        row_vals: list[Any] = [site]
+        sum_ton, sum_full = 0.0, 0
+        for w in weeks:
+            sd = weekly_site.get(w, {}).get(site)
+            full_v = int(sd.get("full", 0)) if sd else 0
+            ton_v = float(sd.get("tonnage", 0.0)) if sd else 0.0
+            if full_v:
+                row_vals.append(ton_v / full_v)
+                sum_ton += ton_v
+                sum_full += full_v
+            else:
+                row_vals.append(None)
+        row_vals.append((sum_ton / sum_full) if sum_full else None)
+        ws.append(row_vals)
+
+        zebra = _ZEBRA_FILL if idx % 2 == 0 else None
+        for col_idx in range(1, len(row_vals) + 1):
+            cell = ws.cell(row=idx, column=col_idx)
+            cell.border = _BORDER
+            if zebra:
+                cell.fill = zebra
+            if col_idx == 1:
+                cell.alignment = _LEFT
+            else:
+                cell.alignment = _RIGHT
+                cell.number_format = "0.00"
+
+    # TOPLAM satırı — haftalık ve genel ağırlıklı ortalama.
+    total_row_idx = ws.max_row + 1
+    total_vals: list[Any] = ["TOPLAM"]
+    all_ton, all_full = 0.0, 0
+    for w in weeks:
+        week_ton, week_full = 0.0, 0
+        for site in all_sites:
+            sd = weekly_site.get(w, {}).get(site)
+            if sd:
+                week_ton += float(sd.get("tonnage", 0.0))
+                week_full += int(sd.get("full", 0))
+        total_vals.append((week_ton / week_full) if week_full else None)
+        all_ton += week_ton
+        all_full += week_full
+    total_vals.append((all_ton / all_full) if all_full else None)
+    ws.append(total_vals)
+
+    for col_idx in range(1, len(total_vals) + 1):
+        cell = ws.cell(row=total_row_idx, column=col_idx)
+        cell.fill = _TOTAL_FILL
+        cell.font = _TOTAL_FONT
+        cell.border = _BORDER
+        if col_idx == 1:
+            cell.alignment = _RIGHT
+        else:
+            cell.alignment = _RIGHT
+            cell.number_format = "0.00"
+
+    ws.freeze_panes = "B2"
+    _autofit(ws, headers)
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -2237,15 +2137,21 @@ def build_week_excel(
     call sites but no longer surfaced in a 'Bilgi' cover sheet.
     """
     wb = Workbook()
-    _build_dashboard_sheet(wb, rows, week_iso, week_human)
+    # Workbook() default boş 'Sheet' yaratıyor; artık Dashboard sayfası
+    # yok, ilk gerçek sayfa Renk Kırılımı olacak — boş Sheet'i sil.
+    default_ws = wb.active
+    wb.remove(default_ws)
+
     _build_renk_kirilim_sheet(wb, rows)
     dept_aggs = _build_uretim_yeri_kirilim_sheet(wb, rows)
     _build_uretim_yeri_ozeti_sheet(wb, dept_aggs)
     _build_renk_ozeti_sheet(wb, rows)
-    _build_ozet_charts_sheet(wb, all_weeks_rows or [], manual_aggs or [])
+    _build_dolu_yuk_ozeti_sheet(wb, all_weeks_rows or [], manual_aggs or [])
     _build_uretim_yeri_karsilastirma_sheet(
         wb, all_weeks_rows or [], manual_aggs or []
     )
+    # Grafikler en son sheet olarak kalsın.
+    _build_ozet_charts_sheet(wb, all_weeks_rows or [], manual_aggs or [])
 
     # Klavuz çizgilerini kapat — workbook bittiğinde dosya bir rapor
     # gibi görünsün, ham tablo gibi değil. (View > Gridlines'ın isteğe
