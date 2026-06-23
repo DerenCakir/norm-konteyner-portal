@@ -144,15 +144,27 @@ def _week_iso_to_human(week_iso: str) -> tuple[str, str, int]:
         return week_iso, "", 0
 
 
-def _style_header_row(ws, header_count: int) -> None:
-    """Apply standard header styling to the first row of `ws`."""
+def _style_header_row(
+    ws, header_count: int, wrap_text: bool = False, row_height: int = 26,
+) -> None:
+    """Apply standard header styling to the first row of `ws`.
+
+    ``wrap_text=True`` durumunda başlık hücreleri metni kaydır
+    olarak hizalanır; ``row_height`` da yazıyı barındıracak şekilde
+    büyütülmeli (default 26 tek satır için yeterli, çift satıra
+    kıracak başlıklar için 40+ önerilir).
+    """
+    align = (
+        Alignment(horizontal="center", vertical="center", wrap_text=True)
+        if wrap_text else _CENTER
+    )
     for col_idx in range(1, header_count + 1):
         cell = ws.cell(row=1, column=col_idx)
         cell.fill = _HEADER_FILL
         cell.font = _HEADER_FONT
-        cell.alignment = _CENTER
+        cell.alignment = align
         cell.border = _BORDER
-    ws.row_dimensions[1].height = 26
+    ws.row_dimensions[1].height = row_height
     ws.freeze_panes = "A2"
 
 
@@ -582,7 +594,10 @@ def _build_uretim_yeri_ozeti_sheet(
         "Toplam Tonaj", "Dolu Konteyner Başına Yük (ton/konteyner)",
     ]
     ws.append(headers)
-    _style_header_row(ws, len(headers))
+    # Uzun başlıklar (Dolu içindeki Kanban, Hurdaya ayrılacak, Toplam
+    # Konteyner, Dolu Konteyner Başına Yük …) tek satıra sığmıyor —
+    # wrap_text + yükseltilmiş satır yüksekliği ile iki satıra kırılıyor.
+    _style_header_row(ws, len(headers), wrap_text=True, row_height=42)
 
     site_aggs: dict[str, dict[str, Any]] = {}
     for (site, _dept), agg in dept_aggs.items():
@@ -680,6 +695,14 @@ def _build_uretim_yeri_ozeti_sheet(
                 cell.alignment = _LEFT
 
     _autofit(ws, headers)
+    # Wrap_text yaptığımız uzun başlıkların sütun genişliğini
+    # _autofit header uzunluğuna göre 40+'a fişlemesin diye
+    # küçültüyoruz — başlık iki satıra kırılıyor, hücre değerleri
+    # zaten kısa.
+    ws.column_dimensions["E"].width = 13
+    ws.column_dimensions["F"].width = 13
+    ws.column_dimensions["G"].width = 13
+    ws.column_dimensions["J"].width = 14
 
 
 def _build_renk_ozeti_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
@@ -690,7 +713,7 @@ def _build_renk_ozeti_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
         "Hurdaya ayrılacak", "Toplam Konteyner",
     ]
     ws.append(headers)
-    _style_header_row(ws, len(headers))
+    _style_header_row(ws, len(headers), wrap_text=True, row_height=42)
 
     color_aggs: dict[str, dict[str, int]] = {}
     color_order: list[str] = []
@@ -750,6 +773,12 @@ def _build_renk_ozeti_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
                 cell.alignment = _RIGHT
 
     _autofit(ws, headers)
+    # Wrap_text uyguladığımız uzun başlıklar için sütun genişliği
+    # kapatılıyor — autofit aksi takdirde başlık uzunluğunu baz alıp
+    # 20+ veriyor.
+    ws.column_dimensions["E"].width = 13
+    ws.column_dimensions["F"].width = 13
+    ws.column_dimensions["G"].width = 13
 
 
 # ---------------------------------------------------------------------------
@@ -1216,7 +1245,7 @@ def _build_ozet_charts_sheet(
     # önceden yapıp butonların link hedeflerini buradan veriyoruz.
     _n_weeks = len(full_weeks)
     _block_size = max(_n_weeks + 3, 16) + 4
-    detail_section_header_row = 141
+    detail_section_header_row = 163
     detail_blocks_start_row = detail_section_header_row + 2
     site_anchors: dict[str, int] = {
         site: detail_blocks_start_row + i * _block_size
@@ -1576,6 +1605,66 @@ def _build_ozet_charts_sheet(
             )
 
     # ================================================================
+    # Chart 3.5 — Toplam Boş Konteyner — Haftalık Trend
+    #   Tüm tesislerin haftalık toplam boş konteyner trendi. Tek
+    #   seri, full_weeks boyunca.
+    # ================================================================
+    t_empty_col = t3_col + len(last_3_weeks) + 2  # chart 3 verisinden gap
+    data_ws.cell(row=1, column=t_empty_col, value="Hafta")
+    data_ws.cell(
+        row=1, column=t_empty_col + 1, value="Toplam Boş Konteyner",
+    )
+    for i, w in enumerate(full_weeks):
+        wt = weekly_totals[w]
+        data_ws.cell(row=2 + i, column=t_empty_col, value=_short_week(w))
+        cell = data_ws.cell(
+            row=2 + i, column=t_empty_col + 1,
+            value=int(wt.get("empty", 0)),
+        )
+        cell.number_format = "[$-tr-TR]#,##0"
+    t_empty_last = 1 + len(full_weeks)
+
+    chart_empty_trend = LineChart()
+    chart_empty_trend.style = 2
+    chart_empty_trend.title = _make_chart_title(
+        "Toplam Boş Konteyner — Haftalık Trend"
+    )
+    chart_empty_trend.y_axis.title = _horizontal_axis_title(
+        "Toplam Boş Konteyner"
+    )
+    chart_empty_trend.x_axis.title = _end_x_axis_title("Hafta")
+    if full_weeks:
+        data_ref = Reference(
+            data_ws,
+            min_col=t_empty_col + 1, min_row=1,
+            max_col=t_empty_col + 1, max_row=t_empty_last,
+        )
+        chart_empty_trend.add_data(data_ref, titles_from_data=True)
+        cats_ref_emp = Reference(
+            data_ws, min_col=t_empty_col, min_row=2, max_row=t_empty_last,
+        )
+        chart_empty_trend.set_categories(cats_ref_emp)
+    _clean_axis(chart_empty_trend.x_axis)
+    _clean_axis(chart_empty_trend.y_axis)
+    chart_empty_trend.y_axis.numFmt = "[$-tr-TR]#,##0"
+    chart_empty_trend.dataLabels = _value_only_labels(
+        "t", "[$-tr-TR]#,##0",
+        txPr=_bold_large_label_props(size_pt=12, color="0F172A"),
+    )
+    for series in chart_empty_trend.series:
+        series.marker = Marker(symbol="circle", size=7)
+        gp = GraphicalProperties()
+        # Boş ↔ yeşil — chart 5 (Tesis Bazlı Boş) ile tematik uyum.
+        gp.line = LineProperties(solidFill="047857", w=22000)
+        series.graphicalProperties = gp
+    chart_empty_trend.legend = None
+    chart_empty_trend.height = 10
+    chart_empty_trend.width = 38
+    _apply_chart_frame(chart_empty_trend)
+    chart_empty_trend_anchor_row = 78
+    ws.add_chart(chart_empty_trend, f"A{chart_empty_trend_anchor_row}")
+
+    # ================================================================
     # Chart 4 — Stacked column: color breakdown per site (latest week)
     #   X = production sites
     #   Stacks = colors in defined order
@@ -1697,14 +1786,14 @@ def _build_ozet_charts_sheet(
         _hide_overlay_from_legend(chart4, chart4_total_line)
 
     # Section divider before the color breakdown chart.
-    ws.merge_cells("A106:X106")
-    sec4 = ws["A106"]
+    ws.merge_cells("A128:X128")
+    sec4 = ws["A128"]
     sec4.value = "Renk Dağılımı"
     sec4.font = Font(bold=True, size=13, color="1F3A8A")
     sec4.fill = PatternFill("solid", fgColor="E2E8F0")
     sec4.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.row_dimensions[106].height = 24
-    chart4_anchor_row = 107
+    ws.row_dimensions[128].height = 24
+    chart4_anchor_row = 129
     ws.add_chart(chart4, f"A{chart4_anchor_row}")
 
     # Side KPI panel for chart 4 — color totals across all sites in
@@ -1740,14 +1829,14 @@ def _build_ozet_charts_sheet(
             )
             _kpi_card_excel(
                 ws, row=chart4_anchor_row + 4, col=21, width=4,
-                label="En Çok Renk",
+                label="En Çok Konteyner",
                 value=_fmt_int_tr(most[1]),
                 sub=f"{most[0]}",
                 tone="green",
             )
             _kpi_card_excel(
                 ws, row=chart4_anchor_row + 8, col=21, width=4,
-                label="En Az Renk",
+                label="En Az Konteyner",
                 value=_fmt_int_tr(least[1]),
                 sub=f"{least[0]}",
                 tone="rose",
@@ -1817,7 +1906,7 @@ def _build_ozet_charts_sheet(
     chart5.height = 14
     chart5.width = 38
     _apply_chart_frame(chart5)
-    chart5_anchor_row = 78
+    chart5_anchor_row = 100
     ws.add_chart(chart5, f"A{chart5_anchor_row}")
 
     # KPI yerine: chart 3 ile aynı şekilde her üretim yeri için
@@ -2253,7 +2342,13 @@ def _build_dolu_yuk_ozeti_sheet(
 
     ws.freeze_panes = "B2"
     _autofit(ws, headers)
-
+    # Sütunları birbirine yaklaştır — değerler 'X.XX' (4 karakter)
+    # şeklinde, başlıklar 'W18' / 'Ortalama' gibi kısa; autofit'in
+    # default genişliği gereksiz boş bırakıyor.
+    ws.column_dimensions["A"].width = 22
+    n_cols = 1 + len(weeks) + 1
+    for c in range(2, n_cols + 1):
+        ws.column_dimensions[get_column_letter(c)].width = 8
 
 
 # ---------------------------------------------------------------------------
