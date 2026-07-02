@@ -1459,44 +1459,6 @@ def _build_ozet_charts_sheet(
     if len(chart1.series) >= 4:
         chart1.series[3].dLbls = DataLabelList(delete=True)
 
-    # Bar üstünde ayrı çizgi olarak haftalık toplam tonaj — secondary
-    # Y ekseni (sağ). Konteyner adedi (~40k) ile tonaj (~30t) arasında
-    # 3 büyüklük mertebesi fark var, tek eksende çizersek tonaj sıfır
-    # çizgisi gibi görünüyor.
-    tonnage_col = t1_col + 6
-    data_ws.cell(row=1, column=tonnage_col, value="Tonaj (t)")
-    for i, w in enumerate(weeks):
-        wt = weekly_totals[w]
-        ton_v = float(wt.get("tonnage", 0.0))
-        cell = data_ws.cell(row=2 + i, column=tonnage_col, value=ton_v)
-        cell.number_format = "[$-tr-TR]#,##0"
-
-    tonnage_line = LineChart()
-    tonnage_ref = Reference(
-        data_ws,
-        min_col=tonnage_col, min_row=1,
-        max_col=tonnage_col, max_row=t1_last,
-    )
-    tonnage_line.add_data(tonnage_ref, titles_from_data=True)
-    tonnage_line.set_categories(cats_ref)
-    for s in tonnage_line.series:
-        s.marker = Marker(symbol="circle", size=8)
-        gp = GraphicalProperties()
-        # Kalın turuncu (orange-600) — bar stack renklerinden
-        # (mavi/yeşil/kırmızı/sarı) net ayrışıyor.
-        gp.line = LineProperties(solidFill="EA580C", w=28000)
-        s.graphicalProperties = gp
-    tonnage_line.dataLabels = _value_only_labels(
-        "t", "[$-tr-TR]#,##0",
-        txPr=_bold_large_label_props(size_pt=10, color="EA580C"),
-    )
-    # Secondary Y ekseni (sağ taraf) — farklı axId + crosses='max'.
-    tonnage_line.y_axis.axId = 200
-    tonnage_line.y_axis.crosses = "max"
-    tonnage_line.y_axis.numFmt = "[$-tr-TR]#,##0"
-    tonnage_line.y_axis.title = _horizontal_axis_title("Tonaj (t)")
-    chart1 += tonnage_line
-
     chart1_anchor_row = 5
     ws.add_chart(chart1, f"A{chart1_anchor_row}")
 
@@ -1755,9 +1717,11 @@ def _build_ozet_charts_sheet(
 
     # ================================================================
     # Chart 3.6 — Toplam Dolu Konteyner — Haftalık Trend
-    #   Boş grafiğinin dolu ikizi: aynı yapı, farklı seri.
+    #   Boş grafiğinin dolu ikizi: aynı yapı (haftalık toplam), farklı
+    #   seri. Data kolonu 40 — chart 4 (t4_col=18) ve chart 5
+    #   (t5_col=~27) alanlarından uzakta, çakışmasın.
     # ================================================================
-    t_full_col = t_empty_col + 3
+    t_full_col = 40
     data_ws.cell(row=1, column=t_full_col, value="Hafta")
     data_ws.cell(
         row=1, column=t_full_col + 1, value="Toplam Dolu Konteyner",
