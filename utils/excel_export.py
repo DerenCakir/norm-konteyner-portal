@@ -1286,7 +1286,7 @@ def _build_ozet_charts_sheet(
     _main_block_rows = max(_n_weeks + 3, 16) + 4
     _dept_subblock_rows = _n_weeks + 6
     _dept_band_rows = 3
-    detail_section_header_row = 185
+    detail_section_header_row = 184
     detail_blocks_start_row = detail_section_header_row + 2
 
     site_anchors: dict[str, int] = {}
@@ -1625,14 +1625,14 @@ def _build_ozet_charts_sheet(
     chart3.width = 38
     _apply_chart_frame(chart3)
     # Section divider before the tesis-comparison charts.
-    ws.merge_cells("A48:X48")
-    sec3 = ws["A48"]
+    ws.merge_cells("A90:X90")
+    sec3 = ws["A90"]
     sec3.value = "Tesis Karşılaştırma"
     sec3.font = Font(bold=True, size=13, color="1F3A8A")
     sec3.fill = PatternFill("solid", fgColor="E2E8F0")
     sec3.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.row_dimensions[48].height = 24
-    chart3_anchor_row = 49
+    ws.row_dimensions[90].height = 24
+    chart3_anchor_row = 91
     ws.add_chart(chart3, f"A{chart3_anchor_row}")
 
     # KPI yerine: her üretim yeri için ayrı buton. Tıklanınca o
@@ -1712,7 +1712,7 @@ def _build_ozet_charts_sheet(
     chart_empty_trend.height = 10
     chart_empty_trend.width = 38
     _apply_chart_frame(chart_empty_trend)
-    chart_empty_trend_anchor_row = 78
+    chart_empty_trend_anchor_row = 48
     ws.add_chart(chart_empty_trend, f"A{chart_empty_trend_anchor_row}")
 
     # ================================================================
@@ -1773,7 +1773,7 @@ def _build_ozet_charts_sheet(
     chart_full_trend.height = 10
     chart_full_trend.width = 38
     _apply_chart_frame(chart_full_trend)
-    chart_full_trend_anchor_row = 100
+    chart_full_trend_anchor_row = 69
     ws.add_chart(chart_full_trend, f"A{chart_full_trend_anchor_row}")
 
     # ================================================================
@@ -1898,14 +1898,14 @@ def _build_ozet_charts_sheet(
         _hide_overlay_from_legend(chart4, chart4_total_line)
 
     # Section divider before the color breakdown chart.
-    ws.merge_cells("A150:X150")
-    sec4 = ws["A150"]
+    ws.merge_cells("A149:X149")
+    sec4 = ws["A149"]
     sec4.value = "Renk Dağılımı"
     sec4.font = Font(bold=True, size=13, color="1F3A8A")
     sec4.fill = PatternFill("solid", fgColor="E2E8F0")
     sec4.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.row_dimensions[150].height = 24
-    chart4_anchor_row = 151
+    ws.row_dimensions[149].height = 24
+    chart4_anchor_row = 150
     ws.add_chart(chart4, f"A{chart4_anchor_row}")
 
     # Side KPI panel for chart 4 — color totals across all sites in
@@ -2018,7 +2018,7 @@ def _build_ozet_charts_sheet(
     chart5.height = 14
     chart5.width = 38
     _apply_chart_frame(chart5)
-    chart5_anchor_row = 122
+    chart5_anchor_row = 120
     ws.add_chart(chart5, f"A{chart5_anchor_row}")
 
     # KPI yerine: chart 3 ile aynı şekilde her üretim yeri için
