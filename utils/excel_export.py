@@ -388,7 +388,7 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
     ws = wb.create_sheet("Renk Kırılımı")
 
     headers = [
-        "Üretim Yeri", "Bölüm", "Renk",
+        "Hafta", "Üretim Yeri", "Bölüm", "Renk",
         "Boş", "Proseste", "Dolu", "Dolu İçindeki Kanban", "Hurdaya Ayrılacak",
         "Toplam Konteyner", "Durum",
         "Giren Kullanıcı", "Sayım Tarihi", "Sayım Saati", "Gönderim Zamanı",
@@ -411,6 +411,7 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
         bdh_v = bos_v + wip_v + dolu_v + hurda_v
 
         values = [
+            row.get("Hafta", ""),
             row.get("Üretim Yeri", ""), row.get("Bölüm", ""), row.get("Renk", ""),
             row.get("Boş"), row.get("Proseste"),
             row.get("Dolu"), row.get("Kanban"), row.get("Hurda"),
@@ -433,21 +434,23 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
             cell.border = _BORDER
             if fill:
                 cell.fill = fill
-            # Sayısal sütunlar: 4=Boş, 5=WIP, 6=Dolu, 7=Kanban, 8=Hurda, 9=Toplam
-            if col_idx in (4, 5, 6, 7, 8, 9):
+            # Sayısal sütunlar: 5=Boş, 6=WIP, 7=Dolu, 8=Kanban, 9=Hurda, 10=Toplam
+            if col_idx in (5, 6, 7, 8, 9, 10):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 10:  # Durum
+            elif col_idx == 11:  # Durum
                 cell.alignment = _CENTER
                 if is_late:
                     cell.font = Font(bold=True, color="92400E")
+            elif col_idx == 1:  # Hafta
+                cell.alignment = _CENTER
             else:
                 cell.alignment = _LEFT
 
     if rows:
         total_row_idx = ws.max_row + 1
         ws.append([
-            "TOPLAM", "", "",
+            "TOPLAM", "", "", "",
             totals["empty"], totals["wip"], totals["full"],
             totals["kanban"], totals["scrap"], totals["bdh"],
             "", "", "", "", "",
@@ -457,7 +460,7 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
             cell.fill = _TOTAL_FILL
             cell.font = _TOTAL_FONT
             cell.border = _BORDER
-            if col_idx in (4, 5, 6, 7, 8, 9):
+            if col_idx in (5, 6, 7, 8, 9, 10):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
             elif col_idx == 1:
@@ -1239,18 +1242,65 @@ def _build_ozet_charts_sheet(
     last_3_weeks = full_weeks[-3:] if len(full_weeks) >= 3 else full_weeks[:]
     latest_week = full_weeks[-1] if full_weeks else None
 
+    # Per-site × dept weekly aggregation — dept drilldown butonları için.
+    weekly_site_dept: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
+    tonnage_seen_dept: set[tuple[str, str, str]] = set()
+    for r in all_rows:
+        week = r.get("Hafta") or ""
+        site_r = r.get("Üretim Yeri") or ""
+        dept_r = r.get("Bölüm") or ""
+        if not week or not site_r or not dept_r:
+            continue
+        d = weekly_site_dept.setdefault(week, {}).setdefault(
+            site_r, {}
+        ).setdefault(dept_r, {
+            "empty": 0, "wip": 0, "full": 0,
+            "kanban": 0, "scrap": 0, "tonnage": 0.0,
+        })
+        d["empty"] += int(r.get("Boş") or 0)
+        d["wip"] += int(r.get("Proseste") or 0)
+        d["full"] += int(r.get("Dolu") or 0)
+        d["kanban"] += int(r.get("Kanban") or 0)
+        d["scrap"] += int(r.get("Hurda") or 0)
+        key_wsd = (week, site_r, dept_r)
+        if key_wsd not in tonnage_seen_dept:
+            tonnage_seen_dept.add(key_wsd)
+            try:
+                d["tonnage"] += float(r.get("Gerçekleşen Tonaj") or 0)
+            except (TypeError, ValueError):
+                pass
+
+    site_dept_map: dict[str, list[str]] = {}
+    for site in all_sites:
+        depts: set[str] = set()
+        for w in full_weeks:
+            depts.update(weekly_site_dept.get(w, {}).get(site, {}).keys())
+        site_dept_map[site] = sorted(d for d in depts if d)
+
     # Tesis Detayı bölümünün anchor satırları — chart 3 ve chart 5'in
     # yanındaki üretim yeri butonları buraya link veriyor. Bloklar
-    # chart 4'ün altında (row 165+) render ediliyor; aşağıda hesabını
-    # önceden yapıp butonların link hedeflerini buradan veriyoruz.
+    # chart 4'ün altında (row 185+) render ediliyor. Her site bloğu:
+    # ana blok (20 satır) + varsa dept alt-blokları (n_weeks+6 satır her
+    # bir bölüm için, + 3 satır buton bandı).
     _n_weeks = len(full_weeks)
-    _block_size = max(_n_weeks + 3, 16) + 4
-    detail_section_header_row = 163
+    _main_block_rows = max(_n_weeks + 3, 16) + 4
+    _dept_subblock_rows = _n_weeks + 6
+    _dept_band_rows = 3
+    detail_section_header_row = 185
     detail_blocks_start_row = detail_section_header_row + 2
-    site_anchors: dict[str, int] = {
-        site: detail_blocks_start_row + i * _block_size
-        for i, site in enumerate(all_sites)
-    }
+
+    site_anchors: dict[str, int] = {}
+    dept_anchors: dict[tuple[str, str], int] = {}
+    _cursor = detail_blocks_start_row
+    for site in all_sites:
+        site_anchors[site] = _cursor
+        _cursor += _main_block_rows
+        depts_here = site_dept_map.get(site, [])
+        if len(depts_here) > 1:
+            _cursor += _dept_band_rows
+            for dept in depts_here:
+                dept_anchors[(site, dept)] = _cursor
+                _cursor += _dept_subblock_rows
 
     # Latest-week snapshot used by per-chart KPI side panels.
     if latest_week:
@@ -1279,11 +1329,12 @@ def _build_ozet_charts_sheet(
     # 24'ten sonrası kullanılmıyor.
     for c in range(1, 25):
         ws.column_dimensions[get_column_letter(c)].width = 11
-    # Tesis Detayı tablolarındaki 3 sütun: 'Hafta', 'Dolu Konteyner
-    # Tonajı', 'Boş Konteyner'. İkincisi/üçüncüsü uzun başlık —
-    # wrap_text bile yetmiyor, kolon genişliği de açılıyor.
-    ws.column_dimensions["B"].width = 18
-    ws.column_dimensions["C"].width = 16
+    # Tesis Detayı tablolarındaki 4 sütun: Hafta / Dolu / Boş / Dolu
+    # Konteyner Tonajı. Son üç başlık uzun — wrap_text + genişletilmiş
+    # kolonla iki satıra kırılıyor.
+    ws.column_dimensions["B"].width = 14
+    ws.column_dimensions["C"].width = 14
+    ws.column_dimensions["D"].width = 18
 
     # Section header before the trend charts band (row 4).
     if latest_week:
@@ -1407,6 +1458,44 @@ def _build_ozet_charts_sheet(
     # 2=Dolu, 3=Hurdaya Ayrılacak.
     if len(chart1.series) >= 4:
         chart1.series[3].dLbls = DataLabelList(delete=True)
+
+    # Bar üstünde ayrı çizgi olarak haftalık toplam tonaj — secondary
+    # Y ekseni (sağ). Konteyner adedi (~40k) ile tonaj (~30t) arasında
+    # 3 büyüklük mertebesi fark var, tek eksende çizersek tonaj sıfır
+    # çizgisi gibi görünüyor.
+    tonnage_col = t1_col + 6
+    data_ws.cell(row=1, column=tonnage_col, value="Tonaj (t)")
+    for i, w in enumerate(weeks):
+        wt = weekly_totals[w]
+        ton_v = float(wt.get("tonnage", 0.0))
+        cell = data_ws.cell(row=2 + i, column=tonnage_col, value=ton_v)
+        cell.number_format = "[$-tr-TR]#,##0"
+
+    tonnage_line = LineChart()
+    tonnage_ref = Reference(
+        data_ws,
+        min_col=tonnage_col, min_row=1,
+        max_col=tonnage_col, max_row=t1_last,
+    )
+    tonnage_line.add_data(tonnage_ref, titles_from_data=True)
+    tonnage_line.set_categories(cats_ref)
+    for s in tonnage_line.series:
+        s.marker = Marker(symbol="circle", size=8)
+        gp = GraphicalProperties()
+        # Kalın turuncu (orange-600) — bar stack renklerinden
+        # (mavi/yeşil/kırmızı/sarı) net ayrışıyor.
+        gp.line = LineProperties(solidFill="EA580C", w=28000)
+        s.graphicalProperties = gp
+    tonnage_line.dataLabels = _value_only_labels(
+        "t", "[$-tr-TR]#,##0",
+        txPr=_bold_large_label_props(size_pt=10, color="EA580C"),
+    )
+    # Secondary Y ekseni (sağ taraf) — farklı axId + crosses='max'.
+    tonnage_line.y_axis.axId = 200
+    tonnage_line.y_axis.crosses = "max"
+    tonnage_line.y_axis.numFmt = "[$-tr-TR]#,##0"
+    tonnage_line.y_axis.title = _horizontal_axis_title("Tonaj (t)")
+    chart1 += tonnage_line
 
     chart1_anchor_row = 5
     ws.add_chart(chart1, f"A{chart1_anchor_row}")
@@ -1665,6 +1754,65 @@ def _build_ozet_charts_sheet(
     ws.add_chart(chart_empty_trend, f"A{chart_empty_trend_anchor_row}")
 
     # ================================================================
+    # Chart 3.6 — Toplam Dolu Konteyner — Haftalık Trend
+    #   Boş grafiğinin dolu ikizi: aynı yapı, farklı seri.
+    # ================================================================
+    t_full_col = t_empty_col + 3
+    data_ws.cell(row=1, column=t_full_col, value="Hafta")
+    data_ws.cell(
+        row=1, column=t_full_col + 1, value="Toplam Dolu Konteyner",
+    )
+    for i, w in enumerate(full_weeks):
+        wt = weekly_totals[w]
+        data_ws.cell(row=2 + i, column=t_full_col, value=_short_week(w))
+        cell = data_ws.cell(
+            row=2 + i, column=t_full_col + 1,
+            value=int(wt.get("full", 0)),
+        )
+        cell.number_format = "[$-tr-TR]#,##0"
+    t_full_last = 1 + len(full_weeks)
+
+    chart_full_trend = LineChart()
+    chart_full_trend.style = 2
+    chart_full_trend.title = _make_chart_title(
+        "Toplam Dolu Konteyner — Haftalık Trend"
+    )
+    chart_full_trend.y_axis.title = _horizontal_axis_title(
+        "Toplam Dolu Konteyner"
+    )
+    chart_full_trend.x_axis.title = _end_x_axis_title("Hafta")
+    if full_weeks:
+        data_ref = Reference(
+            data_ws,
+            min_col=t_full_col + 1, min_row=1,
+            max_col=t_full_col + 1, max_row=t_full_last,
+        )
+        chart_full_trend.add_data(data_ref, titles_from_data=True)
+        cats_ref_full = Reference(
+            data_ws, min_col=t_full_col, min_row=2, max_row=t_full_last,
+        )
+        chart_full_trend.set_categories(cats_ref_full)
+    _clean_axis(chart_full_trend.x_axis)
+    _clean_axis(chart_full_trend.y_axis)
+    chart_full_trend.y_axis.numFmt = "[$-tr-TR]#,##0"
+    chart_full_trend.dataLabels = _value_only_labels(
+        "t", "[$-tr-TR]#,##0",
+        txPr=_bold_large_label_props(size_pt=12, color="0F172A"),
+    )
+    for series in chart_full_trend.series:
+        series.marker = Marker(symbol="circle", size=7)
+        gp = GraphicalProperties()
+        # Dolu ↔ lacivert — chart 1 stack'inde Dolu segmenti ile uyumlu.
+        gp.line = LineProperties(solidFill="1F3A8A", w=22000)
+        series.graphicalProperties = gp
+    chart_full_trend.legend = None
+    chart_full_trend.height = 10
+    chart_full_trend.width = 38
+    _apply_chart_frame(chart_full_trend)
+    chart_full_trend_anchor_row = 100
+    ws.add_chart(chart_full_trend, f"A{chart_full_trend_anchor_row}")
+
+    # ================================================================
     # Chart 4 — Stacked column: color breakdown per site (latest week)
     #   X = production sites
     #   Stacks = colors in defined order
@@ -1786,14 +1934,14 @@ def _build_ozet_charts_sheet(
         _hide_overlay_from_legend(chart4, chart4_total_line)
 
     # Section divider before the color breakdown chart.
-    ws.merge_cells("A128:X128")
-    sec4 = ws["A128"]
+    ws.merge_cells("A150:X150")
+    sec4 = ws["A150"]
     sec4.value = "Renk Dağılımı"
     sec4.font = Font(bold=True, size=13, color="1F3A8A")
     sec4.fill = PatternFill("solid", fgColor="E2E8F0")
     sec4.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.row_dimensions[128].height = 24
-    chart4_anchor_row = 129
+    ws.row_dimensions[150].height = 24
+    chart4_anchor_row = 151
     ws.add_chart(chart4, f"A{chart4_anchor_row}")
 
     # Side KPI panel for chart 4 — color totals across all sites in
@@ -1906,7 +2054,7 @@ def _build_ozet_charts_sheet(
     chart5.height = 14
     chart5.width = 38
     _apply_chart_frame(chart5)
-    chart5_anchor_row = 100
+    chart5_anchor_row = 122
     ws.add_chart(chart5, f"A{chart5_anchor_row}")
 
     # KPI yerine: chart 3 ile aynı şekilde her üretim yeri için
@@ -1976,106 +2124,179 @@ def _build_ozet_charts_sheet(
             )
             back.alignment = Alignment(horizontal="left", vertical="center")
 
-            # Tablo başlığı — wrap_text ile uzun başlıklar kırılıyor
-            # ve satır yüksekliği başlığı barındıracak şekilde set
-            # ediliyor; aksi takdirde 'Dolu Konteyner Tonajı' ya da
-            # 'Boş Konteyner' tek satırda sığmıyor.
+            # Tablo başlığı — sıra: Hafta / Dolu / Boş / Dolu Konteyner
+            # Tonajı. Uzun başlıklar wrap_text ile iki satıra kırılıyor;
+            # satır yüksekliği başlığı barındıracak şekilde 40.
             hdr_row = block_row + 2
             wrap_center = Alignment(
                 horizontal="center", vertical="center", wrap_text=True,
             )
             for j, h in enumerate(
-                ["Hafta", "Dolu Konteyner Tonajı", "Boş Konteyner"], start=1,
+                ["Hafta", "Dolu Konteyner", "Boş Konteyner",
+                 "Dolu Konteyner Tonajı"],
+                start=1,
             ):
                 c = ws.cell(row=hdr_row, column=j, value=h)
                 c.fill = _HEADER_FILL
                 c.font = _HEADER_FONT
                 c.alignment = wrap_center
                 c.border = _BORDER
-            ws.row_dimensions[hdr_row].height = 34
+            ws.row_dimensions[hdr_row].height = 40
 
-            # Veri satırları
+            # Veri satırları — sıra: Hafta | Dolu | Boş | Tonaj
             for k, w in enumerate(full_weeks):
                 r = hdr_row + 1 + k
                 sd = weekly_site.get(w, {}).get(site)
-                ton_per = (
-                    sd["tonnage"] / sd["full"]
-                    if sd and sd.get("full") else None
-                )
+                full_v = int(sd.get("full", 0)) if sd else None
                 empty_v = int(sd.get("empty", 0)) if sd else None
+                ton_v = float(sd.get("tonnage", 0.0)) if sd else None
                 c1 = ws.cell(row=r, column=1, value=_short_week(w))
                 c1.alignment = _LEFT
                 c1.border = _BORDER
-                c2 = ws.cell(row=r, column=2, value=ton_per)
+                c2 = ws.cell(row=r, column=2, value=full_v)
                 c2.alignment = _RIGHT
-                c2.number_format = "0.00"
+                c2.number_format = "#,##0"
                 c2.border = _BORDER
                 c3 = ws.cell(row=r, column=3, value=empty_v)
                 c3.alignment = _RIGHT
                 c3.number_format = "#,##0"
                 c3.border = _BORDER
+                c4 = ws.cell(row=r, column=4, value=ton_v)
+                c4.alignment = _RIGHT
+                c4.number_format = "#,##0.00"
+                c4.border = _BORDER
 
             table_end_row = hdr_row + len(full_weeks)
 
-            # Mini chart: dolu konteyner tonajı
-            ch_ton = LineChart()
-            ch_ton.title = _make_chart_title("Dolu Konteyner Tonajı")
-            ch_ton.add_data(
-                Reference(
-                    ws, min_col=2, max_col=2,
-                    min_row=hdr_row, max_row=table_end_row,
-                ),
-                titles_from_data=True,
-            )
-            ch_ton.set_categories(
-                Reference(
-                    ws, min_col=1, max_col=1,
-                    min_row=hdr_row + 1, max_row=table_end_row,
+            # Üç mini chart yan yana: Dolu (navy) | Boş (crimson) |
+            # Tonaj (amber). Table cols A..D; charts col F, L, R'de.
+            def _mini(
+                anchor: str, title: str, src_col: int,
+                num_fmt: str, line_color: str,
+            ) -> None:
+                ch = LineChart()
+                ch.title = _make_chart_title(title)
+                ch.add_data(
+                    Reference(
+                        ws, min_col=src_col, max_col=src_col,
+                        min_row=hdr_row, max_row=table_end_row,
+                    ),
+                    titles_from_data=True,
                 )
-            )
-            _clean_axis(ch_ton.x_axis)
-            _clean_axis(ch_ton.y_axis)
-            ch_ton.y_axis.numFmt = "0.00"
-            ch_ton.legend = None
-            for s in ch_ton.series:
-                s.marker = Marker(symbol="circle", size=5)
-                gp = GraphicalProperties()
-                gp.line = LineProperties(solidFill="1F3A8A", w=22000)
-                s.graphicalProperties = gp
-            ch_ton.height = 8
-            ch_ton.width = 14
-            _apply_chart_frame(ch_ton)
-            ws.add_chart(ch_ton, f"E{hdr_row}")
+                ch.set_categories(
+                    Reference(
+                        ws, min_col=1, max_col=1,
+                        min_row=hdr_row + 1, max_row=table_end_row,
+                    )
+                )
+                _clean_axis(ch.x_axis)
+                _clean_axis(ch.y_axis)
+                ch.y_axis.numFmt = num_fmt
+                ch.legend = None
+                for s in ch.series:
+                    s.marker = Marker(symbol="circle", size=5)
+                    gp = GraphicalProperties()
+                    gp.line = LineProperties(solidFill=line_color, w=22000)
+                    s.graphicalProperties = gp
+                ch.height = 8
+                ch.width = 11
+                _apply_chart_frame(ch)
+                ws.add_chart(ch, f"{anchor}{hdr_row}")
 
-            # Mini chart: Boş
-            ch_empty = LineChart()
-            ch_empty.title = _make_chart_title("Boş Konteyner")
-            ch_empty.add_data(
-                Reference(
-                    ws, min_col=3, max_col=3,
-                    min_row=hdr_row, max_row=table_end_row,
-                ),
-                titles_from_data=True,
-            )
-            ch_empty.set_categories(
-                Reference(
-                    ws, min_col=1, max_col=1,
-                    min_row=hdr_row + 1, max_row=table_end_row,
+            _mini("F", "Dolu Konteyner", 2, "#,##0", "1F3A8A")
+            _mini("L", "Boş Konteyner", 3, "#,##0", "BE123C")
+            _mini("R", "Dolu Konteyner Tonajı", 4, "#,##0.00", "EA580C")
+
+            # Bölüm drilldown — tesiste birden fazla bölüm varsa
+            # yatay buton bandı + her bölüm için ayrı sub-block.
+            depts_here = site_dept_map.get(site, [])
+            if len(depts_here) > 1:
+                band_row = block_row + _main_block_rows - _dept_band_rows + 1
+                # 'Bölüm Detayı' ipucu etiketi
+                lbl = ws.cell(
+                    row=band_row - 1, column=1,
+                    value="Bölüm Detayı — bölüme özel veriler için tıkla:",
                 )
-            )
-            _clean_axis(ch_empty.x_axis)
-            _clean_axis(ch_empty.y_axis)
-            ch_empty.y_axis.numFmt = "#,##0"
-            ch_empty.legend = None
-            for s in ch_empty.series:
-                s.marker = Marker(symbol="circle", size=5)
-                gp = GraphicalProperties()
-                gp.line = LineProperties(solidFill="BE123C", w=22000)
-                s.graphicalProperties = gp
-            ch_empty.height = 8
-            ch_empty.width = 14
-            _apply_chart_frame(ch_empty)
-            ws.add_chart(ch_empty, f"O{hdr_row}")
+                lbl.font = Font(italic=True, size=10, color="475569")
+                lbl.alignment = Alignment(horizontal="left", vertical="center")
+                # Yatay bölüm butonları
+                btn_w = 4
+                for k, dept in enumerate(depts_here):
+                    b_col = 1 + k * btn_w
+                    if b_col + btn_w - 1 > 24:
+                        break  # sığmazsa fazla bölümü atla
+                    _link_button_excel(
+                        ws, row=band_row, col=b_col, width=btn_w, height=2,
+                        label=dept,
+                        target_sheet="Grafikler",
+                        target_cell=f"A{dept_anchors[(site, dept)]}",
+                        font_size=10,
+                    )
+                # Per-dept sub-block'ları render et
+                for dept in depts_here:
+                    d_row = dept_anchors[(site, dept)]
+                    ws.merge_cells(
+                        start_row=d_row, start_column=1,
+                        end_row=d_row, end_column=24,
+                    )
+                    db = ws.cell(
+                        row=d_row, column=1, value=f"{site} → {dept}",
+                    )
+                    db.font = Font(bold=True, size=12, color="FFFFFF")
+                    db.fill = PatternFill("solid", fgColor="475569")
+                    db.alignment = Alignment(
+                        horizontal="left", vertical="center", indent=1,
+                    )
+                    ws.row_dimensions[d_row].height = 22
+                    # Back to site block
+                    bk = ws.cell(
+                        row=d_row + 1, column=1,
+                        value=f"◀ {site} tesis detayına dön",
+                    )
+                    bk.hyperlink = f"#'Grafikler'!A{site_anchors[site]}"
+                    bk.font = Font(
+                        bold=True, color="1F3A8A", size=10,
+                        underline="single",
+                    )
+                    bk.alignment = Alignment(
+                        horizontal="left", vertical="center",
+                    )
+                    # Table header
+                    d_hdr = d_row + 2
+                    for j, h in enumerate(
+                        ["Hafta", "Dolu Konteyner", "Boş Konteyner",
+                         "Dolu Konteyner Tonajı"],
+                        start=1,
+                    ):
+                        c = ws.cell(row=d_hdr, column=j, value=h)
+                        c.fill = _HEADER_FILL
+                        c.font = _HEADER_FONT
+                        c.alignment = wrap_center
+                        c.border = _BORDER
+                    ws.row_dimensions[d_hdr].height = 40
+                    # Data rows
+                    for k, w in enumerate(full_weeks):
+                        rr = d_hdr + 1 + k
+                        sd = weekly_site_dept.get(w, {}).get(
+                            site, {}).get(dept)
+                        full_v = int(sd.get("full", 0)) if sd else None
+                        empty_v = int(sd.get("empty", 0)) if sd else None
+                        ton_v = float(sd.get("tonnage", 0.0)) if sd else None
+                        c1 = ws.cell(row=rr, column=1, value=_short_week(w))
+                        c1.alignment = _LEFT
+                        c1.border = _BORDER
+                        c2 = ws.cell(row=rr, column=2, value=full_v)
+                        c2.alignment = _RIGHT
+                        c2.number_format = "#,##0"
+                        c2.border = _BORDER
+                        c3 = ws.cell(row=rr, column=3, value=empty_v)
+                        c3.alignment = _RIGHT
+                        c3.number_format = "#,##0"
+                        c3.border = _BORDER
+                        c4 = ws.cell(row=rr, column=4, value=ton_v)
+                        c4.alignment = _RIGHT
+                        c4.number_format = "#,##0.00"
+                        c4.border = _BORDER
 
 
 # ---------------------------------------------------------------------------
@@ -2238,6 +2459,274 @@ def _build_uretim_yeri_karsilastirma_sheet(
 
 
 # ---------------------------------------------------------------------------
+# Haftalık Analiz Özeti — geçen hafta vs bu hafta doğal dil özeti
+# ---------------------------------------------------------------------------
+
+_ANALIZ_METRICS = [
+    # (key, human label, unit, num_fmt for delta values)
+    ("full",    "Dolu Konteyner",             "adet", "#,##0"),
+    ("empty",   "Boş Konteyner",              "adet", "#,##0"),
+    ("wip",     "Proseste Konteyner",         "adet", "#,##0"),
+    ("scrap",   "Hurdaya Ayrılacak Konteyner", "adet", "#,##0"),
+    ("bdh",     "Toplam Konteyner",           "adet", "#,##0"),
+    ("tonnage", "Toplam Tonaj",               "t",    "#,##0.00"),
+]
+
+
+def _build_haftalik_analiz_sheet(
+    wb: Workbook,
+    all_rows: list[dict[str, Any]],
+    manual_aggs: list[dict[str, Any]] | None = None,
+) -> None:
+    """Executive summary — geçen hafta vs bu hafta karşılaştırması.
+
+    Her metrik için:
+      • Bir başlık satırı (renk şeridi)
+      • Doğal dil özet cümle ('Geçen haftaya göre ... arttı/azaldı')
+      • Üretim yeri kırılımı tablosu: Geçen Hafta / Bu Hafta / Fark / %
+        (önce artanlar delta desc, sonra azalanlar delta asc)
+    """
+    ws = wb.create_sheet("Haftalık Analiz Özeti")
+
+    # Banner
+    ws.merge_cells("A1:F1")
+    b = ws["A1"]
+    b.value = "Haftalık Analiz Özeti"
+    b.font = Font(bold=True, size=20, color="FFFFFF")
+    b.fill = PatternFill("solid", fgColor="1F3A8A")
+    b.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.row_dimensions[1].height = 38
+
+    _, weekly_site, _, _, manual_only_weeks = _aggregate_all_weeks(
+        all_rows, manual_aggs,
+    )
+    weeks_full = sorted(
+        w for w in weekly_site.keys() if w not in manual_only_weeks
+    )
+    if len(weeks_full) < 2:
+        ws["A3"] = (
+            "Karşılaştırma için en az iki haftalık veri gerekiyor — "
+            "henüz yeterli veri yok."
+        )
+        ws["A3"].font = Font(italic=True, color="64748B")
+        return
+
+    latest_wk = weeks_full[-1]
+    prev_wk = weeks_full[-2]
+
+    ws.merge_cells("A2:F2")
+    sub = ws["A2"]
+    sub.value = (
+        f"Karşılaştırma: {_short_week(prev_wk)} → {_short_week(latest_wk)}"
+    )
+    sub.font = Font(italic=True, size=12, color="475569")
+    sub.alignment = Alignment(
+        horizontal="left", vertical="center", indent=1,
+    )
+    ws.row_dimensions[2].height = 22
+
+    # Kolon genişlikleri.
+    ws.column_dimensions["A"].width = 26
+    for col in ("B", "C", "D", "E"):
+        ws.column_dimensions[col].width = 15
+    ws.column_dimensions["F"].width = 3
+
+    def _pct_txt(delta: float, base: float) -> str:
+        if not base:
+            return "—"
+        p = delta / base * 100
+        sign = "" if p == 0 else ("+" if p > 0 else "-")
+        return f"{sign}%{_fmt_dec_tr(abs(p), 1)}"
+
+    latest_sites = weekly_site.get(latest_wk, {})
+    prev_sites = weekly_site.get(prev_wk, {})
+    all_sites = sorted(
+        set(latest_sites.keys()) | set(prev_sites.keys()),
+        key=_site_sort_key,
+    )
+
+    def _fmt_delta_value(v: float, key: str) -> str:
+        if key == "tonnage":
+            return f"{_fmt_dec_tr(abs(v), 2)} t"
+        return f"{_fmt_int_tr(abs(v))} adet"
+
+    row = 4
+    for key, label, unit, num_fmt in _ANALIZ_METRICS:
+        # Totals
+        prev_tot = sum(sd.get(key, 0) for sd in prev_sites.values())
+        latest_tot = sum(sd.get(key, 0) for sd in latest_sites.values())
+        delta = latest_tot - prev_tot
+        pct_str = _pct_txt(delta, prev_tot)
+
+        # Section header
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
+        h = ws.cell(row=row, column=1, value=label)
+        h.font = Font(bold=True, size=13, color="FFFFFF")
+        h.fill = PatternFill("solid", fgColor="1F3A8A")
+        h.alignment = Alignment(
+            horizontal="left", vertical="center", indent=1,
+        )
+        ws.row_dimensions[row].height = 24
+        row += 1
+
+        # Summary sentence
+        if delta > 0:
+            verb = "arttı"
+        elif delta < 0:
+            verb = "azaldı"
+        else:
+            verb = "değişmedi"
+        sentence = (
+            f"Geçen haftaya göre toplam {label.lower()} "
+            f"{_fmt_delta_value(delta, key)} olarak {verb} ({pct_str})."
+        )
+        ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=6)
+        sc = ws.cell(row=row, column=1, value=sentence)
+        sc.font = Font(size=11, color="0F172A")
+        sc.alignment = Alignment(
+            horizontal="left", vertical="center", indent=1, wrap_text=True,
+        )
+        ws.row_dimensions[row].height = 26
+        row += 2
+
+        # Table header
+        for j, ht in enumerate(
+            ["Üretim Yeri", "Geçen Hafta", "Bu Hafta", "Fark", "Değişim"],
+            start=1,
+        ):
+            c = ws.cell(row=row, column=j, value=ht)
+            c.fill = _HEADER_FILL
+            c.font = _HEADER_FONT
+            c.alignment = _CENTER
+            c.border = _BORDER
+
+        site_deltas: list[tuple[str, float, float, float]] = []
+        for site in all_sites:
+            prv = float(prev_sites.get(site, {}).get(key, 0) or 0)
+            lat = float(latest_sites.get(site, {}).get(key, 0) or 0)
+            d = lat - prv
+            site_deltas.append((site, prv, lat, d))
+
+        increases = sorted(
+            [x for x in site_deltas if x[3] > 0], key=lambda x: -x[3],
+        )
+        decreases = sorted(
+            [x for x in site_deltas if x[3] < 0], key=lambda x: x[3],
+        )
+        unchanged = [x for x in site_deltas if x[3] == 0]
+
+        r = row + 1
+        for group in (increases, decreases, unchanged):
+            for site, prv, lat, d in group:
+                zebra = _ZEBRA_FILL if (r - row) % 2 == 0 else None
+                vals = [
+                    site, prv, lat, d, _pct_txt(d, prv),
+                ]
+                for j, v in enumerate(vals, start=1):
+                    cell = ws.cell(row=r, column=j, value=v)
+                    cell.border = _BORDER
+                    if zebra:
+                        cell.fill = zebra
+                    if j == 1:
+                        cell.alignment = _LEFT
+                    elif j == 5:  # Değişim yüzde string
+                        cell.alignment = _RIGHT
+                        # Delta > 0 → yeşil, < 0 → kırmızı, = 0 → gri
+                        if d > 0:
+                            cell.font = Font(bold=True, color="047857")
+                        elif d < 0:
+                            cell.font = Font(bold=True, color="BE123C")
+                        else:
+                            cell.font = Font(color="64748B")
+                    else:
+                        cell.alignment = _RIGHT
+                        cell.number_format = num_fmt
+                        if j == 4 and d != 0:  # Fark sütunu — renkli
+                            cell.font = Font(
+                                bold=True,
+                                color="047857" if d > 0 else "BE123C",
+                            )
+                r += 1
+
+        row = r + 2  # section gap
+
+
+# ---------------------------------------------------------------------------
+# Ana Data Sayfası — tüm haftaların uzun-format kaydı, pivot için
+# ---------------------------------------------------------------------------
+
+def _build_ana_data_sheet(
+    wb: Workbook, all_weeks_rows: list[dict[str, Any]],
+) -> None:
+    """Long-format ham veri sayfası — her (hafta × üretim yeri × bölüm ×
+    renk) bir satır. Kullanıcı bu sayfayı pivot table kaynağı olarak
+    kullanıp analiz sayfalarında olmayan soruları cevaplayabiliyor."""
+    ws = wb.create_sheet("Ana Data Sayfası")
+    headers = [
+        "Hafta", "Hafta Aralığı", "Ay", "Yıl",
+        "Üretim Yeri", "Bölüm", "Renk",
+        "Boş", "Proseste", "Dolu", "Kanban", "Hurdaya Ayrılacak",
+        "Toplam Konteyner",
+        "Gerçekleşen Tonaj (t)",
+        "Durum", "Giren Kullanıcı",
+        "Sayım Tarihi", "Sayım Saati", "Gönderim Zamanı",
+    ]
+    ws.append(headers)
+    _style_header_row(ws, len(headers))
+
+    if not all_weeks_rows:
+        return
+
+    for idx, row in enumerate(all_weeks_rows, start=2):
+        is_late = row.get("Durum") == "late_submitted"
+        zebra = (idx % 2 == 0) and not is_late
+        fill = _LATE_FILL if is_late else (_ZEBRA_FILL if zebra else None)
+
+        week_iso = row.get("Hafta") or ""
+        hafta_araligi, ay, yil = _week_iso_to_human(week_iso)
+
+        bos_v = int(row.get("Boş") or 0)
+        wip_v = int(row.get("Proseste") or 0)
+        dolu_v = int(row.get("Dolu") or 0)
+        hurda_v = int(row.get("Hurda") or 0)
+        bdh_v = bos_v + wip_v + dolu_v + hurda_v
+
+        values = [
+            week_iso, hafta_araligi, ay, yil if yil else "",
+            row.get("Üretim Yeri", ""), row.get("Bölüm", ""),
+            row.get("Renk", ""),
+            row.get("Boş"), row.get("Proseste"),
+            row.get("Dolu"), row.get("Kanban"), row.get("Hurda"),
+            bdh_v, row.get("Gerçekleşen Tonaj"),
+            _STATUS_LABEL.get(row.get("Durum"), row.get("Durum", "")),
+            row.get("Giren Kullanıcı", ""),
+            row.get("Sayım Tarihi", ""), row.get("Sayım Saati", ""),
+            _fmt_ts(row.get("Gönderim Zamanı")),
+        ]
+        ws.append(values)
+
+        for col_idx in range(1, len(values) + 1):
+            cell = ws.cell(row=idx, column=col_idx)
+            cell.border = _BORDER
+            if fill:
+                cell.fill = fill
+            # 8=Boş, 9=WIP, 10=Dolu, 11=Kanban, 12=Hurda, 13=Toplam, 14=Tonaj
+            if col_idx in (8, 9, 10, 11, 12, 13, 14):
+                cell.alignment = _RIGHT
+                cell.number_format = "#,##0"
+            elif col_idx == 15:  # Durum
+                cell.alignment = _CENTER
+                if is_late:
+                    cell.font = Font(bold=True, color="92400E")
+            elif col_idx in (1, 4):
+                cell.alignment = _CENTER
+            else:
+                cell.alignment = _LEFT
+
+    _autofit(ws, headers)
+
+
+# ---------------------------------------------------------------------------
 # Dolu Konteyner Başına Yük Özeti — sites × weeks matrix
 # ---------------------------------------------------------------------------
 
@@ -2382,6 +2871,11 @@ def build_week_excel(
     default_ws = wb.active
     wb.remove(default_ws)
 
+    # Executive summary — hafta karşılaştırması + doğal dil özet cümleler.
+    # 0. sırada oluşturuluyor ki dosya açılınca ilk gelen sayfa bu olsun.
+    _build_haftalik_analiz_sheet(
+        wb, all_weeks_rows or [], manual_aggs or [],
+    )
     _build_renk_kirilim_sheet(wb, rows)
     dept_aggs = _build_uretim_yeri_kirilim_sheet(wb, rows)
     _build_uretim_yeri_ozeti_sheet(wb, dept_aggs)
@@ -2390,10 +2884,21 @@ def build_week_excel(
     _build_uretim_yeri_karsilastirma_sheet(
         wb, all_weeks_rows or [], manual_aggs or []
     )
+    # Pivot için ham veri — kullanıcı analiz sayfalarında olmayan
+    # soruları buradan cevaplayabilir.
+    _build_ana_data_sheet(wb, all_weeks_rows or [])
     # Grafikler en son sheet olarak kalsın — üretim yeri trend
     # bloklarını kendi içinde, butonlarla erişilen 'Tesis Detayı'
     # bölümünde tutuyor.
     _build_ozet_charts_sheet(wb, all_weeks_rows or [], manual_aggs or [])
+
+    # Analiz sayfasını 0. sıraya taşı (create_sheet ordinal 0 vermek
+    # her zaman çalışmıyor).
+    if "Haftalık Analiz Özeti" in wb.sheetnames:
+        idx = wb.sheetnames.index("Haftalık Analiz Özeti")
+        if idx != 0:
+            wb.move_sheet("Haftalık Analiz Özeti", offset=-idx)
+        wb.active = 0
 
     # Klavuz çizgilerini kapat — workbook bittiğinde dosya bir rapor
     # gibi görünsün, ham tablo gibi değil. (View > Gridlines'ın isteğe
