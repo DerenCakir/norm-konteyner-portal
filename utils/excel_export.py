@@ -1201,6 +1201,13 @@ def _build_ozet_charts_sheet(
     else. Hidden-but-referenced cells continue to feed the charts.
     """
     ws = wb.create_sheet("Grafikler")
+    # Bölüm detayları Excel outline grup ile gizli render ediliyor —
+    # +/- işareti banner satırının üzerinde çıksın diye summaryBelow
+    # False olmalı.
+    if ws.sheet_properties.outlinePr is None:
+        from openpyxl.worksheet.properties import Outline
+        ws.sheet_properties.outlinePr = Outline()
+    ws.sheet_properties.outlinePr.summaryBelow = False
 
     # Title banner — same styling as Dashboard sheet's banner so the two
     # tabs read as siblings.
@@ -1279,13 +1286,16 @@ def _build_ozet_charts_sheet(
 
     # Tesis Detayı bölümünün anchor satırları — chart 3 ve chart 5'in
     # yanındaki üretim yeri butonları buraya link veriyor. Bloklar
-    # chart 4'ün altında (row 185+) render ediliyor. Her site bloğu:
-    # ana blok (20 satır) + varsa dept alt-blokları (n_weeks+6 satır her
-    # bir bölüm için, + 3 satır buton bandı).
+    # chart 4'ün altında (row 184+) render ediliyor. Her site bloğu:
+    # ana blok + varsa dept alt-blokları. Dept alt-blokları
+    # varsayılan olarak Excel outline grup (kapalı) ile gizli — her
+    # bölüm için ayrı [+] tıklanınca açılıyor.
     _n_weeks = len(full_weeks)
     _main_block_rows = max(_n_weeks + 3, 16) + 4
-    _dept_subblock_rows = _n_weeks + 6
-    _dept_band_rows = 3
+    # Dept alt-blok: banner (1) + back(1) + hdr(1) + n_weeks +
+    # mini chart bandı (~16) + gap
+    _dept_subblock_rows = max(_n_weeks + 5, 20)
+    _dept_band_rows = 2  # sadece section label + boşluk
     detail_section_header_row = 184
     detail_blocks_start_row = detail_section_header_row + 2
 
@@ -2127,7 +2137,7 @@ def _build_ozet_charts_sheet(
                 c3.border = _BORDER
                 c4 = ws.cell(row=r, column=4, value=ton_v)
                 c4.alignment = _RIGHT
-                c4.number_format = "#,##0.00"
+                c4.number_format = "#,##0"
                 c4.border = _BORDER
 
             table_end_row = hdr_row + len(full_weeks)
@@ -2169,42 +2179,38 @@ def _build_ozet_charts_sheet(
 
             _mini("F", "Dolu Konteyner", 2, "#,##0", "1F3A8A")
             _mini("L", "Boş Konteyner", 3, "#,##0", "BE123C")
-            _mini("R", "Dolu Konteyner Tonajı", 4, "#,##0.00", "EA580C")
+            _mini("R", "Dolu Konteyner Tonajı", 4, "#,##0", "EA580C")
 
-            # Bölüm drilldown — tesiste birden fazla bölüm varsa
-            # yatay buton bandı + her bölüm için ayrı sub-block.
+            # Bölüm drilldown — tesiste birden fazla bölüm varsa her
+            # bölüm için ayrı 'katlanabilir' sub-block. Banner satırı
+            # her zaman görünür; içerik (back link + tablo + mini
+            # grafikler) Excel outline grup ile kapalı — soldaki [+]
+            # tuşuna basınca açılıyor.
             depts_here = site_dept_map.get(site, [])
             if len(depts_here) > 1:
-                band_row = block_row + _main_block_rows - _dept_band_rows + 1
-                # 'Bölüm Detayı' ipucu etiketi
+                # 'Bölüm Detayı' ipucu etiketi — ana bloğun altında.
+                hint_row = block_row + _main_block_rows - _dept_band_rows + 1
                 lbl = ws.cell(
-                    row=band_row - 1, column=1,
-                    value="Bölüm Detayı — bölüme özel veriler için tıkla:",
+                    row=hint_row, column=1,
+                    value=(
+                        "Bölüm Detayı — soldaki [+] tuşuna basarak ilgili "
+                        "bölümü açın:"
+                    ),
                 )
                 lbl.font = Font(italic=True, size=10, color="475569")
                 lbl.alignment = Alignment(horizontal="left", vertical="center")
-                # Yatay bölüm butonları
-                btn_w = 4
-                for k, dept in enumerate(depts_here):
-                    b_col = 1 + k * btn_w
-                    if b_col + btn_w - 1 > 24:
-                        break  # sığmazsa fazla bölümü atla
-                    _link_button_excel(
-                        ws, row=band_row, col=b_col, width=btn_w, height=2,
-                        label=dept,
-                        target_sheet="Grafikler",
-                        target_cell=f"A{dept_anchors[(site, dept)]}",
-                        font_size=10,
-                    )
-                # Per-dept sub-block'ları render et
+
                 for dept in depts_here:
                     d_row = dept_anchors[(site, dept)]
+
+                    # Banner satırı — her zaman görünür.
                     ws.merge_cells(
                         start_row=d_row, start_column=1,
                         end_row=d_row, end_column=24,
                     )
                     db = ws.cell(
-                        row=d_row, column=1, value=f"{site} → {dept}",
+                        row=d_row, column=1,
+                        value=f"▸ {site} → {dept} (aç/kapat için soldaki [+])",
                     )
                     db.font = Font(bold=True, size=12, color="FFFFFF")
                     db.fill = PatternFill("solid", fgColor="475569")
@@ -2212,9 +2218,14 @@ def _build_ozet_charts_sheet(
                         horizontal="left", vertical="center", indent=1,
                     )
                     ws.row_dimensions[d_row].height = 22
+
+                    # İçerik başlangıcı — outline grup ile kapalı.
+                    content_start = d_row + 1
+                    content_end = d_row + _dept_subblock_rows - 1
+
                     # Back to site block
                     bk = ws.cell(
-                        row=d_row + 1, column=1,
+                        row=content_start, column=1,
                         value=f"◀ {site} tesis detayına dön",
                     )
                     bk.hyperlink = f"#'Grafikler'!A{site_anchors[site]}"
@@ -2225,8 +2236,9 @@ def _build_ozet_charts_sheet(
                     bk.alignment = Alignment(
                         horizontal="left", vertical="center",
                     )
-                    # Table header
-                    d_hdr = d_row + 2
+
+                    # Tablo başlığı (aynı Hafta/Dolu/Boş/Tonaj)
+                    d_hdr = content_start + 1
                     for j, h in enumerate(
                         ["Hafta", "Dolu Konteyner", "Boş Konteyner",
                          "Dolu Konteyner Tonajı"],
@@ -2238,6 +2250,7 @@ def _build_ozet_charts_sheet(
                         c.alignment = wrap_center
                         c.border = _BORDER
                     ws.row_dimensions[d_hdr].height = 40
+
                     # Data rows
                     for k, w in enumerate(full_weeks):
                         rr = d_hdr + 1 + k
@@ -2259,8 +2272,58 @@ def _build_ozet_charts_sheet(
                         c3.border = _BORDER
                         c4 = ws.cell(row=rr, column=4, value=ton_v)
                         c4.alignment = _RIGHT
-                        c4.number_format = "#,##0.00"
+                        c4.number_format = "#,##0"
                         c4.border = _BORDER
+
+                    d_table_end = d_hdr + len(full_weeks)
+
+                    # 3 mini chart: Dolu (navy) | Boş (kırmızı) |
+                    # Tonaj (turuncu). Site bloğuyla aynı yerleşim.
+                    def _dept_mini(
+                        anchor_col: str, title: str, src_col: int,
+                        line_color: str,
+                    ) -> None:
+                        ch = LineChart()
+                        ch.title = _make_chart_title(title)
+                        ch.add_data(
+                            Reference(
+                                ws, min_col=src_col, max_col=src_col,
+                                min_row=d_hdr, max_row=d_table_end,
+                            ),
+                            titles_from_data=True,
+                        )
+                        ch.set_categories(
+                            Reference(
+                                ws, min_col=1, max_col=1,
+                                min_row=d_hdr + 1, max_row=d_table_end,
+                            )
+                        )
+                        _clean_axis(ch.x_axis)
+                        _clean_axis(ch.y_axis)
+                        ch.y_axis.numFmt = "#,##0"
+                        ch.legend = None
+                        for s in ch.series:
+                            s.marker = Marker(symbol="circle", size=5)
+                            gp = GraphicalProperties()
+                            gp.line = LineProperties(
+                                solidFill=line_color, w=22000,
+                            )
+                            s.graphicalProperties = gp
+                        ch.height = 8
+                        ch.width = 11
+                        _apply_chart_frame(ch)
+                        ws.add_chart(ch, f"{anchor_col}{d_hdr}")
+
+                    _dept_mini("F", "Dolu Konteyner", 2, "1F3A8A")
+                    _dept_mini("L", "Boş Konteyner", 3, "BE123C")
+                    _dept_mini("R", "Dolu Konteyner Tonajı", 4, "EA580C")
+
+                    # İçerik satırlarını outline gruba al — banner
+                    # görünür kalıyor, [+] tuşuna basılınca içerik
+                    # açılıyor.
+                    for r_hide in range(content_start, content_end + 1):
+                        ws.row_dimensions[r_hide].outlineLevel = 1
+                        ws.row_dimensions[r_hide].hidden = True
 
 
 # ---------------------------------------------------------------------------
@@ -2489,11 +2552,11 @@ def _build_haftalik_analiz_sheet(
     )
     ws.row_dimensions[2].height = 22
 
-    # Kolon genişlikleri.
+    # Kolon genişlikleri — 6 kolon: Üretim Yeri | Önceki Ortalama |
+    # Geçen Hafta | Bu Hafta | Fark | Değişim.
     ws.column_dimensions["A"].width = 26
-    for col in ("B", "C", "D", "E"):
+    for col in ("B", "C", "D", "E", "F"):
         ws.column_dimensions[col].width = 15
-    ws.column_dimensions["F"].width = 3
 
     def _pct_txt(delta: float, base: float) -> str:
         if not base:
@@ -2553,9 +2616,12 @@ def _build_haftalik_analiz_sheet(
         ws.row_dimensions[row].height = 26
         row += 2
 
-        # Table header
+        # Table header — 'Önceki Ortalama' bu haftadan önceki tüm
+        # haftaların (prev_wk dahil) ortalamasını gösteriyor; kısa
+        # vadeli oynama yerine geçmiş trend ile karşılaştırma sağlıyor.
         for j, ht in enumerate(
-            ["Üretim Yeri", "Geçen Hafta", "Bu Hafta", "Fark", "Değişim"],
+            ["Üretim Yeri", "Önceki Ortalama", "Geçen Hafta", "Bu Hafta",
+             "Fark", "Değişim"],
             start=1,
         ):
             c = ws.cell(row=row, column=j, value=ht)
@@ -2564,27 +2630,37 @@ def _build_haftalik_analiz_sheet(
             c.alignment = _CENTER
             c.border = _BORDER
 
-        site_deltas: list[tuple[str, float, float, float]] = []
+        # Bu haftaya kadar olan tüm önceki haftalar.
+        past_weeks = weeks_full[:-1]
+
+        site_deltas: list[tuple[str, float, float, float, float]] = []
         for site in all_sites:
             prv = float(prev_sites.get(site, {}).get(key, 0) or 0)
             lat = float(latest_sites.get(site, {}).get(key, 0) or 0)
+            past_vals = [
+                float(
+                    weekly_site.get(w, {}).get(site, {}).get(key, 0) or 0
+                )
+                for w in past_weeks
+            ]
+            avg = (sum(past_vals) / len(past_vals)) if past_vals else 0.0
             d = lat - prv
-            site_deltas.append((site, prv, lat, d))
+            site_deltas.append((site, avg, prv, lat, d))
 
         increases = sorted(
-            [x for x in site_deltas if x[3] > 0], key=lambda x: -x[3],
+            [x for x in site_deltas if x[4] > 0], key=lambda x: -x[4],
         )
         decreases = sorted(
-            [x for x in site_deltas if x[3] < 0], key=lambda x: x[3],
+            [x for x in site_deltas if x[4] < 0], key=lambda x: x[4],
         )
-        unchanged = [x for x in site_deltas if x[3] == 0]
+        unchanged = [x for x in site_deltas if x[4] == 0]
 
         r = row + 1
         for group in (increases, decreases, unchanged):
-            for site, prv, lat, d in group:
+            for site, avg, prv, lat, d in group:
                 zebra = _ZEBRA_FILL if (r - row) % 2 == 0 else None
                 vals = [
-                    site, prv, lat, d, _pct_txt(d, prv),
+                    site, avg, prv, lat, d, _pct_txt(d, prv),
                 ]
                 for j, v in enumerate(vals, start=1):
                     cell = ws.cell(row=r, column=j, value=v)
@@ -2593,7 +2669,7 @@ def _build_haftalik_analiz_sheet(
                         cell.fill = zebra
                     if j == 1:
                         cell.alignment = _LEFT
-                    elif j == 5:  # Değişim yüzde string
+                    elif j == 6:  # Değişim yüzde string
                         cell.alignment = _RIGHT
                         # Delta > 0 → yeşil, < 0 → kırmızı, = 0 → gri
                         if d > 0:
@@ -2605,7 +2681,7 @@ def _build_haftalik_analiz_sheet(
                     else:
                         cell.alignment = _RIGHT
                         cell.number_format = num_fmt
-                        if j == 4 and d != 0:  # Fark sütunu — renkli
+                        if j == 5 and d != 0:  # Fark sütunu — renkli
                             cell.font = Font(
                                 bold=True,
                                 color="047857" if d > 0 else "BE123C",
