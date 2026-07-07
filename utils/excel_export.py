@@ -3463,13 +3463,18 @@ def build_week_excel(
     # bölümünde tutuyor.
     _build_ozet_charts_sheet(wb, all_weeks_rows or [], manual_aggs or [])
 
-    # Analiz sayfasını 0. sıraya taşı (create_sheet ordinal 0 vermek
-    # her zaman çalışmıyor).
+    # Analiz sayfasını 0. sıraya, Ana Data Sayfası'nı 1. sıraya taşı.
+    # create_sheet ordinal 0 vermek her zaman çalışmıyor, o yüzden
+    # move_sheet ile sonradan diziyoruz.
     if "Haftalık Analiz Özeti" in wb.sheetnames:
         idx = wb.sheetnames.index("Haftalık Analiz Özeti")
         if idx != 0:
             wb.move_sheet("Haftalık Analiz Özeti", offset=-idx)
         wb.active = 0
+    if "Ana Data Sayfası" in wb.sheetnames:
+        idx = wb.sheetnames.index("Ana Data Sayfası")
+        if idx != 1:
+            wb.move_sheet("Ana Data Sayfası", offset=1 - idx)
 
     # Klavuz çizgilerini kapat — workbook bittiğinde dosya bir rapor
     # gibi görünsün, ham tablo gibi değil. (View > Gridlines'ın isteğe
