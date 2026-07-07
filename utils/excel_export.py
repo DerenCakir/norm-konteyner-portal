@@ -3268,19 +3268,50 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
         ws["A1"].font = Font(italic=True, color="64748B")
         return
 
-    headers = ["Üretim Yeri"] + [_short_week(w) for w in weeks] + ["Toplam"]
+    # Son sütun: son haftanın önceki 3 haftanın ortalamasına göre
+    # farkı. Örn. W28 sayımında W25/W26/W27 ortalamasıyla
+    # karşılaştırılıyor. Yeterli hafta yoksa (< 2) sütunu atlıyoruz.
+    latest_wk = weeks[-1]
+    prev_weeks = weeks[-4:-1] if len(weeks) >= 4 else weeks[:-1]
+    show_delta_col = bool(prev_weeks)
+
+    if show_delta_col:
+        delta_label = (
+            f"{_short_week(latest_wk)} − "
+            f"{_short_week(prev_weeks[0])}…{_short_week(prev_weeks[-1])} Ort."
+        )
+        headers = (
+            ["Üretim Yeri"]
+            + [_short_week(w) for w in weeks]
+            + [delta_label]
+        )
+    else:
+        headers = ["Üretim Yeri"] + [_short_week(w) for w in weeks]
     ws.append(headers)
-    _style_header_row(ws, len(headers))
+    _style_header_row(
+        ws, len(headers),
+        wrap_text=True, row_height=(42 if show_delta_col else 26),
+    )
 
     for idx, site in enumerate(all_sites, start=2):
         row_vals: list[Any] = [site]
-        site_total = 0.0
+        latest_ton = 0.0
+        prev_tons: list[float] = []
         for w in weeks:
             sd = weekly_site.get(w, {}).get(site)
             ton_v = float(sd.get("tonnage", 0.0)) if sd else 0.0
             row_vals.append(ton_v if ton_v else None)
-            site_total += ton_v
-        row_vals.append(site_total if site_total else None)
+            if w == latest_wk:
+                latest_ton = ton_v
+            if w in prev_weeks:
+                prev_tons.append(ton_v)
+
+        delta_val: float | None = None
+        if show_delta_col and prev_tons:
+            prev_avg = sum(prev_tons) / len(prev_tons)
+            delta_val = latest_ton - prev_avg
+            row_vals.append(delta_val)
+
         ws.append(row_vals)
 
         zebra = _ZEBRA_FILL if idx % 2 == 0 else None
@@ -3294,19 +3325,37 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
             else:
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
+                # Delta sütunu: pozitif yeşil, negatif kırmızı,
+                # imzalı format (Excel'in beğendiği quote'lu form).
+                if show_delta_col and col_idx == len(row_vals) \
+                        and delta_val is not None and delta_val != 0:
+                    cell.number_format = "\"+\"#,##0;\"-\"#,##0"
+                    cell.font = Font(
+                        bold=True,
+                        color="047857" if delta_val > 0 else "BE123C",
+                    )
 
-    # TOPLAM satırı — haftalık toplam + genel toplam.
+    # TOPLAM satırı — haftalık toplam + toplu delta.
     total_row_idx = ws.max_row + 1
     total_vals: list[Any] = ["TOPLAM"]
-    grand_total = 0.0
+    latest_total = 0.0
+    prev_totals: list[float] = []
     for w in weeks:
         week_total = sum(
             float(weekly_site.get(w, {}).get(s, {}).get("tonnage", 0.0) or 0)
             for s in all_sites
         )
         total_vals.append(week_total if week_total else None)
-        grand_total += week_total
-    total_vals.append(grand_total if grand_total else None)
+        if w == latest_wk:
+            latest_total = week_total
+        if w in prev_weeks:
+            prev_totals.append(week_total)
+
+    tot_delta: float | None = None
+    if show_delta_col and prev_totals:
+        tot_delta = latest_total - sum(prev_totals) / len(prev_totals)
+        total_vals.append(tot_delta)
+
     ws.append(total_vals)
 
     for col_idx in range(1, len(total_vals) + 1):
@@ -3319,13 +3368,23 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
         else:
             cell.alignment = _RIGHT
             cell.number_format = "#,##0"
+            if show_delta_col and col_idx == len(total_vals) \
+                    and tot_delta is not None and tot_delta != 0:
+                cell.number_format = "\"+\"#,##0;\"-\"#,##0"
+                cell.font = Font(
+                    bold=True,
+                    color="047857" if tot_delta > 0 else "BE123C",
+                )
 
     ws.freeze_panes = "B2"
     _autofit(ws, headers)
     ws.column_dimensions["A"].width = 22
-    n_cols = 1 + len(weeks) + 1
+    n_cols = len(headers)
     for c in range(2, n_cols + 1):
         ws.column_dimensions[get_column_letter(c)].width = 9
+    # Delta sütunu daha geniş — başlığı uzun.
+    if show_delta_col:
+        ws.column_dimensions[get_column_letter(n_cols)].width = 14
 
 
 # ---------------------------------------------------------------------------
