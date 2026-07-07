@@ -1821,6 +1821,9 @@ def _build_ozet_charts_sheet(
     _clean_axis(chart_empty_trend.x_axis)
     _clean_axis(chart_empty_trend.y_axis)
     chart_empty_trend.y_axis.numFmt = "[$-tr-TR]#,##0"
+    # Y ekseni sıfırdan başlasın — auto scale bazen negatif padding
+    # ekleyip veri 0 iken çizgiyi eksiye düşüyormuş gibi gösteriyor.
+    chart_empty_trend.y_axis.scaling.min = 0
     chart_empty_trend.dataLabels = _value_only_labels(
         "t", "[$-tr-TR]#,##0",
         txPr=_bold_large_label_props(size_pt=12, color="0F172A"),
@@ -1882,6 +1885,7 @@ def _build_ozet_charts_sheet(
     _clean_axis(chart_full_trend.x_axis)
     _clean_axis(chart_full_trend.y_axis)
     chart_full_trend.y_axis.numFmt = "[$-tr-TR]#,##0"
+    chart_full_trend.y_axis.scaling.min = 0
     chart_full_trend.dataLabels = _value_only_labels(
         "t", "[$-tr-TR]#,##0",
         txPr=_bold_large_label_props(size_pt=12, color="0F172A"),
@@ -1943,6 +1947,7 @@ def _build_ozet_charts_sheet(
     _clean_axis(chart_wtonnage_trend.x_axis)
     _clean_axis(chart_wtonnage_trend.y_axis)
     chart_wtonnage_trend.y_axis.numFmt = "[$-tr-TR]#,##0"
+    chart_wtonnage_trend.y_axis.scaling.min = 0
     chart_wtonnage_trend.dataLabels = _value_only_labels(
         "t", "[$-tr-TR]#,##0",
         txPr=_bold_large_label_props(size_pt=12, color="0F172A"),
