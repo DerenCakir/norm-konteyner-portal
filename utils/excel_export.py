@@ -2879,6 +2879,101 @@ def _build_dolu_yuk_ozeti_sheet(
         ws.column_dimensions[get_column_letter(c)].width = 8
 
 
+def _build_yari_mamul_tonaj_ozeti_sheet(
+    wb: Workbook,
+    all_rows: list[dict[str, Any]],
+    manual_aggs: list[dict[str, Any]] | None = None,
+) -> None:
+    """Per-site weekly yarı mamul (ham) tonaj matrisi.
+
+    Dolu Yük Özeti ile aynı yapı ama hücreler ``ton/dolu`` oranı
+    değil ham gerçekleşen tonaj toplamı. Satırlar üretim yerleri,
+    sütunlar haftalar kronolojik. Son sütun tesis toplamı; alt
+    satır haftalık toplam + genel toplam.
+    """
+    ws = wb.create_sheet("Yarı Mamul Tonajı Özeti")
+
+    if not all_rows and not manual_aggs:
+        ws["A1"] = "Henüz veri yok."
+        ws["A1"].font = Font(italic=True, color="64748B")
+        return
+
+    _, weekly_site, _, _, manual_only_weeks = _aggregate_all_weeks(
+        all_rows, manual_aggs,
+    )
+    weeks = sorted(
+        w for w in weekly_site.keys() if w not in manual_only_weeks
+    )
+    all_sites = sorted(
+        {s for sd in weekly_site.values() for s in sd.keys()},
+        key=_site_sort_key,
+    )
+
+    if not weeks or not all_sites:
+        ws["A1"] = "Henüz tonajlı sayım verisi yok."
+        ws["A1"].font = Font(italic=True, color="64748B")
+        return
+
+    headers = ["Üretim Yeri"] + [_short_week(w) for w in weeks] + ["Toplam"]
+    ws.append(headers)
+    _style_header_row(ws, len(headers))
+
+    for idx, site in enumerate(all_sites, start=2):
+        row_vals: list[Any] = [site]
+        site_total = 0.0
+        for w in weeks:
+            sd = weekly_site.get(w, {}).get(site)
+            ton_v = float(sd.get("tonnage", 0.0)) if sd else 0.0
+            row_vals.append(ton_v if ton_v else None)
+            site_total += ton_v
+        row_vals.append(site_total if site_total else None)
+        ws.append(row_vals)
+
+        zebra = _ZEBRA_FILL if idx % 2 == 0 else None
+        for col_idx in range(1, len(row_vals) + 1):
+            cell = ws.cell(row=idx, column=col_idx)
+            cell.border = _BORDER
+            if zebra:
+                cell.fill = zebra
+            if col_idx == 1:
+                cell.alignment = _LEFT
+            else:
+                cell.alignment = _RIGHT
+                cell.number_format = "#,##0"
+
+    # TOPLAM satırı — haftalık toplam + genel toplam.
+    total_row_idx = ws.max_row + 1
+    total_vals: list[Any] = ["TOPLAM"]
+    grand_total = 0.0
+    for w in weeks:
+        week_total = sum(
+            float(weekly_site.get(w, {}).get(s, {}).get("tonnage", 0.0) or 0)
+            for s in all_sites
+        )
+        total_vals.append(week_total if week_total else None)
+        grand_total += week_total
+    total_vals.append(grand_total if grand_total else None)
+    ws.append(total_vals)
+
+    for col_idx in range(1, len(total_vals) + 1):
+        cell = ws.cell(row=total_row_idx, column=col_idx)
+        cell.fill = _TOTAL_FILL
+        cell.font = _TOTAL_FONT
+        cell.border = _BORDER
+        if col_idx == 1:
+            cell.alignment = _RIGHT
+        else:
+            cell.alignment = _RIGHT
+            cell.number_format = "#,##0"
+
+    ws.freeze_panes = "B2"
+    _autofit(ws, headers)
+    ws.column_dimensions["A"].width = 22
+    n_cols = 1 + len(weeks) + 1
+    for c in range(2, n_cols + 1):
+        ws.column_dimensions[get_column_letter(c)].width = 9
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -2920,6 +3015,9 @@ def build_week_excel(
     _build_uretim_yeri_ozeti_sheet(wb, dept_aggs)
     _build_renk_ozeti_sheet(wb, rows)
     _build_dolu_yuk_ozeti_sheet(wb, all_weeks_rows or [], manual_aggs or [])
+    _build_yari_mamul_tonaj_ozeti_sheet(
+        wb, all_weeks_rows or [], manual_aggs or [],
+    )
     _build_uretim_yeri_karsilastirma_sheet(
         wb, all_weeks_rows or [], manual_aggs or []
     )
