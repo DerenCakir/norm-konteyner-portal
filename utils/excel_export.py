@@ -1079,18 +1079,22 @@ def _white_bold_label_props() -> RichText:
 
 def _bold_large_label_props(
     size_pt: int = 11, color: str | None = None,
+    rot: int = 0,
 ) -> RichText:
     """Text properties for the Toplam overlay label — bold and slightly
     bigger than the body so the total reads as the headline number for
     each cluster / stack. ``color`` (hex without #) forces explicit text
-    color; varsayılan Excel auto-renk."""
+    color; varsayılan Excel auto-renk. ``rot`` OOXML rotasyon
+    biriminde (60000ths of a degree); -5400000 = -90° (yazı aşağıdan
+    yukarı okunur), dar bar chart'larda etiket sığmama sorununu
+    çözer."""
     kwargs: dict[str, Any] = {"b": True, "sz": size_pt * 100}
     if color:
         kwargs["solidFill"] = color
     char_props = CharacterProperties(**kwargs)
     para_props = ParagraphProperties(defRPr=char_props)
     return RichText(
-        bodyPr=RichTextProperties(rot=0, vert="horz"),
+        bodyPr=RichTextProperties(rot=rot, vert="horz"),
         p=[Paragraph(pPr=para_props)],
     )
 
@@ -2292,8 +2296,13 @@ def _build_ozet_charts_sheet(
     _clean_axis(chart5f.y_axis)
     chart5f.y_axis.numFmt = "[$-tr-TR]#,##0"
     chart5f.y_axis.scaling.min = 0
+    # 11 tesis × 3 hafta = 33 bar; outEnd konumunda yatay
+    # etiketler üst üste biniyor. -5400000 (yazı 90° saat yönünün
+    # tersine, aşağıdan yukarı okunur) + 8pt ile her etiket kendi
+    # bar'ı boyunca yerleşiyor, çakışma yok.
     chart5f.dataLabels = _value_only_labels(
-        "outEnd", txPr=_bold_large_label_props(size_pt=10),
+        "outEnd",
+        txPr=_bold_large_label_props(size_pt=8, rot=-5400000),
     )
     chart5f.legend.position = "b"
     chart5f.legend.overlay = False
