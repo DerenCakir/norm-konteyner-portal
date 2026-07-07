@@ -2707,7 +2707,6 @@ def _build_ana_data_sheet(
         "Üretim Yeri", "Bölüm", "Renk",
         "Boş", "Proseste", "Dolu", "Kanban", "Hurdaya Ayrılacak",
         "Toplam Konteyner",
-        "Gerçekleşen Tonaj (t)",
         "Durum", "Giren Kullanıcı",
         "Sayım Tarihi", "Sayım Saati", "Gönderim Zamanı",
     ]
@@ -2737,7 +2736,7 @@ def _build_ana_data_sheet(
             row.get("Renk", ""),
             row.get("Boş"), row.get("Proseste"),
             row.get("Dolu"), row.get("Kanban"), row.get("Hurda"),
-            bdh_v, row.get("Gerçekleşen Tonaj"),
+            bdh_v,
             _STATUS_LABEL.get(row.get("Durum"), row.get("Durum", "")),
             row.get("Giren Kullanıcı", ""),
             row.get("Sayım Tarihi", ""), row.get("Sayım Saati", ""),
@@ -2750,11 +2749,11 @@ def _build_ana_data_sheet(
             cell.border = _BORDER
             if fill:
                 cell.fill = fill
-            # 8=Boş, 9=WIP, 10=Dolu, 11=Kanban, 12=Hurda, 13=Toplam, 14=Tonaj
-            if col_idx in (8, 9, 10, 11, 12, 13, 14):
+            # 8=Boş, 9=WIP, 10=Dolu, 11=Kanban, 12=Hurda, 13=Toplam
+            if col_idx in (8, 9, 10, 11, 12, 13):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 15:  # Durum
+            elif col_idx == 14:  # Durum
                 cell.alignment = _CENTER
                 if is_late:
                     cell.font = Font(bold=True, color="92400E")
