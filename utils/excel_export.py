@@ -43,6 +43,7 @@ from openpyxl.drawing.text import (
 )
 from openpyxl.styles import Alignment, Font, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.hyperlink import Hyperlink
 
 from utils.week import now_tr
 
@@ -314,13 +315,14 @@ def _kpi_card_excel(
     sub_cell.fill = PatternFill("solid", fgColor="FFFFFF")
     ws.row_dimensions[row + 2].height = 16
 
-    # Outer border on every cell of the card (top/bottom/sides only on
-    # the outermost edges). Simpler: thin border on all card cells.
+    # Border sadece merged 3 satırın top-left hücrelerinde — daha
+    # önce iç hücrelere ws.cell() ile dokunuyorduk, bu 'empty numeric
+    # cells inside merged range' üretip Excel'i sorunlu buluyordu.
     thin = Side(style="thin", color="CBD5E1")
     box = Border(left=thin, right=thin, top=thin, bottom=thin)
-    for r in range(row, row + 3):
-        for c in range(col, end_col + 1):
-            ws.cell(row=r, column=c).border = box
+    label_cell.border = box
+    value_cell.border = box
+    sub_cell.border = box
 
 
 def _link_button_excel(
@@ -354,16 +356,22 @@ def _link_button_excel(
     cell.alignment = Alignment(
         horizontal="center", vertical="center", wrap_text=True,
     )
-    cell.hyperlink = f"#'{target_sheet}'!{target_cell}"
+    # openpyxl: string form '#Sheet!A1' TargetMode='External' üretiyor,
+    # Excel bunu sorunlu iç link olarak görüp dosya açılırken uyarı
+    # veriyor. Hyperlink objesi location= ile TargetMode boş kalıyor
+    # (internal), Excel temiz açıyor.
+    cell.hyperlink = Hyperlink(
+        ref=cell.coordinate,
+        location=f"'{target_sheet}'!{target_cell}",
+        display=label,
+    )
 
+    # Sadece top-left hücresine border — merged range içindeki iç
+    # hücrelere ws.cell() ile dokunmak Excel'in beğenmediği 'empty
+    # numeric cells inside merged range' üretiyordu. Merged cell fill
+    # zaten top-left'ten türetiliyor.
     thin = Side(style="thin", color="64748B")
-    box = Border(left=thin, right=thin, top=thin, bottom=thin)
-    for r in range(row, end_row + 1):
-        for c in range(col, end_col + 1):
-            cc = ws.cell(row=r, column=c)
-            cc.border = box
-            if cc is not cell:
-                cc.fill = PatternFill("solid", fgColor="94A3B8")
+    cell.border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
 
 def _fmt_int_tr(n) -> str:
@@ -2333,7 +2341,11 @@ def _build_ozet_charts_sheet(
             back = ws.cell(
                 row=block_row + 1, column=1, value="◀ Üst kısma dön",
             )
-            back.hyperlink = "#'Grafikler'!A1"
+            back.hyperlink = Hyperlink(
+                ref=back.coordinate,
+                location="'Grafikler'!A1",
+                display="◀ Üst kısma dön",
+            )
             back.font = Font(
                 bold=True, color="1F3A8A", size=11, underline="single",
             )
@@ -3005,15 +3017,220 @@ def _build_dolu_yuk_ozeti_sheet(
             cell.alignment = _RIGHT
             cell.number_format = "0.00"
 
-    ws.freeze_panes = "B2"
+    # freeze_panes kaldırıldı (hem 'B2' hem _style_header_row'un
+    # verdiği 'A2') — altta çizilen grafiklerin görüntü alanını
+    # bozuyordu.
+    ws.freeze_panes = None
     _autofit(ws, headers)
-    # Sütunları birbirine yaklaştır — değerler 'X.XX' (4 karakter)
-    # şeklinde, başlıklar 'W18' / 'Ortalama' gibi kısa; autofit'in
-    # default genişliği gereksiz boş bırakıyor.
     ws.column_dimensions["A"].width = 22
     n_cols = 1 + len(weeks) + 1
     for c in range(2, n_cols + 1):
         ws.column_dimensions[get_column_letter(c)].width = 8
+
+    # ================================================================
+    # Grafik alanı — tablonun altında haftalık ham tonaj görselleştirmesi.
+    # Ana grafik: haftalık toplam ham tonaj. Yanında üretim yeri
+    # butonları; tıklanınca ilgili tesisin per-tesis bloğuna atlıyor.
+    # Per-tesis blokları ana grafiğin altında dikey stack.
+    # ================================================================
+    n_weeks = len(weeks)
+    n_sites = len(all_sites)
+
+    # Bölüm başlığı
+    sec_row = total_row_idx + 3
+    ws.merge_cells(
+        start_row=sec_row, start_column=1,
+        end_row=sec_row, end_column=n_cols,
+    )
+    sec = ws.cell(
+        row=sec_row, column=1,
+        value="Haftalık Yarı Mamul Tonajı Görselleştirmesi",
+    )
+    sec.font = Font(bold=True, size=13, color="1F3A8A")
+    sec.fill = PatternFill("solid", fgColor="E2E8F0")
+    sec.alignment = Alignment(
+        horizontal="left", vertical="center", indent=1,
+    )
+    ws.row_dimensions[sec_row].height = 24
+
+    # Gizli veri alanı — chart Reference'ları için sağda kolonlar.
+    hidden_col_weeks = 40
+    hidden_col_total = 41
+    ws.cell(row=1, column=hidden_col_weeks, value="Hafta")
+    ws.cell(row=1, column=hidden_col_total, value="Toplam Tonaj")
+    for i, s in enumerate(all_sites):
+        ws.cell(row=1, column=42 + i, value=s)
+
+    for k, w in enumerate(weeks):
+        ws.cell(row=2 + k, column=hidden_col_weeks, value=_short_week(w))
+        total_ton = sum(
+            float(
+                weekly_site.get(w, {}).get(s, {}).get("tonnage", 0.0) or 0
+            )
+            for s in all_sites
+        )
+        c_tot = ws.cell(
+            row=2 + k, column=hidden_col_total, value=total_ton,
+        )
+        c_tot.number_format = "#,##0"
+        for i, s in enumerate(all_sites):
+            val = float(
+                weekly_site.get(w, {}).get(s, {}).get("tonnage", 0.0) or 0
+            )
+            cell = ws.cell(row=2 + k, column=42 + i, value=val)
+            cell.number_format = "#,##0"
+    hidden_last_row = 1 + n_weeks
+
+    main_chart_anchor = sec_row + 2
+    per_site_block_rows = 20  # banner(1) + back(1) + chart ~16 + gap 2
+    per_site_start_row = main_chart_anchor + 22
+    site_anchors_local: dict[str, int] = {
+        s: per_site_start_row + i * per_site_block_rows
+        for i, s in enumerate(all_sites)
+    }
+
+    # Ana grafik — mavi BarChart, gapWidth=30, y-axis title yok.
+    main_chart = BarChart()
+    main_chart.type = "col"
+    main_chart.style = 2
+    main_chart.title = _make_chart_title(
+        "Haftalık Toplam Yarı Mamul Tonajı (Tüm Tesisler)"
+    )
+    main_chart.x_axis.title = _end_x_axis_title("Hafta")
+    if weeks:
+        main_chart.add_data(
+            Reference(
+                ws, min_col=hidden_col_total, min_row=1,
+                max_col=hidden_col_total, max_row=hidden_last_row,
+            ),
+            titles_from_data=True,
+        )
+        main_chart.set_categories(
+            Reference(
+                ws, min_col=hidden_col_weeks, min_row=2,
+                max_row=hidden_last_row,
+            )
+        )
+    _clean_axis(main_chart.x_axis)
+    _clean_axis(main_chart.y_axis)
+    main_chart.y_axis.numFmt = "#,##0"
+    main_chart.y_axis.scaling.min = 0
+    main_chart.gapWidth = 30
+    for series in main_chart.series:
+        gp = GraphicalProperties(solidFill="1F3A8A")
+        series.graphicalProperties = gp
+    main_chart.dataLabels = _value_only_labels(
+        "t", "#,##0",
+        txPr=_bold_large_label_props(size_pt=10, color="0F172A"),
+    )
+    main_chart.legend = None
+    main_chart.height = 10
+    main_chart.width = 22
+    _apply_chart_frame(main_chart)
+    ws.add_chart(main_chart, f"A{main_chart_anchor}")
+
+    # Yandaki üretim yeri butonları — target_cell offset ile (site
+    # anchor - 3) blok banner + back link + chart hepsi birden
+    # görünüyor scroll edince.
+    btn_col = 16
+    btn_h = 2
+    chart_span_rows = 20
+    total_btn_h = n_sites * btn_h
+    start_offset = max(0, (chart_span_rows - total_btn_h) // 2)
+    for i, s in enumerate(all_sites):
+        target_row = max(1, site_anchors_local[s] - 3)
+        _link_button_excel(
+            ws,
+            row=main_chart_anchor + start_offset + i * btn_h,
+            col=btn_col, width=4, height=btn_h,
+            label=s,
+            target_sheet="Dolu Konteyner Başına Yük Özeti",
+            target_cell=f"A{target_row}",
+            font_size=10,
+        )
+
+    # Per-tesis blokları — banner + back link + BarChart.
+    for i, s in enumerate(all_sites):
+        blk = site_anchors_local[s]
+
+        ws.merge_cells(
+            start_row=blk, start_column=1, end_row=blk, end_column=n_cols,
+        )
+        b = ws.cell(
+            row=blk, column=1,
+            value=f"{s} — Haftalık Yarı Mamul Tonajı",
+        )
+        b.font = Font(bold=True, size=12, color="FFFFFF")
+        b.fill = PatternFill("solid", fgColor="1F3A8A")
+        b.alignment = Alignment(
+            horizontal="left", vertical="center", indent=1,
+        )
+        ws.row_dimensions[blk].height = 24
+
+        bk = ws.cell(
+            row=blk + 1, column=1, value="◀ Ana grafiğe dön",
+        )
+        back_target = max(1, main_chart_anchor - 3)
+        # Hyperlink objesi ile — string form TargetMode='External'
+        # üretip Excel'i bozuyordu.
+        bk.hyperlink = Hyperlink(
+            ref=bk.coordinate,
+            location=f"'Dolu Konteyner Başına Yük Özeti'!A{back_target}",
+            display="◀ Ana grafiğe dön",
+        )
+        bk.font = Font(
+            bold=True, color="1F3A8A", size=10, underline="single",
+        )
+        bk.alignment = Alignment(horizontal="left", vertical="center")
+
+        # Per-tesis mavi BarChart
+        site_col = 42 + i
+        ch = BarChart()
+        ch.type = "col"
+        ch.style = 2
+        ch.title = _make_chart_title(f"{s} — Haftalık Yarı Mamul Tonajı")
+        ch.x_axis.title = _end_x_axis_title("Hafta")
+        if weeks:
+            ch.add_data(
+                Reference(
+                    ws, min_col=site_col, min_row=1,
+                    max_col=site_col, max_row=hidden_last_row,
+                ),
+                titles_from_data=True,
+            )
+            ch.set_categories(
+                Reference(
+                    ws, min_col=hidden_col_weeks, min_row=2,
+                    max_row=hidden_last_row,
+                )
+            )
+        _clean_axis(ch.x_axis)
+        _clean_axis(ch.y_axis)
+        ch.y_axis.numFmt = "#,##0"
+        ch.y_axis.scaling.min = 0
+        # Dar bant değerlerde tick label tekrarını engellemek için
+        # scaling.max manuel.
+        site_vals = [
+            float(
+                weekly_site.get(w, {}).get(s, {}).get("tonnage", 0.0) or 0
+            )
+            for w in weeks
+        ]
+        max_v = max(site_vals) if site_vals else 0
+        ch.y_axis.scaling.max = max_v * 1.2 if max_v > 0 else 5
+        ch.gapWidth = 30
+        for series in ch.series:
+            gp = GraphicalProperties(solidFill="1F3A8A")
+            series.graphicalProperties = gp
+        ch.dataLabels = _value_only_labels(
+            "t", "#,##0",
+            txPr=_bold_large_label_props(size_pt=9, color="0F172A"),
+        )
+        ch.legend = None
+        ch.height = 8
+        ch.width = 22
+        _apply_chart_frame(ch)
+        ws.add_chart(ch, f"A{blk + 2}")
 
 
 def _build_yari_mamul_tonaj_ozeti_sheet(
