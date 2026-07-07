@@ -3551,18 +3551,28 @@ def _fix_sheet_selection(content: bytes) -> bytes:
 
 
 def _fix_chart_numfmt(content: bytes) -> bytes:
-    """Chart XML'de <numFmt formatCode="..."/> etiketine
-    sourceLinked="0" eksikse ekliyor. openpyxl bazı numFmt'lerde
-    bunu unutuyor, Excel değeri source'tan almaya çalışıyor ve
-    hata veriyor."""
+    """Chart XML fix'leri:
+
+    1) <numFmt formatCode="..."/> → sourceLinked="0" ekleniyor.
+       openpyxl bazı numFmt'lerde bunu unutuyor, Excel değeri
+       source'tan almaya çalışıp hata veriyor.
+
+    2) Boş <a:r><a:t/></a:r> ve <a:r><a:t /></a:r> blokları
+       kaldırılıyor. openpyxl'in dLbls txPr'ında ürettiği bu
+       boş run element'ler Excel'in schema validation'ını
+       geçemiyor ve dosyayı reddediyor.
+    """
     import re as _re
     text = content.decode("utf-8")
-    fixed = _re.sub(
+    # 1) numFmt sourceLinked
+    text = _re.sub(
         r'<numFmt formatCode="([^"]+)"\s*/>',
         r'<numFmt formatCode="\1" sourceLinked="0"/>',
         text,
     )
-    return fixed.encode("utf-8")
+    # 2) Boş text run'lar: <a:r><a:t/></a:r> veya <a:r><a:t /></a:r>
+    text = _re.sub(r'<a:r>\s*<a:t\s*/>\s*</a:r>', '', text)
+    return text.encode("utf-8")
 
 
 def _fix_drawing_xml(content: bytes) -> bytes:
