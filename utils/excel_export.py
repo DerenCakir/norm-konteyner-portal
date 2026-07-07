@@ -1296,7 +1296,7 @@ def _build_ozet_charts_sheet(
     # mini chart bandı (~16) + gap
     _dept_subblock_rows = max(_n_weeks + 5, 20)
     _dept_band_rows = 2  # sadece section label + boşluk
-    detail_section_header_row = 251
+    detail_section_header_row = 282
     detail_blocks_start_row = detail_section_header_row + 2
 
     site_anchors: dict[str, int] = {}
@@ -2027,14 +2027,14 @@ def _build_ozet_charts_sheet(
         _hide_overlay_from_legend(chart4, chart4_total_line)
 
     # Section divider before the color breakdown chart.
-    ws.merge_cells("A214:X214")
-    sec4 = ws["A214"]
+    ws.merge_cells("A245:X245")
+    sec4 = ws["A245"]
     sec4.value = "Renk Dağılımı"
     sec4.font = Font(bold=True, size=13, color="1F3A8A")
     sec4.fill = PatternFill("solid", fgColor="E2E8F0")
     sec4.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.row_dimensions[214].height = 24
-    chart4_anchor_row = 215
+    ws.row_dimensions[245].height = 24
+    chart4_anchor_row = 246
     ws.add_chart(chart4, f"A{chart4_anchor_row}")
 
     # Side KPI panel for chart 4 — color totals across all sites in
@@ -2169,6 +2169,64 @@ def _build_ozet_charts_sheet(
                 target_cell=f"A{site_anchors[site]}",
                 font_size=10,
             )
+
+    # ================================================================
+    # Chart 5B — Tesis Bazlı Dolu Konteyner (Son 3 Hafta)
+    #   Chart 5'in dolu ikizi — aynı yapı, farklı metrik.
+    # ================================================================
+    t5f_col = 51  # chart_tsite (45-48) alanının uzağı
+    data_ws.cell(row=1, column=t5f_col, value="Üretim Yeri")
+    for j, w in enumerate(last_3_weeks):
+        data_ws.cell(
+            row=1, column=t5f_col + 1 + j, value=_short_week(w),
+        )
+    for i, site in enumerate(all_sites):
+        data_ws.cell(row=2 + i, column=t5f_col, value=site)
+        for j, w in enumerate(last_3_weeks):
+            sd = weekly_site.get(w, {}).get(site)
+            full_v = int(sd.get("full", 0)) if sd else 0
+            cell = data_ws.cell(
+                row=2 + i, column=t5f_col + 1 + j, value=full_v,
+            )
+            cell.number_format = "[$-tr-TR]#,##0"
+    t5f_last = 1 + len(all_sites)
+
+    chart5f = BarChart()
+    chart5f.type = "col"
+    chart5f.style = 2
+    chart5f.grouping = "clustered"
+    chart5f.title = _make_chart_title(
+        "Tesis Bazlı Dolu Konteyner (Son 3 Hafta)"
+    )
+    chart5f.y_axis.title = _horizontal_axis_title("Dolu Konteyner Adedi")
+    chart5f.x_axis.title = _end_x_axis_title("Üretim Yeri")
+    if last_3_weeks and all_sites:
+        chart5f.add_data(
+            Reference(
+                data_ws,
+                min_col=t5f_col + 1, min_row=1,
+                max_col=t5f_col + len(last_3_weeks), max_row=t5f_last,
+            ),
+            titles_from_data=True,
+        )
+        chart5f.set_categories(
+            Reference(
+                data_ws, min_col=t5f_col, min_row=2, max_row=t5f_last,
+            )
+        )
+    _clean_axis(chart5f.x_axis)
+    _clean_axis(chart5f.y_axis)
+    chart5f.y_axis.numFmt = "[$-tr-TR]#,##0"
+    chart5f.dataLabels = _value_only_labels(
+        "outEnd", txPr=_bold_large_label_props(size_pt=10),
+    )
+    chart5f.legend.position = "b"
+    chart5f.legend.overlay = False
+    chart5f.height = 14
+    chart5f.width = 38
+    _apply_chart_frame(chart5f)
+    chart5f_anchor_row = 214
+    ws.add_chart(chart5f, f"A{chart5f_anchor_row}")
 
     # ================================================================
     # Tesis Detayı — per-site weekly trend blocks (chart 3 ve chart 5
