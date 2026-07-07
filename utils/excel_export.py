@@ -3497,7 +3497,67 @@ def build_week_excel(
 
     buf = BytesIO()
     wb.save(buf)
-    return buf.getvalue()
+    return _postprocess_xlsx(buf.getvalue())
+
+
+def _postprocess_xlsx(data: bytes) -> bytes:
+    """openpyxl bug workaround'ları — dosya kaydedildikten sonra
+    üretilmiş XML'lerin Excel'in reddetmediği hale gelmesi için
+    post-processing.
+
+    1) Her graphicFrame içindeki boş ``<xfrm />`` bloğu Excel'in
+       drawing'i tümüyle silmesine yol açıyor. Doğrusu:
+         ``<xfrm><a:off x="0" y="0"/><a:ext cx="X" cy="Y"/></xfrm>``
+       ext değerleri parent oneCellAnchor'ın ``<ext>`` ile aynı.
+    """
+    import zipfile as _zip
+    import re as _re
+    from io import BytesIO as _BytesIO
+
+    src = _zip.ZipFile(_BytesIO(data))
+    out_buf = _BytesIO()
+    dst = _zip.ZipFile(out_buf, "w", _zip.ZIP_DEFLATED)
+    try:
+        for item in src.infolist():
+            content = src.read(item.filename)
+            if item.filename.startswith("xl/drawings/drawing") and \
+                    item.filename.endswith(".xml"):
+                content = _fix_drawing_xml(content)
+            dst.writestr(item, content)
+    finally:
+        dst.close()
+        src.close()
+    return out_buf.getvalue()
+
+
+def _fix_drawing_xml(content: bytes) -> bytes:
+    """Drawing XML'inde her ``<oneCellAnchor>`` içindeki boş
+    ``<xfrm />`` bloğunu, anchor'ın ``<ext cx cy>`` değerleriyle
+    dolduran doğru ``<xfrm>`` bloğuyla değiştirir.
+    """
+    import re as _re
+    text = content.decode("utf-8")
+    # Her oneCellAnchor içindeki (ext, graphicFrame > xfrm) çifti
+    # düzeltiliyor. Regex non-greedy her anchor'ı ayrı yakalıyor.
+    pattern = _re.compile(
+        r'(<oneCellAnchor>.*?<ext\s+cx="(\d+)"\s+cy="(\d+)"\s*/>.*?<graphicFrame[^>]*>.*?)'
+        r'<xfrm\s*/>',
+        _re.DOTALL,
+    )
+
+    def _repl(m: "_re.Match[str]") -> str:
+        prefix = m.group(1)
+        cx = m.group(2)
+        cy = m.group(3)
+        return (
+            f'{prefix}<xfrm>'
+            f'<a:off x="0" y="0"/>'
+            f'<a:ext cx="{cx}" cy="{cy}"/>'
+            f'</xfrm>'
+        )
+
+    fixed = pattern.sub(_repl, text)
+    return fixed.encode("utf-8")
 
 
 def build_all_weeks_excel(rows: list[dict[str, Any]]) -> bytes:
