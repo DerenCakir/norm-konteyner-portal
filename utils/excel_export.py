@@ -3575,17 +3575,28 @@ def _fix_chart_numfmt(content: bytes) -> bytes:
     #    yakalanıyor (\s* sıfırı da yakalar ama Regex greedy'liği
     #    için tek pattern iki varyantı da alır).
     text = _re.sub(r'<a:r>\s*<a:t\s*/>\s*</a:r>', '', text)
-    # 3) barChart bloğu içindeki dLblPos val="t" → "outEnd"
+    # 3) barChart bloğu içindeki dLblPos val="t" → "outEnd".
+    #    openpyxl versiyonuna göre "<dLblPos val=\"t\"/>" veya
+    #    "<dLblPos val=\"t\" />" (boşluklu) yazabiliyor — regex
+    #    ikisini de yakalar.
     def _fix_bar_dlblpos(m: "_re.Match[str]") -> str:
         block = m.group(0)
-        return block.replace('<dLblPos val="t"/>', '<dLblPos val="outEnd"/>')
+        return _re.sub(
+            r'<dLblPos val="t"\s*/>',
+            '<dLblPos val="outEnd"/>',
+            block,
+        )
     text = _re.sub(
         r'<barChart>.*?</barChart>', _fix_bar_dlblpos, text, flags=_re.DOTALL,
     )
-    # 4) catAx içindeki axPos val="l" → "b"
+    # 4) catAx içindeki axPos val="l" → "b" (aynı boşluk sorunu)
     def _fix_catax_pos(m: "_re.Match[str]") -> str:
         block = m.group(0)
-        return block.replace('<axPos val="l"/>', '<axPos val="b"/>')
+        return _re.sub(
+            r'<axPos val="l"\s*/>',
+            '<axPos val="b"/>',
+            block,
+        )
     text = _re.sub(
         r'<catAx>.*?</catAx>', _fix_catax_pos, text, flags=_re.DOTALL,
     )
