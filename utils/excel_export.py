@@ -1201,13 +1201,6 @@ def _build_ozet_charts_sheet(
     else. Hidden-but-referenced cells continue to feed the charts.
     """
     ws = wb.create_sheet("Grafikler")
-    # Bölüm detayları Excel outline grup ile gizli render ediliyor —
-    # +/- işareti banner satırının üzerinde çıksın diye summaryBelow
-    # False olmalı.
-    if ws.sheet_properties.outlinePr is None:
-        from openpyxl.worksheet.properties import Outline
-        ws.sheet_properties.outlinePr = Outline()
-    ws.sheet_properties.outlinePr.summaryBelow = False
 
     # Title banner — same styling as Dashboard sheet's banner so the two
     # tabs read as siblings.
@@ -1249,68 +1242,18 @@ def _build_ozet_charts_sheet(
     last_3_weeks = full_weeks[-3:] if len(full_weeks) >= 3 else full_weeks[:]
     latest_week = full_weeks[-1] if full_weeks else None
 
-    # Per-site × dept weekly aggregation — dept drilldown butonları için.
-    weekly_site_dept: dict[str, dict[str, dict[str, dict[str, float]]]] = {}
-    tonnage_seen_dept: set[tuple[str, str, str]] = set()
-    for r in all_rows:
-        week = r.get("Hafta") or ""
-        site_r = r.get("Üretim Yeri") or ""
-        dept_r = r.get("Bölüm") or ""
-        if not week or not site_r or not dept_r:
-            continue
-        d = weekly_site_dept.setdefault(week, {}).setdefault(
-            site_r, {}
-        ).setdefault(dept_r, {
-            "empty": 0, "wip": 0, "full": 0,
-            "kanban": 0, "scrap": 0, "tonnage": 0.0,
-        })
-        d["empty"] += int(r.get("Boş") or 0)
-        d["wip"] += int(r.get("Proseste") or 0)
-        d["full"] += int(r.get("Dolu") or 0)
-        d["kanban"] += int(r.get("Kanban") or 0)
-        d["scrap"] += int(r.get("Hurda") or 0)
-        key_wsd = (week, site_r, dept_r)
-        if key_wsd not in tonnage_seen_dept:
-            tonnage_seen_dept.add(key_wsd)
-            try:
-                d["tonnage"] += float(r.get("Gerçekleşen Tonaj") or 0)
-            except (TypeError, ValueError):
-                pass
-
-    site_dept_map: dict[str, list[str]] = {}
-    for site in all_sites:
-        depts: set[str] = set()
-        for w in full_weeks:
-            depts.update(weekly_site_dept.get(w, {}).get(site, {}).keys())
-        site_dept_map[site] = sorted(d for d in depts if d)
-
     # Tesis Detayı bölümünün anchor satırları — chart 3 ve chart 5'in
-    # yanındaki üretim yeri butonları buraya link veriyor. Bloklar
-    # chart 4'ün altında (row 184+) render ediliyor. Her site bloğu:
-    # ana blok + varsa dept alt-blokları. Dept alt-blokları
-    # varsayılan olarak Excel outline grup (kapalı) ile gizli — her
-    # bölüm için ayrı [+] tıklanınca açılıyor.
+    # yanındaki üretim yeri butonları buraya link veriyor. Sadece
+    # tesis blokları render ediliyor (bölüm drilldown kaldırıldı).
     _n_weeks = len(full_weeks)
-    _main_block_rows = max(_n_weeks + 3, 16) + 4
-    # Dept alt-blok: banner (1) + back(1) + hdr(1) + n_weeks +
-    # mini chart bandı (~16) + gap
-    _dept_subblock_rows = max(_n_weeks + 5, 20)
-    _dept_band_rows = 2  # sadece section label + boşluk
+    _main_block_rows = max(_n_weeks + 3, 17) + 4
     detail_section_header_row = 282
     detail_blocks_start_row = detail_section_header_row + 2
 
-    site_anchors: dict[str, int] = {}
-    dept_anchors: dict[tuple[str, str], int] = {}
-    _cursor = detail_blocks_start_row
-    for site in all_sites:
-        site_anchors[site] = _cursor
-        _cursor += _main_block_rows
-        depts_here = site_dept_map.get(site, [])
-        if len(depts_here) > 1:
-            _cursor += _dept_band_rows
-            for dept in depts_here:
-                dept_anchors[(site, dept)] = _cursor
-                _cursor += _dept_subblock_rows
+    site_anchors: dict[str, int] = {
+        site: detail_blocks_start_row + i * _main_block_rows
+        for i, site in enumerate(all_sites)
+    }
 
     # Latest-week snapshot used by per-chart KPI side panels.
     if latest_week:
@@ -2365,156 +2308,6 @@ def _build_ozet_charts_sheet(
             _mini("J", "Boş Konteyner", 3, "#,##0", "BE123C")
             _mini("N", "Dolu Konteyner", 4, "#,##0", "1F3A8A")
             _mini("R", "Dolu Konteyner Tonajı", 5, "#,##0", "F59E0B")
-
-            # Bölüm drilldown — tesiste birden fazla bölüm varsa her
-            # bölüm için ayrı 'katlanabilir' sub-block. Banner satırı
-            # her zaman görünür; içerik (back link + tablo + mini
-            # grafikler) Excel outline grup ile kapalı — soldaki [+]
-            # tuşuna basınca açılıyor.
-            depts_here = site_dept_map.get(site, [])
-            if len(depts_here) > 1:
-                # 'Bölüm Detayı' ipucu etiketi — ana bloğun altında.
-                hint_row = block_row + _main_block_rows - _dept_band_rows + 1
-                lbl = ws.cell(
-                    row=hint_row, column=1,
-                    value=(
-                        "Bölüm Detayı — soldaki [+] tuşuna basarak ilgili "
-                        "bölümü açın:"
-                    ),
-                )
-                lbl.font = Font(italic=True, size=10, color="475569")
-                lbl.alignment = Alignment(horizontal="left", vertical="center")
-
-                for dept in depts_here:
-                    d_row = dept_anchors[(site, dept)]
-
-                    # Banner satırı — her zaman görünür.
-                    ws.merge_cells(
-                        start_row=d_row, start_column=1,
-                        end_row=d_row, end_column=24,
-                    )
-                    db = ws.cell(
-                        row=d_row, column=1,
-                        value=f"▸ {site} → {dept} (aç/kapat için soldaki [+])",
-                    )
-                    db.font = Font(bold=True, size=12, color="FFFFFF")
-                    db.fill = PatternFill("solid", fgColor="475569")
-                    db.alignment = Alignment(
-                        horizontal="left", vertical="center", indent=1,
-                    )
-                    ws.row_dimensions[d_row].height = 22
-
-                    # İçerik başlangıcı — outline grup ile kapalı.
-                    content_start = d_row + 1
-                    content_end = d_row + _dept_subblock_rows - 1
-
-                    # Back to site block
-                    bk = ws.cell(
-                        row=content_start, column=1,
-                        value=f"◀ {site} tesis detayına dön",
-                    )
-                    bk.hyperlink = f"#'Grafikler'!A{site_anchors[site]}"
-                    bk.font = Font(
-                        bold=True, color="1F3A8A", size=10,
-                        underline="single",
-                    )
-                    bk.alignment = Alignment(
-                        horizontal="left", vertical="center",
-                    )
-
-                    # Tablo başlığı — site bloğuyla aynı 5 sütun:
-                    # Hafta / Yarı Mamul Tonajı / Boş / Dolu / Tonaj.
-                    d_hdr = content_start + 1
-                    for j, h in enumerate(
-                        ["Hafta", "Yarı Mamul Tonajı", "Boş Konteyner",
-                         "Dolu Konteyner", "Dolu Konteyner Tonajı"],
-                        start=1,
-                    ):
-                        c = ws.cell(row=d_hdr, column=j, value=h)
-                        c.fill = _HEADER_FILL
-                        c.font = _HEADER_FONT
-                        c.alignment = wrap_center
-                        c.border = _BORDER
-                    ws.row_dimensions[d_hdr].height = 40
-
-                    # Data rows
-                    for k, w in enumerate(full_weeks):
-                        rr = d_hdr + 1 + k
-                        sd = weekly_site_dept.get(w, {}).get(
-                            site, {}).get(dept)
-                        empty_v = int(sd.get("empty", 0)) if sd else None
-                        full_v = int(sd.get("full", 0)) if sd else None
-                        ton_v = float(sd.get("tonnage", 0.0)) if sd else None
-                        c1 = ws.cell(row=rr, column=1, value=_short_week(w))
-                        c1.alignment = _LEFT
-                        c1.border = _BORDER
-                        c2 = ws.cell(row=rr, column=2, value=ton_v)
-                        c2.alignment = _RIGHT
-                        c2.number_format = "#,##0"
-                        c2.border = _BORDER
-                        c3 = ws.cell(row=rr, column=3, value=empty_v)
-                        c3.alignment = _RIGHT
-                        c3.number_format = "#,##0"
-                        c3.border = _BORDER
-                        c4 = ws.cell(row=rr, column=4, value=full_v)
-                        c4.alignment = _RIGHT
-                        c4.number_format = "#,##0"
-                        c4.border = _BORDER
-                        c5 = ws.cell(row=rr, column=5, value=ton_v)
-                        c5.alignment = _RIGHT
-                        c5.number_format = "#,##0"
-                        c5.border = _BORDER
-
-                    d_table_end = d_hdr + len(full_weeks)
-
-                    # 4 mini chart yan yana — sütun sırasıyla aynı:
-                    # Yarı Mamul Tonajı | Boş | Dolu | Tonajı.
-                    def _dept_mini(
-                        anchor_col: str, title: str, src_col: int,
-                        line_color: str,
-                    ) -> None:
-                        ch = LineChart()
-                        ch.title = _make_chart_title(title)
-                        ch.add_data(
-                            Reference(
-                                ws, min_col=src_col, max_col=src_col,
-                                min_row=d_hdr, max_row=d_table_end,
-                            ),
-                            titles_from_data=True,
-                        )
-                        ch.set_categories(
-                            Reference(
-                                ws, min_col=1, max_col=1,
-                                min_row=d_hdr + 1, max_row=d_table_end,
-                            )
-                        )
-                        _clean_axis(ch.x_axis)
-                        _clean_axis(ch.y_axis)
-                        ch.y_axis.numFmt = "#,##0"
-                        ch.legend = None
-                        for s in ch.series:
-                            s.marker = Marker(symbol="circle", size=5)
-                            gp = GraphicalProperties()
-                            gp.line = LineProperties(
-                                solidFill=line_color, w=22000,
-                            )
-                            s.graphicalProperties = gp
-                        ch.height = 8
-                        ch.width = 8
-                        _apply_chart_frame(ch)
-                        ws.add_chart(ch, f"{anchor_col}{d_hdr}")
-
-                    _dept_mini("F", "Yarı Mamul Tonajı", 2, "EA580C")
-                    _dept_mini("J", "Boş Konteyner", 3, "BE123C")
-                    _dept_mini("N", "Dolu Konteyner", 4, "1F3A8A")
-                    _dept_mini("R", "Dolu Konteyner Tonajı", 5, "F59E0B")
-
-                    # İçerik satırlarını outline gruba al — banner
-                    # görünür kalıyor, [+] tuşuna basılınca içerik
-                    # açılıyor.
-                    for r_hide in range(content_start, content_end + 1):
-                        ws.row_dimensions[r_hide].outlineLevel = 1
-                        ws.row_dimensions[r_hide].hidden = True
 
 
 # ---------------------------------------------------------------------------
