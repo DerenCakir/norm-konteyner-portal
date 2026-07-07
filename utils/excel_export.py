@@ -1709,7 +1709,7 @@ def _build_ozet_charts_sheet(
     sec3.fill = PatternFill("solid", fgColor="E2E8F0")
     sec3.alignment = Alignment(horizontal="left", vertical="center", indent=1)
     ws.row_dimensions[143].height = 24
-    chart3_anchor_row = 144
+    chart3_anchor_row = 237
     ws.add_chart(chart3, f"A{chart3_anchor_row}")
 
     # KPI yerine: her üretim yeri için ayrı buton. Tıklanınca o
@@ -1788,7 +1788,7 @@ def _build_ozet_charts_sheet(
     chart_tsite.height = 14
     chart_tsite.width = 38
     _apply_chart_frame(chart_tsite)
-    chart_tsite_anchor_row = 175
+    chart_tsite_anchor_row = 144
     ws.add_chart(chart_tsite, f"A{chart_tsite_anchor_row}")
 
     # ================================================================
@@ -2221,7 +2221,7 @@ def _build_ozet_charts_sheet(
     chart5.height = 14
     chart5.width = 38
     _apply_chart_frame(chart5)
-    chart5_anchor_row = 206
+    chart5_anchor_row = 175
     ws.add_chart(chart5, f"A{chart5_anchor_row}")
 
     # KPI yerine: chart 3 ile aynı şekilde her üretim yeri için
@@ -2300,7 +2300,7 @@ def _build_ozet_charts_sheet(
     chart5f.height = 14
     chart5f.width = 38
     _apply_chart_frame(chart5f)
-    chart5f_anchor_row = 237
+    chart5f_anchor_row = 206
     ws.add_chart(chart5f, f"A{chart5f_anchor_row}")
 
     # ================================================================
