@@ -3482,10 +3482,17 @@ def build_week_excel(
             wb.move_sheet("Ana Data Sayfası", offset=1 - idx)
 
     # Klavuz çizgilerini kapat — workbook bittiğinde dosya bir rapor
-    # gibi görünsün, ham tablo gibi değil. (View > Gridlines'ın isteğe
-    # bağlı işaretlenmesinin tersi.)
+    # gibi görünsün, ham tablo gibi değil.
     for _ws in wb.worksheets:
         _ws.sheet_view.showGridLines = False
+
+    # fullCalcOnLoad Excel'de dosya açılırken TÜM formülleri (chart
+    # Reference'ları dahil) yeniden hesaplat — 67 chart varken bu
+    # recalc Excel'i tıkatıp dosyayı sessizce açamaz duruma getiriyor
+    # (workbook ekranı boş kalıyor). Chart'lar zaten kayıtlı
+    # değerlerle gelir, recalc gerekmez.
+    if wb.calculation is not None:
+        wb.calculation.fullCalcOnLoad = False
 
     buf = BytesIO()
     wb.save(buf)
