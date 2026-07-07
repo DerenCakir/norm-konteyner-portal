@@ -278,7 +278,7 @@ def _kpi_card_excel(
         "slate":  "334155",
     }.get(tone, "1F3A8A")
 
-    # Label band
+    # Label band — kompakt
     end_col = col + width - 1
     ws.merge_cells(start_row=row, start_column=col, end_row=row, end_column=end_col)
     label_cell = ws.cell(row=row, column=col, value=label)
@@ -287,33 +287,33 @@ def _kpi_card_excel(
     label_cell.alignment = Alignment(
         horizontal="left", vertical="center", indent=1,
     )
-    ws.row_dimensions[row].height = 20
+    ws.row_dimensions[row].height = 17
 
-    # Value row
+    # Value row — value 20→16 pt, satır yüksekliği 34→24
     ws.merge_cells(
         start_row=row + 1, start_column=col,
         end_row=row + 1, end_column=end_col,
     )
     value_cell = ws.cell(row=row + 1, column=col, value=value)
-    value_cell.font = Font(bold=True, size=20, color="0F172A")
+    value_cell.font = Font(bold=True, size=16, color="0F172A")
     value_cell.alignment = Alignment(
         horizontal="left", vertical="center", indent=1,
     )
     value_cell.fill = PatternFill("solid", fgColor="FFFFFF")
-    ws.row_dimensions[row + 1].height = 34
+    ws.row_dimensions[row + 1].height = 24
 
-    # Sub row
+    # Sub row — 9→8 pt, satır yüksekliği 16→14
     ws.merge_cells(
         start_row=row + 2, start_column=col,
         end_row=row + 2, end_column=end_col,
     )
     sub_cell = ws.cell(row=row + 2, column=col, value=sub)
-    sub_cell.font = Font(italic=True, size=9, color="64748B")
+    sub_cell.font = Font(italic=True, size=8, color="64748B")
     sub_cell.alignment = Alignment(
         horizontal="left", vertical="center", indent=1,
     )
     sub_cell.fill = PatternFill("solid", fgColor="FFFFFF")
-    ws.row_dimensions[row + 2].height = 16
+    ws.row_dimensions[row + 2].height = 14
 
     # Border sadece merged 3 satırın top-left hücrelerinde — daha
     # önce iç hücrelere ws.cell() ile dokunuyorduk, bu 'empty numeric
@@ -1543,28 +1543,28 @@ def _build_ozet_charts_sheet(
     # stacked bars). All values reflect the latest week.
     if latest_kpis:
         _kpi_card_excel(
-            ws, row=chart1_anchor_row, col=21, width=4,
+            ws, row=chart1_anchor_row, col=19, width=4,
             label="Toplam Konteyner",
             value=_fmt_int_tr(latest_kpis["total_containers"]),
             sub=f"Son hafta: {_short_week(latest_week)}",
             tone="slate",
         )
         _kpi_card_excel(
-            ws, row=chart1_anchor_row + 4, col=21, width=4,
+            ws, row=chart1_anchor_row + 4, col=19, width=4,
             label="Boş",
             value=_fmt_int_tr(latest_kpis["empty"]),
             sub="Kullanılabilir kasa",
             tone="green",
         )
         _kpi_card_excel(
-            ws, row=chart1_anchor_row + 8, col=21, width=4,
+            ws, row=chart1_anchor_row + 8, col=19, width=4,
             label="Proseste",
             value=_fmt_int_tr(latest_kpis["wip"]),
             sub="İşlem görüyor",
             tone="amber",
         )
         _kpi_card_excel(
-            ws, row=chart1_anchor_row + 12, col=21, width=4,
+            ws, row=chart1_anchor_row + 12, col=19, width=4,
             label="Dolu (Kanban dahil)",
             value=_fmt_int_tr(latest_kpis["full"]),
             sub=(
@@ -1577,7 +1577,7 @@ def _build_ozet_charts_sheet(
         # için Hurda da panelde görünmeli; aksi takdirde dört kartın
         # toplamı Toplam'a denk gelmiyor.
         _kpi_card_excel(
-            ws, row=chart1_anchor_row + 16, col=21, width=4,
+            ws, row=chart1_anchor_row + 16, col=19, width=4,
             label="Hurdaya Ayrılacak",
             value=_fmt_int_tr(latest_kpis["scrap"]),
             sub="Kullanım dışı",
@@ -1725,7 +1725,7 @@ def _build_ozet_charts_sheet(
             _link_button_excel(
                 ws,
                 row=chart3_anchor_row + start_offset + i * btn_h,
-                col=21, width=4, height=btn_h,
+                col=19, width=4, height=btn_h,
                 label=site,
                 target_sheet="Grafikler",
                 target_cell=f"A{site_anchors[site]}",
@@ -2135,28 +2135,28 @@ def _build_ozet_charts_sheet(
             grand_total = sum(color_totals_lw.values())
 
             _kpi_card_excel(
-                ws, row=chart4_anchor_row, col=21, width=4,
+                ws, row=chart4_anchor_row, col=19, width=4,
                 label="Toplam Konteyner",
                 value=_fmt_int_tr(grand_total),
                 sub=f"{_short_week(latest_week)} — tüm renkler",
                 tone="slate",
             )
             _kpi_card_excel(
-                ws, row=chart4_anchor_row + 4, col=21, width=4,
+                ws, row=chart4_anchor_row + 4, col=19, width=4,
                 label="En Çok Konteyner",
                 value=_fmt_int_tr(most[1]),
                 sub=f"{most[0]}",
                 tone="green",
             )
             _kpi_card_excel(
-                ws, row=chart4_anchor_row + 8, col=21, width=4,
+                ws, row=chart4_anchor_row + 8, col=19, width=4,
                 label="En Az Konteyner",
                 value=_fmt_int_tr(least[1]),
                 sub=f"{least[0]}",
                 tone="rose",
             )
             _kpi_card_excel(
-                ws, row=chart4_anchor_row + 12, col=21, width=4,
+                ws, row=chart4_anchor_row + 12, col=19, width=4,
                 label="Farklı Renk Sayısı",
                 value=_fmt_int_tr(len(color_totals_lw)),
                 sub="Latest week aktif renkler",
@@ -2237,7 +2237,7 @@ def _build_ozet_charts_sheet(
             _link_button_excel(
                 ws,
                 row=chart5_anchor_row + start_offset + i * btn_h,
-                col=21, width=4, height=btn_h,
+                col=19, width=4, height=btn_h,
                 label=site,
                 target_sheet="Grafikler",
                 target_cell=f"A{site_anchors[site]}",
