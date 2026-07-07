@@ -3376,7 +3376,9 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
                     color="047857" if tot_delta > 0 else "BE123C",
                 )
 
-    ws.freeze_panes = "B2"
+    # freeze_panes kaldırıldı — ilk sütun dondurulunca yatay scroll
+    # da farklı davranıyor, kullanıcı istediği için None.
+    ws.freeze_panes = None
     _autofit(ws, headers)
     ws.column_dimensions["A"].width = 22
     n_cols = len(headers)
