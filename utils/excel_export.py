@@ -3523,11 +3523,46 @@ def _postprocess_xlsx(data: bytes) -> bytes:
             if item.filename.startswith("xl/drawings/drawing") and \
                     item.filename.endswith(".xml"):
                 content = _fix_drawing_xml(content)
+            elif item.filename.startswith("xl/worksheets/sheet") and \
+                    item.filename.endswith(".xml"):
+                content = _fix_sheet_selection(content)
+            elif item.filename.startswith("xl/charts/chart") and \
+                    item.filename.endswith(".xml"):
+                content = _fix_chart_numfmt(content)
             dst.writestr(item, content)
     finally:
         dst.close()
         src.close()
     return out_buf.getvalue()
+
+
+def _fix_sheet_selection(content: bytes) -> bytes:
+    """Sheet XML'inde <selection pane="bottomLeft" ...> varsa ama
+    <pane> tanımı yoksa (freeze kaldırılınca kalan artık), pane
+    attribute'unu selection'dan kaldırıyoruz. Aksi halde Excel
+    'içinde sorunla karşılaştık' uyarısı veriyor."""
+    import re as _re
+    text = content.decode("utf-8")
+    if '<pane ' in text:
+        return content  # freeze var, dokunma
+    # Remove pane="..." attribute from <selection>
+    fixed = _re.sub(r'(<selection[^/]*)\s+pane="[^"]+"', r'\1', text)
+    return fixed.encode("utf-8")
+
+
+def _fix_chart_numfmt(content: bytes) -> bytes:
+    """Chart XML'de <numFmt formatCode="..."/> etiketine
+    sourceLinked="0" eksikse ekliyor. openpyxl bazı numFmt'lerde
+    bunu unutuyor, Excel değeri source'tan almaya çalışıyor ve
+    hata veriyor."""
+    import re as _re
+    text = content.decode("utf-8")
+    fixed = _re.sub(
+        r'<numFmt formatCode="([^"]+)"\s*/>',
+        r'<numFmt formatCode="\1" sourceLinked="0"/>',
+        text,
+    )
+    return fixed.encode("utf-8")
 
 
 def _fix_drawing_xml(content: bytes) -> bytes:
