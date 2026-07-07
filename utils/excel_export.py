@@ -2373,15 +2373,20 @@ def _build_ozet_charts_sheet(
                 c.border = _BORDER
             ws.row_dimensions[hdr_row].height = 40
 
-            # Veri satırları — Yarı Mamul Tonajı ve Dolu Konteyner
-            # Tonajı ikisi de submission-level 'tonnage'; kullanıcı
-            # her ikisini de ham tonaj olarak gösteriyor.
+            # Veri satırları — Yarı Mamul Tonajı ham gerçekleşen tonaj;
+            # Dolu Konteyner Tonajı ise dolu KONTEYNER BAŞINA tonaj
+            # (chart 3'teki 'Dolu Konteyner Başına Tonaj' ile aynı
+            # anlam, ton/dolu ratio, birim = t/konteyner ≈ küçük ondalık).
             for k, w in enumerate(full_weeks):
                 r = hdr_row + 1 + k
                 sd = weekly_site.get(w, {}).get(site)
                 empty_v = int(sd.get("empty", 0)) if sd else None
                 full_v = int(sd.get("full", 0)) if sd else None
                 ton_v = float(sd.get("tonnage", 0.0)) if sd else None
+                ton_per_dolu = (
+                    (ton_v / full_v)
+                    if (sd and full_v and ton_v is not None) else None
+                )
                 c1 = ws.cell(row=r, column=1, value=_short_week(w))
                 c1.alignment = _LEFT
                 c1.border = _BORDER
@@ -2397,9 +2402,9 @@ def _build_ozet_charts_sheet(
                 c4.alignment = _RIGHT
                 c4.number_format = "#,##0"
                 c4.border = _BORDER
-                c5 = ws.cell(row=r, column=5, value=ton_v)
+                c5 = ws.cell(row=r, column=5, value=ton_per_dolu)
                 c5.alignment = _RIGHT
-                c5.number_format = "#,##0"
+                c5.number_format = "0.000"
                 c5.border = _BORDER
 
             table_end_row = hdr_row + len(full_weeks)
@@ -2429,6 +2434,12 @@ def _build_ozet_charts_sheet(
                     or 0
                 )
                 for w in full_weeks
+            ]
+            # Dolu Konteyner Tonajı = ton/dolu ratio (chart 3 gibi).
+            # Nomeral 0.01-0.05 aralığında olur; küçük ondalık scaling.
+            site_ton_per_dolu_vals = [
+                (t / f) if f else 0.0
+                for t, f in zip(site_ton_vals, site_full_vals)
             ]
 
             # 4 mini chart yan yana — sütun sırasıyla aynı: Yarı Mamul
@@ -2475,7 +2486,10 @@ def _build_ozet_charts_sheet(
             _mini("F", "Yarı Mamul Tonajı", 2, "#,##0", "EA580C", site_ton_vals)
             _mini("J", "Boş Konteyner", 3, "#,##0", "BE123C", site_empty_vals)
             _mini("N", "Dolu Konteyner", 4, "#,##0", "1F3A8A", site_full_vals)
-            _mini("R", "Dolu Konteyner Tonajı", 5, "#,##0", "F59E0B", site_ton_vals)
+            _mini(
+                "R", "Dolu Konteyner Tonajı", 5, "0.000", "F59E0B",
+                site_ton_per_dolu_vals,
+            )
 
 
 # ---------------------------------------------------------------------------
