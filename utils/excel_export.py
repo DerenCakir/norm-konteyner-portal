@@ -3047,7 +3047,7 @@ def _build_dolu_yuk_ozeti_sheet(
     )
     sec = ws.cell(
         row=sec_row, column=1,
-        value="Haftalık Yarı Mamul Tonajı Görselleştirmesi",
+        value="Haftalık Toplam Yarı Mamul Tonajı",
     )
     sec.font = Font(bold=True, size=13, color="1F3A8A")
     sec.fill = PatternFill("solid", fgColor="E2E8F0")
