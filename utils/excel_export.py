@@ -2480,7 +2480,7 @@ _ANALIZ_METRICS = [
     ("wip",     "Proseste Konteyner",         "adet", "#,##0"),
     ("scrap",   "Hurdaya Ayrılacak Konteyner", "adet", "#,##0"),
     ("bdh",     "Toplam Konteyner",           "adet", "#,##0"),
-    ("tonnage", "Toplam Tonaj",               "t",    "#,##0.00"),
+    ("tonnage", "Toplam Tonaj",               "t",    "#,##0"),
 ]
 
 
@@ -2558,7 +2558,7 @@ def _build_haftalik_analiz_sheet(
 
     def _fmt_delta_value(v: float, key: str) -> str:
         if key == "tonnage":
-            return f"{_fmt_dec_tr(abs(v), 2)} t"
+            return f"{_fmt_int_tr(abs(v))} t"
         return f"{_fmt_int_tr(abs(v))} adet"
 
     row = 4
