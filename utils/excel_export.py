@@ -3129,23 +3129,24 @@ def _build_dolu_yuk_ozeti_sheet(
     _apply_chart_frame(main_chart)
     ws.add_chart(main_chart, f"A{main_chart_anchor}")
 
-    # Yandaki üretim yeri butonları — target_cell offset ile (site
-    # anchor - 3) blok banner + back link + chart hepsi birden
-    # görünüyor scroll edince.
+    # Yandaki üretim yeri butonları — target_cell doğrudan blok
+    # banner satırına (offset yok). Excel scroll edince banner
+    # satırı visible area'nın en üstünde çıkıyor; kullanıcı ilk
+    # olarak site adını görüyor, üstünde önceki bloğun chart
+    # kalıntısı olmuyor.
     btn_col = 16
     btn_h = 2
     chart_span_rows = 20
     total_btn_h = n_sites * btn_h
     start_offset = max(0, (chart_span_rows - total_btn_h) // 2)
     for i, s in enumerate(all_sites):
-        target_row = max(1, site_anchors_local[s] - 3)
         _link_button_excel(
             ws,
             row=main_chart_anchor + start_offset + i * btn_h,
             col=btn_col, width=4, height=btn_h,
             label=s,
             target_sheet="Dolu Konteyner Başına Yük Özeti",
-            target_cell=f"A{target_row}",
+            target_cell=f"A{site_anchors_local[s]}",
             font_size=10,
         )
 
@@ -3170,12 +3171,13 @@ def _build_dolu_yuk_ozeti_sheet(
         bk = ws.cell(
             row=blk + 1, column=1, value="◀ Ana grafiğe dön",
         )
-        back_target = max(1, main_chart_anchor - 3)
-        # Hyperlink objesi ile — string form TargetMode='External'
-        # üretip Excel'i bozuyordu.
+        # Back link doğrudan ana grafik anchor'ına (offset yok) —
+        # kullanıcı geri dönünce hemen ana grafiği görüyor.
         bk.hyperlink = Hyperlink(
             ref=bk.coordinate,
-            location=f"'Dolu Konteyner Başına Yük Özeti'!A{back_target}",
+            location=(
+                f"'Dolu Konteyner Başına Yük Özeti'!A{main_chart_anchor}"
+            ),
             display="◀ Ana grafiğe dön",
         )
         bk.font = Font(
