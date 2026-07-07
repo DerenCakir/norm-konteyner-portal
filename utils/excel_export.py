@@ -1296,7 +1296,7 @@ def _build_ozet_charts_sheet(
     # mini chart bandı (~16) + gap
     _dept_subblock_rows = max(_n_weeks + 5, 20)
     _dept_band_rows = 2  # sadece section label + boşluk
-    detail_section_header_row = 214
+    detail_section_header_row = 251
     detail_blocks_start_row = detail_section_header_row + 2
 
     site_anchors: dict[str, int] = {}
@@ -1666,6 +1666,64 @@ def _build_ozet_charts_sheet(
             )
 
     # ================================================================
+    # Chart 3B — Yarı Mamul Tonajı — Üretim Yeri Kırılımı (Son 3 Hafta)
+    #   Chart 3 ile aynı yapı ama y = haftalık ham tonaj (t).
+    # ================================================================
+    t_tsite_col = 45  # chart_full_trend (40-41), wtonnage (42-43) uzağı
+    data_ws.cell(row=1, column=t_tsite_col, value="Üretim Yeri")
+    for j, w in enumerate(last_3_weeks):
+        data_ws.cell(
+            row=1, column=t_tsite_col + 1 + j, value=_short_week(w),
+        )
+    for i, site in enumerate(all_sites):
+        data_ws.cell(row=2 + i, column=t_tsite_col, value=site)
+        for j, w in enumerate(last_3_weeks):
+            sd = weekly_site.get(w, {}).get(site)
+            val = float(sd.get("tonnage", 0.0)) if sd else 0.0
+            cell = data_ws.cell(
+                row=2 + i, column=t_tsite_col + 1 + j, value=val,
+            )
+            cell.number_format = "[$-tr-TR]#,##0"
+    t_tsite_last = 1 + len(all_sites)
+
+    chart_tsite = BarChart()
+    chart_tsite.type = "col"
+    chart_tsite.style = 2
+    chart_tsite.grouping = "clustered"
+    chart_tsite.title = _make_chart_title(
+        "Yarı Mamul Tonajı — Üretim Yeri Kırılımı (Son 3 Hafta)"
+    )
+    chart_tsite.y_axis.title = _horizontal_axis_title("Tonaj (t)")
+    chart_tsite.x_axis.title = _end_x_axis_title("Üretim Yeri")
+    if last_3_weeks and all_sites:
+        chart_tsite.add_data(
+            Reference(
+                data_ws,
+                min_col=t_tsite_col + 1, min_row=1,
+                max_col=t_tsite_col + len(last_3_weeks),
+                max_row=t_tsite_last,
+            ),
+            titles_from_data=True,
+        )
+        chart_tsite.set_categories(
+            Reference(
+                data_ws, min_col=t_tsite_col, min_row=2,
+                max_row=t_tsite_last,
+            )
+        )
+    _clean_axis(chart_tsite.x_axis)
+    _clean_axis(chart_tsite.y_axis)
+    chart_tsite.y_axis.numFmt = "[$-tr-TR]#,##0"
+    chart_tsite.dataLabels = _value_only_labels("outEnd", "[$-tr-TR]#,##0")
+    chart_tsite.legend.position = "b"
+    chart_tsite.legend.overlay = False
+    chart_tsite.height = 14
+    chart_tsite.width = 38
+    _apply_chart_frame(chart_tsite)
+    chart_tsite_anchor_row = 152
+    ws.add_chart(chart_tsite, f"A{chart_tsite_anchor_row}")
+
+    # ================================================================
     # Chart 3.5 — Toplam Boş Konteyner — Haftalık Trend
     #   Tüm tesislerin haftalık toplam boş konteyner trendi. Tek
     #   seri, full_weeks boyunca.
@@ -1969,14 +2027,14 @@ def _build_ozet_charts_sheet(
         _hide_overlay_from_legend(chart4, chart4_total_line)
 
     # Section divider before the color breakdown chart.
-    ws.merge_cells("A179:X179")
-    sec4 = ws["A179"]
+    ws.merge_cells("A214:X214")
+    sec4 = ws["A214"]
     sec4.value = "Renk Dağılımı"
     sec4.font = Font(bold=True, size=13, color="1F3A8A")
     sec4.fill = PatternFill("solid", fgColor="E2E8F0")
     sec4.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.row_dimensions[179].height = 24
-    chart4_anchor_row = 180
+    ws.row_dimensions[214].height = 24
+    chart4_anchor_row = 215
     ws.add_chart(chart4, f"A{chart4_anchor_row}")
 
     # Side KPI panel for chart 4 — color totals across all sites in
@@ -2089,7 +2147,7 @@ def _build_ozet_charts_sheet(
     chart5.height = 14
     chart5.width = 38
     _apply_chart_frame(chart5)
-    chart5_anchor_row = 150
+    chart5_anchor_row = 183
     ws.add_chart(chart5, f"A{chart5_anchor_row}")
 
     # KPI yerine: chart 3 ile aynı şekilde her üretim yeri için
