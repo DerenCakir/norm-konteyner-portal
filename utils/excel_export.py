@@ -1247,7 +1247,7 @@ def _build_ozet_charts_sheet(
     # tesis blokları render ediliyor (bölüm drilldown kaldırıldı).
     _n_weeks = len(full_weeks)
     _main_block_rows = max(_n_weeks + 3, 17) + 4
-    detail_section_header_row = 282
+    detail_section_header_row = 305
     detail_blocks_start_row = detail_section_header_row + 2
 
     site_anchors: dict[str, int] = {
@@ -1416,6 +1416,117 @@ def _build_ozet_charts_sheet(
     chart1_anchor_row = 5
     ws.add_chart(chart1, f"A{chart1_anchor_row}")
 
+    # ================================================================
+    # Chart 1B — Yarı Mamul Stok Tonajı ve Boş Konteyner İlişkisi
+    #   Bar (tonaj — sol Y ekseni turuncu) + Line overlay (boş — sağ
+    #   Y ekseni yeşil, secondary axis). Her hafta yarı mamul stoğu
+    #   ile boş konteyner sayısı nasıl birlikte değişiyor.
+    #
+    #   ÖNEMLİ: overlay.y_axis.crossAx = 10 (chart_rel'in catAx axId'i)
+    #   set edilmezse Excel XML'de crossAx eksik oluyor ve dosya
+    #   'Çizim şekli hatalı' uyarısı veriyor. crossAx=10 ile temiz.
+    # ================================================================
+    t_rel_col = 60  # sağ tarafta boş kolon — çakışma yok
+    data_ws.cell(row=1, column=t_rel_col, value="Hafta")
+    data_ws.cell(
+        row=1, column=t_rel_col + 1, value="Yarı Mamul Tonajı",
+    )
+    data_ws.cell(row=1, column=t_rel_col + 2, value="Boş Konteyner")
+    for i, w in enumerate(full_weeks):
+        wt = weekly_totals[w]
+        data_ws.cell(row=2 + i, column=t_rel_col, value=_short_week(w))
+        c_ton = data_ws.cell(
+            row=2 + i, column=t_rel_col + 1,
+            value=float(wt.get("tonnage", 0.0)),
+        )
+        c_ton.number_format = "[$-tr-TR]#,##0"
+        c_emp = data_ws.cell(
+            row=2 + i, column=t_rel_col + 2,
+            value=int(wt.get("empty", 0)),
+        )
+        c_emp.number_format = "[$-tr-TR]#,##0"
+    t_rel_last = 1 + len(full_weeks)
+
+    chart_rel = BarChart()
+    chart_rel.type = "col"
+    chart_rel.style = 2
+    chart_rel.title = _make_chart_title(
+        "Yarı Mamul Stok Tonajı ve Boş Konteyner İlişkisi"
+    )
+    chart_rel.y_axis.title = _horizontal_axis_title("Tonaj (t)")
+    chart_rel.x_axis.title = _end_x_axis_title("Hafta")
+    if full_weeks:
+        chart_rel.add_data(
+            Reference(
+                data_ws,
+                min_col=t_rel_col + 1, min_row=1,
+                max_col=t_rel_col + 1, max_row=t_rel_last,
+            ),
+            titles_from_data=True,
+        )
+        chart_rel.set_categories(
+            Reference(
+                data_ws, min_col=t_rel_col, min_row=2, max_row=t_rel_last,
+            )
+        )
+    _clean_axis(chart_rel.x_axis)
+    _clean_axis(chart_rel.y_axis)
+    chart_rel.y_axis.numFmt = "[$-tr-TR]#,##0"
+    chart_rel.y_axis.scaling.min = 0
+    chart_rel.gapWidth = 30
+    for s in chart_rel.series:
+        gp = GraphicalProperties(solidFill="EA580C")
+        s.graphicalProperties = gp
+    chart_rel.dataLabels = _value_only_labels(
+        "t", "[$-tr-TR]#,##0",
+        txPr=_bold_large_label_props(size_pt=10, color="0F172A"),
+    )
+
+    empty_line_overlay = LineChart()
+    if full_weeks:
+        empty_line_overlay.add_data(
+            Reference(
+                data_ws,
+                min_col=t_rel_col + 2, min_row=1,
+                max_col=t_rel_col + 2, max_row=t_rel_last,
+            ),
+            titles_from_data=True,
+        )
+        empty_line_overlay.set_categories(
+            Reference(
+                data_ws, min_col=t_rel_col, min_row=2, max_row=t_rel_last,
+            )
+        )
+    for s in empty_line_overlay.series:
+        s.marker = Marker(symbol="circle", size=8)
+        gp = GraphicalProperties()
+        gp.line = LineProperties(solidFill="047857", w=28000)
+        s.graphicalProperties = gp
+    empty_line_overlay.dataLabels = _value_only_labels(
+        "t", "[$-tr-TR]#,##0",
+        txPr=_bold_large_label_props(size_pt=10, color="047857"),
+    )
+    # Secondary Y ekseni — axId farklı (200), crossAx = catAx (10),
+    # crosses='max' (sağ tarafta). crossAx eksik olursa Excel red
+    # ediyor.
+    empty_line_overlay.y_axis.axId = 200
+    empty_line_overlay.y_axis.crossAx = 10
+    empty_line_overlay.y_axis.crosses = "max"
+    empty_line_overlay.y_axis.title = _horizontal_axis_title(
+        "Boş Konteyner Adedi"
+    )
+    empty_line_overlay.y_axis.numFmt = "[$-tr-TR]#,##0"
+    empty_line_overlay.y_axis.scaling.min = 0
+    chart_rel += empty_line_overlay
+
+    chart_rel.legend.position = "b"
+    chart_rel.legend.overlay = False
+    chart_rel.height = 10
+    chart_rel.width = 38
+    _apply_chart_frame(chart_rel)
+    chart_rel_anchor_row = 28
+    ws.add_chart(chart_rel, f"A{chart_rel_anchor_row}")
+
     # Side KPI panel for chart 1 — categories shown in the stack
     # (Toplam = stack top, Boş / Proseste / Dolu / Hurda are the
     # stacked bars). All values reflect the latest week.
@@ -1524,7 +1635,7 @@ def _build_ozet_charts_sheet(
     chart2.width = 38
     _apply_chart_frame(chart2)
     # Chart 2 sits below chart 1 panel.
-    chart2_anchor_row = 97
+    chart2_anchor_row = 120
     ws.add_chart(chart2, f"A{chart2_anchor_row}")
 
     # ================================================================
@@ -1579,14 +1690,14 @@ def _build_ozet_charts_sheet(
     chart3.width = 38
     _apply_chart_frame(chart3)
     # Section divider before the tesis-comparison charts.
-    ws.merge_cells("A120:X120")
-    sec3 = ws["A120"]
+    ws.merge_cells("A143:X143")
+    sec3 = ws["A143"]
     sec3.value = "Tesis Karşılaştırma"
     sec3.font = Font(bold=True, size=13, color="1F3A8A")
     sec3.fill = PatternFill("solid", fgColor="E2E8F0")
     sec3.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.row_dimensions[120].height = 24
-    chart3_anchor_row = 121
+    ws.row_dimensions[143].height = 24
+    chart3_anchor_row = 144
     ws.add_chart(chart3, f"A{chart3_anchor_row}")
 
     # KPI yerine: her üretim yeri için ayrı buton. Tıklanınca o
@@ -1664,7 +1775,7 @@ def _build_ozet_charts_sheet(
     chart_tsite.height = 14
     chart_tsite.width = 38
     _apply_chart_frame(chart_tsite)
-    chart_tsite_anchor_row = 152
+    chart_tsite_anchor_row = 175
     ws.add_chart(chart_tsite, f"A{chart_tsite_anchor_row}")
 
     # ================================================================
@@ -1724,7 +1835,7 @@ def _build_ozet_charts_sheet(
     chart_empty_trend.height = 10
     chart_empty_trend.width = 38
     _apply_chart_frame(chart_empty_trend)
-    chart_empty_trend_anchor_row = 51
+    chart_empty_trend_anchor_row = 74
     ws.add_chart(chart_empty_trend, f"A{chart_empty_trend_anchor_row}")
 
     # ================================================================
@@ -1785,7 +1896,7 @@ def _build_ozet_charts_sheet(
     chart_full_trend.height = 10
     chart_full_trend.width = 38
     _apply_chart_frame(chart_full_trend)
-    chart_full_trend_anchor_row = 74
+    chart_full_trend_anchor_row = 97
     ws.add_chart(chart_full_trend, f"A{chart_full_trend_anchor_row}")
 
     # ================================================================
@@ -1846,7 +1957,7 @@ def _build_ozet_charts_sheet(
     chart_wtonnage_trend.height = 10
     chart_wtonnage_trend.width = 38
     _apply_chart_frame(chart_wtonnage_trend)
-    chart_wtonnage_trend_anchor_row = 28
+    chart_wtonnage_trend_anchor_row = 51
     ws.add_chart(chart_wtonnage_trend, f"A{chart_wtonnage_trend_anchor_row}")
 
     # ================================================================
@@ -1971,14 +2082,14 @@ def _build_ozet_charts_sheet(
         _hide_overlay_from_legend(chart4, chart4_total_line)
 
     # Section divider before the color breakdown chart.
-    ws.merge_cells("A245:X245")
-    sec4 = ws["A245"]
+    ws.merge_cells("A268:X268")
+    sec4 = ws["A268"]
     sec4.value = "Renk Dağılımı"
     sec4.font = Font(bold=True, size=13, color="1F3A8A")
     sec4.fill = PatternFill("solid", fgColor="E2E8F0")
     sec4.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.row_dimensions[245].height = 24
-    chart4_anchor_row = 246
+    ws.row_dimensions[268].height = 24
+    chart4_anchor_row = 269
     ws.add_chart(chart4, f"A{chart4_anchor_row}")
 
     # Side KPI panel for chart 4 — color totals across all sites in
@@ -2091,7 +2202,7 @@ def _build_ozet_charts_sheet(
     chart5.height = 14
     chart5.width = 38
     _apply_chart_frame(chart5)
-    chart5_anchor_row = 183
+    chart5_anchor_row = 206
     ws.add_chart(chart5, f"A{chart5_anchor_row}")
 
     # KPI yerine: chart 3 ile aynı şekilde her üretim yeri için
@@ -2169,7 +2280,7 @@ def _build_ozet_charts_sheet(
     chart5f.height = 14
     chart5f.width = 38
     _apply_chart_frame(chart5f)
-    chart5f_anchor_row = 214
+    chart5f_anchor_row = 237
     ws.add_chart(chart5f, f"A{chart5f_anchor_row}")
 
     # ================================================================
