@@ -3554,13 +3554,14 @@ def _fix_chart_numfmt(content: bytes) -> bytes:
     """Chart XML fix'leri:
 
     1) <numFmt formatCode="..."/> → sourceLinked="0" ekleniyor.
-       openpyxl bazı numFmt'lerde bunu unutuyor, Excel değeri
-       source'tan almaya çalışıp hata veriyor.
-
-    2) Boş <a:r><a:t/></a:r> ve <a:r><a:t /></a:r> blokları
-       kaldırılıyor. openpyxl'in dLbls txPr'ında ürettiği bu
-       boş run element'ler Excel'in schema validation'ını
-       geçemiyor ve dosyayı reddediyor.
+    2) Boş <a:r><a:t/></a:r> blokları temizleniyor.
+    3) barChart içindeki <dLblPos val="t"/> → "outEnd". "t" değeri
+       ECMA-376 şemasında yalnızca line chart'ta geçerlidir; bar/
+       column chart'ta {ctr, inEnd, inBase, outEnd} olmalı. Tek bir
+       geçersiz dLblPos Excel'in tüm drawing'i silmesine yol açar.
+    4) catAx <axPos val="l"/> → "b" (bottom). Kategori ekseni
+       column/line grafiklerde altta olmalı; "l" (left) sadece
+       valAx için geçerli.
     """
     import re as _re
     text = content.decode("utf-8")
@@ -3570,8 +3571,24 @@ def _fix_chart_numfmt(content: bytes) -> bytes:
         r'<numFmt formatCode="\1" sourceLinked="0"/>',
         text,
     )
-    # 2) Boş text run'lar: <a:r><a:t/></a:r> veya <a:r><a:t /></a:r>
+    # 2) Boş text run'lar — hem "<a:t/>" (boşluksuz) hem "<a:t />"
+    #    yakalanıyor (\s* sıfırı da yakalar ama Regex greedy'liği
+    #    için tek pattern iki varyantı da alır).
     text = _re.sub(r'<a:r>\s*<a:t\s*/>\s*</a:r>', '', text)
+    # 3) barChart bloğu içindeki dLblPos val="t" → "outEnd"
+    def _fix_bar_dlblpos(m: "_re.Match[str]") -> str:
+        block = m.group(0)
+        return block.replace('<dLblPos val="t"/>', '<dLblPos val="outEnd"/>')
+    text = _re.sub(
+        r'<barChart>.*?</barChart>', _fix_bar_dlblpos, text, flags=_re.DOTALL,
+    )
+    # 4) catAx içindeki axPos val="l" → "b"
+    def _fix_catax_pos(m: "_re.Match[str]") -> str:
+        block = m.group(0)
+        return block.replace('<axPos val="l"/>', '<axPos val="b"/>')
+    text = _re.sub(
+        r'<catAx>.*?</catAx>', _fix_catax_pos, text, flags=_re.DOTALL,
+    )
     return text.encode("utf-8")
 
 
