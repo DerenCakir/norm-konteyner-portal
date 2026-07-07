@@ -1521,12 +1521,17 @@ def _build_ozet_charts_sheet(
         "t", "[$-tr-TR]#,##0",
         txPr=_bold_large_label_props(size_pt=10, color="047857"),
     )
-    # Secondary Y ekseni — axId farklı (200), crossAx = catAx (10),
-    # crosses='max' (sağ tarafta). crossAx eksik olursa Excel red
-    # ediyor.
+    # Secondary Y ekseni — axId=200, crossAx=10 (catAx), crosses='max'
+    # (grafik sağ tarafında), axPos='r' (SAĞA). openpyxl default olarak
+    # axPos'u 'l' bırakıyor; iki valAx da 'l' derse Excel'in şeması
+    # 'geçersiz eksen konumu' verip dosyayı reddediyordu ve
+    # 'içindeki bazı öğelerde bir sorunla karşılaştık' uyarısı çıkıyordu.
+    # 'delete=False' ile axis'in görünür olduğunu explicit belirtiyoruz.
     empty_line_overlay.y_axis.axId = 200
     empty_line_overlay.y_axis.crossAx = 10
     empty_line_overlay.y_axis.crosses = "max"
+    empty_line_overlay.y_axis.axPos = "r"
+    empty_line_overlay.y_axis.delete = False
     empty_line_overlay.y_axis.title = _horizontal_axis_title(
         "Boş Konteyner Adedi"
     )
