@@ -1004,14 +1004,17 @@ def _clean_axis(axis) -> None:
 
 
 def _horizontal_axis_title(text: str) -> Title:
-    """Build an axis title rendered horizontally and anchored near the
-    top of the axis instead of the default vertically-centered rotated
-    layout.
+    """Y-ekseninin en üstünde yatay olarak konumlanan başlık.
 
-    Excel's default Y-axis title is rotated 90° and centered along the
-    axis. This helper forces ``rot=0`` (horizontal) and positions the
-    title near the top edge so it reads naturally above the topmost
-    Y-axis tick.
+    Excel default'unda Y-ekseninin başlığı sola dikey (90° rotate)
+    yerleştirilir; bu grafik alanının solundan yer çalıp plot area'yı
+    daraltıyor. Burada:
+      • ``rot=0``: yazı yatay.
+      • Layout: sol-üst köşe (x=0.02, y=0.02).
+      • ``overlay=True``: Excel bu başlık için sol margin AYIRMIYOR,
+        başlık plot area'nın üstüne float ediyor. Sonuç: chart alanı
+        genişliyor, kullanıcının şikayet ettiği 'gereksiz alan
+        büyüyor' sorunu düzeliyor.
     """
     body_pr = RichTextProperties(rot=0, vert="horz")
     char_props = CharacterProperties(b=True, sz=1000)
@@ -1022,10 +1025,10 @@ def _horizontal_axis_title(text: str) -> Title:
     tx = Text(rich=rt)
     layout = Layout(
         manualLayout=ManualLayout(
-            x=0.02, y=0.05, xMode="edge", yMode="edge",
+            x=0.02, y=0.02, xMode="edge", yMode="edge",
         )
     )
-    return Title(tx=tx, layout=layout, overlay=False)
+    return Title(tx=tx, layout=layout, overlay=True)
 
 
 def _make_chart_title(text: str, size_pt: int = 13) -> Title:
