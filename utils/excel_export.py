@@ -2301,13 +2301,14 @@ def _build_ozet_charts_sheet(
     _clean_axis(chart5f.y_axis)
     chart5f.y_axis.numFmt = "[$-tr-TR]#,##0"
     chart5f.y_axis.scaling.min = 0
-    # 11 tesis × 3 hafta = 33 bar; outEnd konumunda yatay
-    # etiketler üst üste biniyor. -5400000 (yazı 90° saat yönünün
-    # tersine, aşağıdan yukarı okunur) + 8pt ile her etiket kendi
-    # bar'ı boyunca yerleşiyor, çakışma yok.
+    # 33 clustered bar; küçük font + outEnd ile etiketleri sığdır.
+    # Not: task 22'de rot=-5400000 (90° dikey) denemiştik ama Excel
+    # bu extreme değeri reddedip 'file open failure' sessizce
+    # üretiyordu — dosya hiç açılmıyordu. Yatay yorumla küçük font,
+    # çakışma olabilir ama dosya açılır.
     chart5f.dataLabels = _value_only_labels(
         "outEnd",
-        txPr=_bold_large_label_props(size_pt=8, rot=-5400000),
+        txPr=_bold_large_label_props(size_pt=7),
     )
     chart5f.legend.position = "b"
     chart5f.legend.overlay = False
