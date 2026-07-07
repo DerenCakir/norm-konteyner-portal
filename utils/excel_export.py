@@ -1339,12 +1339,13 @@ def _build_ozet_charts_sheet(
     # 24'ten sonrası kullanılmıyor.
     for c in range(1, 25):
         ws.column_dimensions[get_column_letter(c)].width = 11
-    # Tesis Detayı tablolarındaki 4 sütun: Hafta / Dolu / Boş / Dolu
-    # Konteyner Tonajı. Son üç başlık uzun — wrap_text + genişletilmiş
-    # kolonla iki satıra kırılıyor.
-    ws.column_dimensions["B"].width = 14
-    ws.column_dimensions["C"].width = 14
-    ws.column_dimensions["D"].width = 18
+    # Tesis Detayı tablolarındaki 5 sütun: Hafta / Yarı Mamul Tonajı /
+    # Boş Konteyner / Dolu Konteyner / Dolu Konteyner Tonajı. Uzun
+    # başlıklar wrap_text + genişletilmiş kolonla iki satıra kırılıyor.
+    ws.column_dimensions["B"].width = 15
+    ws.column_dimensions["C"].width = 12
+    ws.column_dimensions["D"].width = 12
+    ws.column_dimensions["E"].width = 15
 
     # Section header before the trend charts band (row 4).
     if latest_week:
@@ -2275,16 +2276,16 @@ def _build_ozet_charts_sheet(
             )
             back.alignment = Alignment(horizontal="left", vertical="center")
 
-            # Tablo başlığı — sıra: Hafta / Dolu / Boş / Dolu Konteyner
-            # Tonajı. Uzun başlıklar wrap_text ile iki satıra kırılıyor;
-            # satır yüksekliği başlığı barındıracak şekilde 40.
+            # Tablo başlığı — sıra: Hafta / Yarı Mamul Tonajı / Boş /
+            # Dolu / Dolu Konteyner Tonajı. Uzun başlıklar wrap_text
+            # ile iki satıra kırılıyor.
             hdr_row = block_row + 2
             wrap_center = Alignment(
                 horizontal="center", vertical="center", wrap_text=True,
             )
             for j, h in enumerate(
-                ["Hafta", "Dolu Konteyner", "Boş Konteyner",
-                 "Dolu Konteyner Tonajı"],
+                ["Hafta", "Yarı Mamul Tonajı", "Boş Konteyner",
+                 "Dolu Konteyner", "Dolu Konteyner Tonajı"],
                 start=1,
             ):
                 c = ws.cell(row=hdr_row, column=j, value=h)
@@ -2294,17 +2295,19 @@ def _build_ozet_charts_sheet(
                 c.border = _BORDER
             ws.row_dimensions[hdr_row].height = 40
 
-            # Veri satırları — sıra: Hafta | Dolu | Boş | Tonaj
+            # Veri satırları — Yarı Mamul Tonajı ve Dolu Konteyner
+            # Tonajı ikisi de submission-level 'tonnage'; kullanıcı
+            # her ikisini de ham tonaj olarak gösteriyor.
             for k, w in enumerate(full_weeks):
                 r = hdr_row + 1 + k
                 sd = weekly_site.get(w, {}).get(site)
-                full_v = int(sd.get("full", 0)) if sd else None
                 empty_v = int(sd.get("empty", 0)) if sd else None
+                full_v = int(sd.get("full", 0)) if sd else None
                 ton_v = float(sd.get("tonnage", 0.0)) if sd else None
                 c1 = ws.cell(row=r, column=1, value=_short_week(w))
                 c1.alignment = _LEFT
                 c1.border = _BORDER
-                c2 = ws.cell(row=r, column=2, value=full_v)
+                c2 = ws.cell(row=r, column=2, value=ton_v)
                 c2.alignment = _RIGHT
                 c2.number_format = "#,##0"
                 c2.border = _BORDER
@@ -2312,15 +2315,19 @@ def _build_ozet_charts_sheet(
                 c3.alignment = _RIGHT
                 c3.number_format = "#,##0"
                 c3.border = _BORDER
-                c4 = ws.cell(row=r, column=4, value=ton_v)
+                c4 = ws.cell(row=r, column=4, value=full_v)
                 c4.alignment = _RIGHT
                 c4.number_format = "#,##0"
                 c4.border = _BORDER
+                c5 = ws.cell(row=r, column=5, value=ton_v)
+                c5.alignment = _RIGHT
+                c5.number_format = "#,##0"
+                c5.border = _BORDER
 
             table_end_row = hdr_row + len(full_weeks)
 
-            # Üç mini chart yan yana: Dolu (navy) | Boş (crimson) |
-            # Tonaj (amber). Table cols A..D; charts col F, L, R'de.
+            # 4 mini chart yan yana — sütun sırasıyla aynı: Yarı Mamul
+            # Tonajı | Boş | Dolu | Dolu Konteyner Tonajı. Cols F/J/N/R.
             def _mini(
                 anchor: str, title: str, src_col: int,
                 num_fmt: str, line_color: str,
@@ -2350,13 +2357,14 @@ def _build_ozet_charts_sheet(
                     gp.line = LineProperties(solidFill=line_color, w=22000)
                     s.graphicalProperties = gp
                 ch.height = 8
-                ch.width = 11
+                ch.width = 8
                 _apply_chart_frame(ch)
                 ws.add_chart(ch, f"{anchor}{hdr_row}")
 
-            _mini("F", "Dolu Konteyner", 2, "#,##0", "1F3A8A")
-            _mini("L", "Boş Konteyner", 3, "#,##0", "BE123C")
-            _mini("R", "Dolu Konteyner Tonajı", 4, "#,##0", "EA580C")
+            _mini("F", "Yarı Mamul Tonajı", 2, "#,##0", "EA580C")
+            _mini("J", "Boş Konteyner", 3, "#,##0", "BE123C")
+            _mini("N", "Dolu Konteyner", 4, "#,##0", "1F3A8A")
+            _mini("R", "Dolu Konteyner Tonajı", 5, "#,##0", "F59E0B")
 
             # Bölüm drilldown — tesiste birden fazla bölüm varsa her
             # bölüm için ayrı 'katlanabilir' sub-block. Banner satırı
@@ -2414,11 +2422,12 @@ def _build_ozet_charts_sheet(
                         horizontal="left", vertical="center",
                     )
 
-                    # Tablo başlığı (aynı Hafta/Dolu/Boş/Tonaj)
+                    # Tablo başlığı — site bloğuyla aynı 5 sütun:
+                    # Hafta / Yarı Mamul Tonajı / Boş / Dolu / Tonaj.
                     d_hdr = content_start + 1
                     for j, h in enumerate(
-                        ["Hafta", "Dolu Konteyner", "Boş Konteyner",
-                         "Dolu Konteyner Tonajı"],
+                        ["Hafta", "Yarı Mamul Tonajı", "Boş Konteyner",
+                         "Dolu Konteyner", "Dolu Konteyner Tonajı"],
                         start=1,
                     ):
                         c = ws.cell(row=d_hdr, column=j, value=h)
@@ -2433,13 +2442,13 @@ def _build_ozet_charts_sheet(
                         rr = d_hdr + 1 + k
                         sd = weekly_site_dept.get(w, {}).get(
                             site, {}).get(dept)
-                        full_v = int(sd.get("full", 0)) if sd else None
                         empty_v = int(sd.get("empty", 0)) if sd else None
+                        full_v = int(sd.get("full", 0)) if sd else None
                         ton_v = float(sd.get("tonnage", 0.0)) if sd else None
                         c1 = ws.cell(row=rr, column=1, value=_short_week(w))
                         c1.alignment = _LEFT
                         c1.border = _BORDER
-                        c2 = ws.cell(row=rr, column=2, value=full_v)
+                        c2 = ws.cell(row=rr, column=2, value=ton_v)
                         c2.alignment = _RIGHT
                         c2.number_format = "#,##0"
                         c2.border = _BORDER
@@ -2447,15 +2456,19 @@ def _build_ozet_charts_sheet(
                         c3.alignment = _RIGHT
                         c3.number_format = "#,##0"
                         c3.border = _BORDER
-                        c4 = ws.cell(row=rr, column=4, value=ton_v)
+                        c4 = ws.cell(row=rr, column=4, value=full_v)
                         c4.alignment = _RIGHT
                         c4.number_format = "#,##0"
                         c4.border = _BORDER
+                        c5 = ws.cell(row=rr, column=5, value=ton_v)
+                        c5.alignment = _RIGHT
+                        c5.number_format = "#,##0"
+                        c5.border = _BORDER
 
                     d_table_end = d_hdr + len(full_weeks)
 
-                    # 3 mini chart: Dolu (navy) | Boş (kırmızı) |
-                    # Tonaj (turuncu). Site bloğuyla aynı yerleşim.
+                    # 4 mini chart yan yana — sütun sırasıyla aynı:
+                    # Yarı Mamul Tonajı | Boş | Dolu | Tonajı.
                     def _dept_mini(
                         anchor_col: str, title: str, src_col: int,
                         line_color: str,
@@ -2487,13 +2500,14 @@ def _build_ozet_charts_sheet(
                             )
                             s.graphicalProperties = gp
                         ch.height = 8
-                        ch.width = 11
+                        ch.width = 8
                         _apply_chart_frame(ch)
                         ws.add_chart(ch, f"{anchor_col}{d_hdr}")
 
-                    _dept_mini("F", "Dolu Konteyner", 2, "1F3A8A")
-                    _dept_mini("L", "Boş Konteyner", 3, "BE123C")
-                    _dept_mini("R", "Dolu Konteyner Tonajı", 4, "EA580C")
+                    _dept_mini("F", "Yarı Mamul Tonajı", 2, "EA580C")
+                    _dept_mini("J", "Boş Konteyner", 3, "BE123C")
+                    _dept_mini("N", "Dolu Konteyner", 4, "1F3A8A")
+                    _dept_mini("R", "Dolu Konteyner Tonajı", 5, "F59E0B")
 
                     # İçerik satırlarını outline gruba al — banner
                     # görünür kalıyor, [+] tuşuna basılınca içerik
