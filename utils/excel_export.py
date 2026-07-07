@@ -1677,6 +1677,7 @@ def _build_ozet_charts_sheet(
         chart3.set_categories(cats_ref)
     _clean_axis(chart3.x_axis)
     _clean_axis(chart3.y_axis)
+    chart3.y_axis.scaling.min = 0
     # ton/Dolu is fractional → two decimal places everywhere (Y-axis +
     # data labels).
     chart3.y_axis.numFmt = "[$-tr-TR]#,##0.00"
@@ -1769,6 +1770,7 @@ def _build_ozet_charts_sheet(
     _clean_axis(chart_tsite.x_axis)
     _clean_axis(chart_tsite.y_axis)
     chart_tsite.y_axis.numFmt = "[$-tr-TR]#,##0"
+    chart_tsite.y_axis.scaling.min = 0
     chart_tsite.dataLabels = _value_only_labels("outEnd", "[$-tr-TR]#,##0")
     chart_tsite.legend.position = "b"
     chart_tsite.legend.overlay = False
@@ -2197,6 +2199,7 @@ def _build_ozet_charts_sheet(
     _clean_axis(chart5.x_axis)
     _clean_axis(chart5.y_axis)
     chart5.y_axis.numFmt = "[$-tr-TR]#,##0"
+    chart5.y_axis.scaling.min = 0
     # Value labels on top of each bar — same outEnd styling as chart 3
     # so the two clustered charts read consistently. Bold for emphasis.
     chart5.dataLabels = _value_only_labels(
@@ -2277,6 +2280,7 @@ def _build_ozet_charts_sheet(
     _clean_axis(chart5f.x_axis)
     _clean_axis(chart5f.y_axis)
     chart5f.y_axis.numFmt = "[$-tr-TR]#,##0"
+    chart5f.y_axis.scaling.min = 0
     chart5f.dataLabels = _value_only_labels(
         "outEnd", txPr=_bold_large_label_props(size_pt=10),
     )
@@ -2385,11 +2389,38 @@ def _build_ozet_charts_sheet(
 
             table_end_row = hdr_row + len(full_weeks)
 
+            # Bu tesisin haftalık ham değerleri — mini chart Y ekseni
+            # scaling'i için. Auto scale, değerler dar bir bantta
+            # (örn. Uysal İzmir 100-105) yer aldığında integer format
+            # ile tick label'larını aynı sayıya yuvarlıyor: 100, 100,
+            # 100... Manuel min=0 + max=%20 padding'le rahat okunuyor.
+            site_ton_vals = [
+                float(
+                    weekly_site.get(w, {}).get(site, {}).get("tonnage", 0.0)
+                    or 0
+                )
+                for w in full_weeks
+            ]
+            site_empty_vals = [
+                int(
+                    weekly_site.get(w, {}).get(site, {}).get("empty", 0)
+                    or 0
+                )
+                for w in full_weeks
+            ]
+            site_full_vals = [
+                int(
+                    weekly_site.get(w, {}).get(site, {}).get("full", 0)
+                    or 0
+                )
+                for w in full_weeks
+            ]
+
             # 4 mini chart yan yana — sütun sırasıyla aynı: Yarı Mamul
             # Tonajı | Boş | Dolu | Dolu Konteyner Tonajı. Cols F/J/N/R.
             def _mini(
                 anchor: str, title: str, src_col: int,
-                num_fmt: str, line_color: str,
+                num_fmt: str, line_color: str, series_vals: list[float],
             ) -> None:
                 ch = LineChart()
                 ch.title = _make_chart_title(title)
@@ -2409,6 +2440,12 @@ def _build_ozet_charts_sheet(
                 _clean_axis(ch.x_axis)
                 _clean_axis(ch.y_axis)
                 ch.y_axis.numFmt = num_fmt
+                ch.y_axis.scaling.min = 0
+                max_v = max(series_vals) if series_vals else 0
+                # max=0 durumunda 5 sabit; aksi halde %20 üst boşluk.
+                ch.y_axis.scaling.max = (
+                    float(max_v) * 1.2 if max_v > 0 else 5
+                )
                 ch.legend = None
                 for s in ch.series:
                     s.marker = Marker(symbol="circle", size=5)
@@ -2420,10 +2457,10 @@ def _build_ozet_charts_sheet(
                 _apply_chart_frame(ch)
                 ws.add_chart(ch, f"{anchor}{hdr_row}")
 
-            _mini("F", "Yarı Mamul Tonajı", 2, "#,##0", "EA580C")
-            _mini("J", "Boş Konteyner", 3, "#,##0", "BE123C")
-            _mini("N", "Dolu Konteyner", 4, "#,##0", "1F3A8A")
-            _mini("R", "Dolu Konteyner Tonajı", 5, "#,##0", "F59E0B")
+            _mini("F", "Yarı Mamul Tonajı", 2, "#,##0", "EA580C", site_ton_vals)
+            _mini("J", "Boş Konteyner", 3, "#,##0", "BE123C", site_empty_vals)
+            _mini("N", "Dolu Konteyner", 4, "#,##0", "1F3A8A", site_full_vals)
+            _mini("R", "Dolu Konteyner Tonajı", 5, "#,##0", "F59E0B", site_ton_vals)
 
 
 # ---------------------------------------------------------------------------
