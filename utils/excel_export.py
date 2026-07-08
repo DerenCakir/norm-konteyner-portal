@@ -1888,6 +1888,28 @@ def _build_ozet_charts_sheet(
     chart_tsite_anchor_row = 144
     ws.add_chart(chart_tsite, f"A{chart_tsite_anchor_row}")
 
+    # Chart 3B (chart_tsite) yaninda uretim yeri butonlari — chart 3
+    # ve chart 5 ile ayni hizalama, ayni hedef. Her tesis karsilastirma
+    # grafiginin yaninda ayni buton bloku bulunmali.
+    if all_sites:
+        n_sites = len(all_sites)
+        btn_h = 2
+        chart_span_rows = 28
+        total_btn_h = n_sites * btn_h
+        start_offset = max(0, (chart_span_rows - total_btn_h) // 2)
+        for i, site in enumerate(all_sites):
+            _blk_start = site_anchors[site]
+            _blk_end = _blk_start + _main_block_rows - 2
+            _link_button_excel(
+                ws,
+                row=chart_tsite_anchor_row + start_offset + i * btn_h,
+                col=19, width=4, height=btn_h,
+                label=site,
+                target_sheet="Grafikler",
+                target_cell=f"A{_blk_start}:X{_blk_end}",
+                font_size=10,
+            )
+
     # ================================================================
     # Chart 3.5 — Toplam Boş Konteyner — Haftalık Trend
     #   Tüm tesislerin haftalık toplam boş konteyner trendi. Tek
@@ -2408,6 +2430,28 @@ def _build_ozet_charts_sheet(
     _apply_chart_frame(chart5f)
     chart5f_anchor_row = 206
     ws.add_chart(chart5f, f"A{chart5f_anchor_row}")
+
+    # Chart 5F yaninda uretim yeri butonlari — chart_tsite/5/3 ile ayni
+    # blok. Tesis Karsilastirma sekmesinde her grafigin yaninda buton
+    # bulunmali.
+    if all_sites:
+        n_sites = len(all_sites)
+        btn_h = 2
+        chart_span_rows = 28
+        total_btn_h = n_sites * btn_h
+        start_offset = max(0, (chart_span_rows - total_btn_h) // 2)
+        for i, site in enumerate(all_sites):
+            _blk_start = site_anchors[site]
+            _blk_end = _blk_start + _main_block_rows - 2
+            _link_button_excel(
+                ws,
+                row=chart5f_anchor_row + start_offset + i * btn_h,
+                col=19, width=4, height=btn_h,
+                label=site,
+                target_sheet="Grafikler",
+                target_cell=f"A{_blk_start}:X{_blk_end}",
+                font_size=10,
+            )
 
     # ================================================================
     # Tesis Detayı — per-site weekly trend blocks (chart 3 ve chart 5
