@@ -1552,28 +1552,28 @@ def _build_ozet_charts_sheet(
     # stacked bars). All values reflect the latest week.
     if latest_kpis:
         _kpi_card_excel(
-            ws, row=chart1_anchor_row, col=19, width=4,
+            ws, row=chart1_anchor_row, col=19, width=2,
             label="Toplam Konteyner",
             value=_fmt_int_tr(latest_kpis["total_containers"]),
             sub=f"Son hafta: {_short_week(latest_week)}",
             tone="slate",
         )
         _kpi_card_excel(
-            ws, row=chart1_anchor_row + 4, col=19, width=4,
+            ws, row=chart1_anchor_row + 4, col=19, width=2,
             label="Boş",
             value=_fmt_int_tr(latest_kpis["empty"]),
             sub="Kullanılabilir kasa",
             tone="green",
         )
         _kpi_card_excel(
-            ws, row=chart1_anchor_row + 8, col=19, width=4,
+            ws, row=chart1_anchor_row + 8, col=19, width=2,
             label="Proseste",
             value=_fmt_int_tr(latest_kpis["wip"]),
             sub="İşlem görüyor",
             tone="amber",
         )
         _kpi_card_excel(
-            ws, row=chart1_anchor_row + 12, col=19, width=4,
+            ws, row=chart1_anchor_row + 12, col=19, width=2,
             label="Dolu (Kanban dahil)",
             value=_fmt_int_tr(latest_kpis["full"]),
             sub=(
@@ -1586,7 +1586,7 @@ def _build_ozet_charts_sheet(
         # için Hurda da panelde görünmeli; aksi takdirde dört kartın
         # toplamı Toplam'a denk gelmiyor.
         _kpi_card_excel(
-            ws, row=chart1_anchor_row + 16, col=19, width=4,
+            ws, row=chart1_anchor_row + 16, col=19, width=2,
             label="Hurdaya Ayrılacak",
             value=_fmt_int_tr(latest_kpis["scrap"]),
             sub="Kullanım dışı",
@@ -2151,28 +2151,28 @@ def _build_ozet_charts_sheet(
             grand_total = sum(color_totals_lw.values())
 
             _kpi_card_excel(
-                ws, row=chart4_anchor_row, col=19, width=4,
+                ws, row=chart4_anchor_row, col=19, width=2,
                 label="Toplam Konteyner",
                 value=_fmt_int_tr(grand_total),
                 sub=f"{_short_week(latest_week)} — tüm renkler",
                 tone="slate",
             )
             _kpi_card_excel(
-                ws, row=chart4_anchor_row + 4, col=19, width=4,
+                ws, row=chart4_anchor_row + 4, col=19, width=2,
                 label="En Çok Konteyner",
                 value=_fmt_int_tr(most[1]),
                 sub=f"{most[0]}",
                 tone="green",
             )
             _kpi_card_excel(
-                ws, row=chart4_anchor_row + 8, col=19, width=4,
+                ws, row=chart4_anchor_row + 8, col=19, width=2,
                 label="En Az Konteyner",
                 value=_fmt_int_tr(least[1]),
                 sub=f"{least[0]}",
                 tone="rose",
             )
             _kpi_card_excel(
-                ws, row=chart4_anchor_row + 12, col=19, width=4,
+                ws, row=chart4_anchor_row + 12, col=19, width=2,
                 label="Farklı Renk Sayısı",
                 value=_fmt_int_tr(len(color_totals_lw)),
                 sub="Latest week aktif renkler",
