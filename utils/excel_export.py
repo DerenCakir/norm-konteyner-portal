@@ -1540,14 +1540,22 @@ def _build_ozet_charts_sheet(
                 data_ws, min_col=t_rel_col, min_row=2, max_row=t_rel_last,
             )
         )
+    # Cizgi rengi: yesil (047857) -> mavi (1F3A8A). Marker dolgusu
+    # beyaz, kenari mavi olsun (nokta grafik uzerinde acikca ayrilsin).
+    # Veri etiketleri de cizgiyle ayni mavi tonda.
+    _rel_line_color = "1F3A8A"
     for s in empty_line_overlay.series:
-        s.marker = Marker(symbol="circle", size=8)
+        marker = Marker(symbol="circle", size=8)
+        marker_gp = GraphicalProperties(solidFill="FFFFFF")
+        marker_gp.line = LineProperties(solidFill=_rel_line_color, w=15000)
+        marker.graphicalProperties = marker_gp
+        s.marker = marker
         gp = GraphicalProperties()
-        gp.line = LineProperties(solidFill="047857", w=28000)
+        gp.line = LineProperties(solidFill=_rel_line_color, w=28000)
         s.graphicalProperties = gp
     empty_line_overlay.dataLabels = _value_only_labels(
         "t", "[$-tr-TR]#,##0",
-        txPr=_bold_large_label_props(size_pt=10, color="047857"),
+        txPr=_bold_large_label_props(size_pt=10, color=_rel_line_color),
     )
     # Secondary Y ekseni — axId=200, crossAx=10 (catAx), crosses='max'
     # (grafik sağ tarafında), axPos='r' (SAĞA). openpyxl default olarak
