@@ -1714,8 +1714,8 @@ def _build_ozet_charts_sheet(
     # Tight Y-axis band (0.20 → 0.90) — values typically cluster in this
     # range, and forcing the floor/ceiling surfaces week-on-week variance
     # that Excel's auto-scale would otherwise flatten.
-    chart2.y_axis.scaling.min = 0.20
-    chart2.y_axis.scaling.max = 0.90
+    chart2.y_axis.scaling.min = 0.25
+    chart2.y_axis.scaling.max = 0.80
     # Veri etiketleri kalın + 13 pt + koyu lacivert — auto-renk
     # ile soluk gri tonda kalıyordu, sabit koyu renkle (0F172A)
     # hem kalın hem yüksek kontrastla okunuyor.
