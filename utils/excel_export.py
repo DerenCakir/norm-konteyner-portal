@@ -3113,9 +3113,7 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
     show_delta_col = bool(prev_weeks)
 
     if show_delta_col:
-        delta_label = (
-            f"{_short_week(latest_wk)} vs Önceki Haftalar Ortalama (%)"
-        )
+        delta_label = "Önceki Haftalar Ortalama ve bu hafta karşılaştırma"
         headers = (
             ["Üretim Yeri"]
             + [_short_week(w) for w in weeks]
