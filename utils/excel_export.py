@@ -3287,7 +3287,11 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
 
     main_chart_anchor = sec_row + 2
     per_site_block_rows = 20  # banner(1) + back(1) + chart ~16 + gap 2
-    per_site_start_row = main_chart_anchor + 22
+    # Ana grafik (yükseklik ~20 satır) ile per-tesis blokları arasına
+    # görsel ayraç: A:J spanlı, açık renkli, yüksek satır. Grafikler
+    # arasında nefes payı bırakır.
+    separator_row = main_chart_anchor + 21
+    per_site_start_row = main_chart_anchor + 24
     site_anchors_local: dict[str, int] = {
         s: per_site_start_row + i * per_site_block_rows
         for i, s in enumerate(all_sites)
@@ -3353,6 +3357,16 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
             target_cell=f"A{_blk_start}:{get_column_letter(n_cols)}{_blk_end}",
             font_size=10,
         )
+
+    # Ana grafik ile per-tesis blokları arasında A:J spanlı ayraç
+    # satırı — grafikler üst üste yapışık görünmesin.
+    ws.merge_cells(
+        start_row=separator_row, start_column=1,
+        end_row=separator_row, end_column=10,
+    )
+    sep_cell = ws.cell(row=separator_row, column=1)
+    sep_cell.fill = PatternFill("solid", fgColor="E2E8F0")
+    ws.row_dimensions[separator_row].height = 18
 
     # Per-tesis blokları — banner + back link + BarChart.
     for i, s in enumerate(all_sites):
