@@ -2637,7 +2637,11 @@ def _build_ozet_charts_sheet(
                 ch.height = 8
                 ch.width = 8
                 _apply_chart_frame(ch)
-                ws.add_chart(ch, f"{anchor}{hdr_row}")
+                # Chart anchor bir satir yukari (back-link row = hdr_row-1)
+                # cekildi -> chart drawing (8cm) tablonun (5.6cm) uzerinde
+                # gorsel olarak daha ortalanmis oturuyor. Tablonun pozisyonu
+                # degismedi; sadece charts biraz yukari kaydi.
+                ws.add_chart(ch, f"{anchor}{hdr_row - 1}")
 
             _mini("F", "Yarı Mamul Tonajı", 2, "#,##0", "EA580C", site_ton_vals)
             _mini("J", "Boş Konteyner", 3, "#,##0", "BE123C", site_empty_vals)
