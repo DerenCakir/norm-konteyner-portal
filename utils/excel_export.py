@@ -3114,8 +3114,8 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
 
     if show_delta_col:
         delta_label = (
-            f"{_short_week(latest_wk)} − "
-            f"{_short_week(prev_weeks[0])}…{_short_week(prev_weeks[-1])} Ort."
+            f"{_short_week(latest_wk)} vs "
+            f"{_short_week(prev_weeks[0])}…{_short_week(prev_weeks[-1])} Ort. (%)"
         )
         headers = (
             ["Üretim Yeri"]
@@ -3146,7 +3146,12 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
         delta_val: float | None = None
         if show_delta_col and prev_tons:
             prev_avg = sum(prev_tons) / len(prev_tons)
-            delta_val = latest_ton - prev_avg
+            # Yüzde sapma: (bu hafta − ortalama) / ortalama. Excel
+            # "0.0%" formatı fraction'ı 100'le çarpıp %'le gösterir,
+            # yani -0.14 → "-14.0%".
+            delta_val = (
+                (latest_ton - prev_avg) / prev_avg if prev_avg else None
+            )
             row_vals.append(delta_val)
 
         ws.append(row_vals)
@@ -3166,7 +3171,7 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
                 # imzalı format (Excel'in beğendiği quote'lu form).
                 if show_delta_col and col_idx == len(row_vals) \
                         and delta_val is not None and delta_val != 0:
-                    cell.number_format = "\"+\"#,##0;\"-\"#,##0"
+                    cell.number_format = "\"+\"0.0%;\"-\"0.0%"
                     cell.font = Font(
                         bold=True,
                         color="047857" if delta_val > 0 else "BE123C",
@@ -3190,7 +3195,11 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
 
     tot_delta: float | None = None
     if show_delta_col and prev_totals:
-        tot_delta = latest_total - sum(prev_totals) / len(prev_totals)
+        prev_totals_avg = sum(prev_totals) / len(prev_totals)
+        tot_delta = (
+            (latest_total - prev_totals_avg) / prev_totals_avg
+            if prev_totals_avg else None
+        )
         total_vals.append(tot_delta)
 
     ws.append(total_vals)
@@ -3207,7 +3216,7 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
             cell.number_format = "#,##0"
             if show_delta_col and col_idx == len(total_vals) \
                     and tot_delta is not None and tot_delta != 0:
-                cell.number_format = "\"+\"#,##0;\"-\"#,##0"
+                cell.number_format = "\"+\"0.0%;\"-\"0.0%"
                 cell.font = Font(
                     bold=True,
                     color="047857" if tot_delta > 0 else "BE123C",
