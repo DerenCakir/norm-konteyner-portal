@@ -1397,14 +1397,19 @@ def _build_ozet_charts_sheet(
     # right at the stack top. Bigger bold label so the headline total
     # reads as the cluster summary.
     total_line = LineChart()
+    # titles_from_data=False + tx=None: overlay series legend'de hiç
+    # görünmesin. Aksi halde 'Toplam' ismi Excel'in bottom legend'ine
+    # sızıp legendEntry delete=1 flag'ine rağmen boş spacer olarak
+    # kalıyor. min_row=2 header satırını atlıyor.
     total_ref = Reference(
         data_ws,
-        min_col=t1_col + 5, min_row=1,
+        min_col=t1_col + 5, min_row=2,
         max_col=t1_col + 5, max_row=t1_last,
     )
-    total_line.add_data(total_ref, titles_from_data=True)
+    total_line.add_data(total_ref, titles_from_data=False)
     total_line.set_categories(cats_ref)
     for s in total_line.series:
+        s.tx = None  # legend entry doğmasın
         gp = GraphicalProperties()
         gp.line = LineProperties(noFill=True)
         s.graphicalProperties = gp
@@ -1413,8 +1418,8 @@ def _build_ozet_charts_sheet(
         "t", txPr=_bold_large_label_props(size_pt=12),
     )
     chart1 += total_line
-    # Drop the 'Toplam' series from the legend (it's just an overlay
-    # for the label; the bars below already cover the colored swatches).
+    # Ek güvence: yine de legendEntry delete işareti — bazı Excel
+    # sürümleri isimsiz series'e default label ("Series1") üretiyor.
     _hide_overlay_from_legend(chart1, total_line)
 
     # Hurda values are tiny compared to Boş / WIP / Dolu so the
