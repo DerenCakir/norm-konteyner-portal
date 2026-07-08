@@ -3114,8 +3114,7 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
 
     if show_delta_col:
         delta_label = (
-            f"{_short_week(latest_wk)} vs "
-            f"{_short_week(prev_weeks[0])}…{_short_week(prev_weeks[-1])} Ort. (%)"
+            f"{_short_week(latest_wk)} vs Önceki Haftalar Ortalama (%)"
         )
         headers = (
             ["Üretim Yeri"]
