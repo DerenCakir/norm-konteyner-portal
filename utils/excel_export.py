@@ -1731,13 +1731,20 @@ def _build_ozet_charts_sheet(
         total_btn_h = n_sites * btn_h
         start_offset = max(0, (chart_span_rows - total_btn_h) // 2)
         for i, site in enumerate(all_sites):
+            # target_cell'i tek hücre yerine tüm blok range'i olarak
+            # veriyoruz. Excel range hyperlink'te top-left'i viewport'ın
+            # üst köşesine yerleştirir; tek hücrede hedef en yakın
+            # görünüm için alt satırda kalıyor ve kullanıcı bloğu
+            # göremiyordu.
+            _blk_start = site_anchors[site]
+            _blk_end = _blk_start + _main_block_rows - 2
             _link_button_excel(
                 ws,
                 row=chart3_anchor_row + start_offset + i * btn_h,
                 col=19, width=4, height=btn_h,
                 label=site,
                 target_sheet="Grafikler",
-                target_cell=f"A{site_anchors[site]}",
+                target_cell=f"A{_blk_start}:X{_blk_end}",
                 font_size=10,
             )
 
@@ -2243,13 +2250,16 @@ def _build_ozet_charts_sheet(
         total_btn_h = n_sites * btn_h
         start_offset = max(0, (chart_span_rows - total_btn_h) // 2)
         for i, site in enumerate(all_sites):
+            # Range hyperlink — bkz. chart 3 buton bloğundaki not.
+            _blk_start = site_anchors[site]
+            _blk_end = _blk_start + _main_block_rows - 2
             _link_button_excel(
                 ws,
                 row=chart5_anchor_row + start_offset + i * btn_h,
                 col=19, width=4, height=btn_h,
                 label=site,
                 target_sheet="Grafikler",
-                target_cell=f"A{site_anchors[site]}",
+                target_cell=f"A{_blk_start}:X{_blk_end}",
                 font_size=10,
             )
 
@@ -3325,13 +3335,16 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
     total_btn_h = n_sites * btn_h
     start_offset = max(0, (chart_span_rows - total_btn_h) // 2)
     for i, s in enumerate(all_sites):
+        # Range hyperlink — Excel top-left'i viewport'a hizalar.
+        _blk_start = site_anchors_local[s]
+        _blk_end = _blk_start + per_site_block_rows - 2
         _link_button_excel(
             ws,
             row=main_chart_anchor + start_offset + i * btn_h,
             col=btn_col, width=4, height=btn_h,
             label=s,
             target_sheet="Yarı Mamul Tonajı Özeti",
-            target_cell=f"A{site_anchors_local[s]}",
+            target_cell=f"A{_blk_start}:{get_column_letter(n_cols)}{_blk_end}",
             font_size=10,
         )
 
