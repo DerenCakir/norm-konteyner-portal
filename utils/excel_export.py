@@ -2643,11 +2643,14 @@ def _build_ozet_charts_sheet(
                 # degismedi; sadece charts biraz yukari kaydi.
                 ws.add_chart(ch, f"{anchor}{hdr_row - 1}")
 
-            _mini("F", "Yarı Mamul Tonajı", 2, "#,##0", "EA580C", site_ton_vals)
-            _mini("J", "Boş Konteyner", 3, "#,##0", "BE123C", site_empty_vals)
-            _mini("N", "Dolu Konteyner", 4, "#,##0", "1F3A8A", site_full_vals)
+            # Tablo cols A-E'de. Grafik anchor'lari F -> H'a kaydirildi
+            # (2 sutun bosluk: F, G tampon). Sonraki 3 grafik 4 sutunluk
+            # aralikla H/L/P/T. T + 4 = X (col 24) — sayfa sonunda biter.
+            _mini("H", "Yarı Mamul Tonajı", 2, "#,##0", "EA580C", site_ton_vals)
+            _mini("L", "Boş Konteyner", 3, "#,##0", "BE123C", site_empty_vals)
+            _mini("P", "Dolu Konteyner", 4, "#,##0", "1F3A8A", site_full_vals)
             _mini(
-                "R", "Dolu Konteyner Tonajı", 5, "0.000", "F59E0B",
+                "T", "Dolu Konteyner Tonajı", 5, "0.000", "F59E0B",
                 site_ton_per_dolu_vals,
             )
 
