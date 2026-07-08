@@ -25,7 +25,7 @@ from typing import Any
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, LineChart, Reference
 from openpyxl.chart.data_source import NumFmt
-from openpyxl.chart.label import DataLabelList
+from openpyxl.chart.label import DataLabel, DataLabelList
 from openpyxl.chart.layout import Layout, ManualLayout
 from openpyxl.chart.legend import LegendEntry
 from openpyxl.chart.marker import Marker
@@ -1557,6 +1557,41 @@ def _build_ozet_charts_sheet(
         "t", "[$-tr-TR]#,##0",
         txPr=_bold_large_label_props(size_pt=10, color=_rel_line_color),
     )
+    # Per-nokta etiket rengi: line etiketi noktanın üstünde durur.
+    # Nokta bar'ın içine denk geliyorsa (yani secondary y ekseninde
+    # line_frac < primary y ekseninde bar_frac) etiket turuncu barın
+    # ustunde okunmaz kalıyor -> o hafta için beyaz. Aksi halde mavi
+    # (default) — beyaz chart arkaplanı üzerinde okunur.
+    _tonaj_vals = [
+        float(weekly_totals[w].get("tonnage", 0.0) or 0)
+        for w in full_weeks
+    ]
+    _bos_vals = [
+        float(weekly_totals[w].get("empty", 0) or 0)
+        for w in full_weeks
+    ]
+    _max_ton = max(_tonaj_vals) if _tonaj_vals else 0
+    _max_bos = max(_bos_vals) if _bos_vals else 0
+    if empty_line_overlay.series and _max_ton and _max_bos:
+        _line_series = empty_line_overlay.series[0]
+        if _line_series.dLbls is None:
+            _line_series.dLbls = DataLabelList()
+        _white_txpr = _bold_large_label_props(size_pt=10, color="FFFFFF")
+        for _i, (_t, _b) in enumerate(zip(_tonaj_vals, _bos_vals)):
+            _bar_frac = _t / _max_ton
+            _line_frac = _b / _max_bos
+            if _line_frac < _bar_frac:
+                _dlbl = DataLabel(
+                    idx=_i,
+                    showVal=True,
+                    showLegendKey=False,
+                    showCatName=False,
+                    showSerName=False,
+                    showPercent=False,
+                    showBubbleSize=False,
+                    txPr=_white_txpr,
+                )
+                _line_series.dLbls.dLbl.append(_dlbl)
     # Secondary Y ekseni — axId=200, crossAx=10 (catAx), crosses='max'
     # (grafik sağ tarafında), axPos='r' (SAĞA). openpyxl default olarak
     # axPos'u 'l' bırakıyor; iki valAx da 'l' derse Excel'in şeması
