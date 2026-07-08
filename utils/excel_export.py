@@ -1549,7 +1549,10 @@ def _build_ozet_charts_sheet(
     chart_rel.height = 10
     chart_rel.width = 38
     _apply_chart_frame(chart_rel)
-    chart_rel_anchor_row = 28
+    # Chart 1'in bittigi yer ile chart_rel arasindaki bosluk 3 satir
+    # kisaltildi (28 -> 25). Sol taraftaki (A-Q) bos satirlar
+    # kalkti; sagdaki KPI panel + butonlar etkilenmedi.
+    chart_rel_anchor_row = 25
     ws.add_chart(chart_rel, f"A{chart_rel_anchor_row}")
 
     # Side KPI panel for chart 1 — categories shown in the stack
