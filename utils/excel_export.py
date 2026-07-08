@@ -1494,7 +1494,7 @@ def _build_ozet_charts_sheet(
     chart_rel.type = "col"
     chart_rel.style = 2
     chart_rel.title = _make_chart_title(
-        "Yarı Mamul Stok Tonajı ve Boş Konteyner İlişkisi"
+        "Haftalık Yarı Mamul Stok Tonajı ve Boş Konteyner İlişkisi"
     )
     chart_rel.y_axis.title = _horizontal_axis_title("Tonaj (t)")
     chart_rel.x_axis.title = _end_x_axis_title("Hafta")
