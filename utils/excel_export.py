@@ -1003,6 +1003,29 @@ def _clean_axis(axis) -> None:
     axis.majorTickMark = "out"
 
 
+def _horizontal_axis_title_right(text: str) -> Title:
+    """Secondary Y ekseninin (sağdaki) üstünde yatay konumlu başlık.
+
+    ``_horizontal_axis_title`` sol-üst köşeye yerleştiriyor, ama chart
+    iki y-eksenli olduğunda sol-üst ve sağ-üst başlıkları çakışabiliyor.
+    Bu varyant title'ı sağ kenara yaklaştırır (x=0.72, edge mode),
+    böylece secondary axis'in üstünde durur.
+    """
+    body_pr = RichTextProperties(rot=0, vert="horz")
+    char_props = CharacterProperties(b=True, sz=1000)
+    para_props = ParagraphProperties(defRPr=char_props)
+    run = RegularTextRun(t=text)
+    para = Paragraph(pPr=para_props, r=[run])
+    rt = RichText(bodyPr=body_pr, p=[para])
+    tx = Text(rich=rt)
+    layout = Layout(
+        manualLayout=ManualLayout(
+            x=0.78, y=0.02, xMode="edge", yMode="edge",
+        )
+    )
+    return Title(tx=tx, layout=layout, overlay=True)
+
+
 def _horizontal_axis_title(text: str) -> Title:
     """Y-ekseninin en üstünde yatay olarak konumlanan başlık.
 
@@ -1542,7 +1565,9 @@ def _build_ozet_charts_sheet(
     # majorGridlines uretiyor ve chart alaninda arka planda 4-5 yatay
     # cizgi olusturuyor.
     empty_line_overlay.y_axis.majorGridlines = None
-    empty_line_overlay.y_axis.title = _horizontal_axis_title(
+    # Sag eksen basligini _horizontal_axis_title_right ile veriyoruz;
+    # aksi halde sol-ust kosede 'Tonaj (t)' ile ust uste biniyor.
+    empty_line_overlay.y_axis.title = _horizontal_axis_title_right(
         "Boş Konteyner Adedi"
     )
     empty_line_overlay.y_axis.numFmt = "[$-tr-TR]#,##0"
