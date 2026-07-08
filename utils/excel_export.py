@@ -1537,6 +1537,11 @@ def _build_ozet_charts_sheet(
     empty_line_overlay.y_axis.crosses = "max"
     empty_line_overlay.y_axis.axPos = "r"
     empty_line_overlay.y_axis.delete = False
+    # Secondary axis gridlines de kapali olsun — primary y_axis
+    # _clean_axis ile gridlines'i sildi ama secondary default olarak
+    # majorGridlines uretiyor ve chart alaninda arka planda 4-5 yatay
+    # cizgi olusturuyor.
+    empty_line_overlay.y_axis.majorGridlines = None
     empty_line_overlay.y_axis.title = _horizontal_axis_title(
         "Boş Konteyner Adedi"
     )
