@@ -2653,7 +2653,11 @@ def _build_ozet_charts_sheet(
                     gp = GraphicalProperties()
                     gp.line = LineProperties(solidFill=line_color, w=22000)
                     s.graphicalProperties = gp
-                ch.height = 8
+                # Aspect 8x8 (kare) -> 8x6 (landscape). Genislik cols A-X
+                # icinde 4 grafik yan yana oldugu icin >8 cm'e cikamiyoruz
+                # (adjacent chart'la cakisir). Yuksekligi 6 cm'e cektik ->
+                # chart 'ince uzun' gorunmuyor, 4:3 gorsel oran yaklasik.
+                ch.height = 6
                 ch.width = 8
                 # Bos hucreleri span et: verinin oldugu haftalar
                 # arasinda veri girilmeyen hafta varsa cizgi kopmasin,
