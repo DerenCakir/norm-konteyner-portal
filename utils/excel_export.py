@@ -2558,7 +2558,12 @@ def _build_ozet_charts_sheet(
                 sd = weekly_site.get(w, {}).get(site)
                 empty_v = int(sd.get("empty", 0)) if sd else None
                 full_v = int(sd.get("full", 0)) if sd else None
-                ton_v = float(sd.get("tonnage", 0.0)) if sd else None
+                # Ton_v: sd yoksa None; sd var ama tonnage=0 veya
+                # None ise de None (sıfır tonaj = 'kayit yok'
+                # kabul, cizgi span ile birlestirilsin, dipe
+                # dusmesin).
+                _raw_ton = sd.get("tonnage") if sd else None
+                ton_v = float(_raw_ton) if _raw_ton else None
                 ton_per_dolu = (
                     (ton_v / full_v)
                     if (sd and full_v and ton_v is not None) else None
