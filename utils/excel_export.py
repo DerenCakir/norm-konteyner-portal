@@ -1560,15 +1560,16 @@ def _build_ozet_charts_sheet(
         gp = GraphicalProperties()
         gp.line = LineProperties(solidFill=_rel_line_color, w=28000)
         s.graphicalProperties = gp
+    # Position 'b' -> etiket veri noktasinin ALTINDA. Noktanin ustunde
+    # bosluk kaliyor, "1.234" gibi sayilarin ust ust binmesi azaliyor.
     empty_line_overlay.dataLabels = _value_only_labels(
-        "t", "[$-tr-TR]#,##0",
+        "b", "[$-tr-TR]#,##0",
         txPr=_bold_large_label_props(size_pt=10, color=_rel_line_color),
     )
-    # Per-nokta etiket rengi: line etiketi noktanın üstünde durur.
-    # Nokta bar'ın içine denk geliyorsa (yani secondary y ekseninde
-    # line_frac < primary y ekseninde bar_frac) etiket turuncu barın
-    # ustunde okunmaz kalıyor -> o hafta için beyaz. Aksi halde mavi
-    # (default) — beyaz chart arkaplanı üzerinde okunur.
+    # Per-nokta etiket rengi: line etiketi noktanın ALTINDA durur.
+    # Etiket bar'ın icine denk geliyorsa (bar_top > line_point - offset)
+    # turuncu barın uzerinde okunmuyor -> beyaz. Aksi halde mavi (chart
+    # beyaz arkaplani uzerinde okunur).
     _tonaj_vals = [
         float(weekly_totals[w].get("tonnage", 0.0) or 0)
         for w in full_weeks
@@ -1597,7 +1598,10 @@ def _build_ozet_charts_sheet(
         for _i, (_t, _b) in enumerate(zip(_tonaj_vals, _bos_vals)):
             _bar_frac = _t / _max_ton
             _line_frac = _b / _max_bos
-            if _line_frac < _bar_frac:
+            # Etiket ALTTA oldugu icin nokta bar'in az uzerinde bile
+            # olsa etiket bar icine dusuyor. Marj (0.05) ekleyip
+            # sinir durumlari da beyazla kapaniyor.
+            if _line_frac < _bar_frac + 0.05:
                 _dlbl = DataLabel(
                     idx=_i,
                     showVal=True,
