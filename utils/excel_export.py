@@ -3495,7 +3495,10 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
     _clean_axis(main_chart.x_axis)
     _clean_axis(main_chart.y_axis)
     main_chart.y_axis.numFmt = "#,##0"
-    main_chart.y_axis.scaling.min = 0
+    # Y ekseni 0'dan degil 6.000'den baslasin — degerler ~7.000-9.000
+    # civari oldugu icin 0-2000 aralik grafik alanini yigiyor, farkliliklar
+    # ezik gorunuyordu.
+    main_chart.y_axis.scaling.min = 6000
     main_chart.gapWidth = 30
     for series in main_chart.series:
         gp = GraphicalProperties(solidFill="1F3A8A")
