@@ -316,14 +316,15 @@ def _kpi_card_excel(
     sub_cell.fill = PatternFill("solid", fgColor="FFFFFF")
     ws.row_dimensions[row + 2].height = 14
 
-    # Border sadece merged 3 satırın top-left hücrelerinde — daha
-    # önce iç hücrelere ws.cell() ile dokunuyorduk, bu 'empty numeric
-    # cells inside merged range' üretip Excel'i sorunlu buluyordu.
+    # Border her satirin TUM hucrelerinde — merged range'in top-left'i
+    # ile sinirli birakinca sag/alt kenarlar kapanmiyor, kart yarim
+    # gorunuyor. Icteki hucrelere sadece border set etmek 'empty numeric
+    # cells' sorunu tetiklemez (yalnizca deger atarken sorun cikiyordu).
     thin = Side(style="thin", color="CBD5E1")
     box = Border(left=thin, right=thin, top=thin, bottom=thin)
-    label_cell.border = box
-    value_cell.border = box
-    sub_cell.border = box
+    for card_row in (row, row + 1, row + 2):
+        for card_col in range(col, end_col + 1):
+            ws.cell(row=card_row, column=card_col).border = box
 
 
 def _link_button_excel(
