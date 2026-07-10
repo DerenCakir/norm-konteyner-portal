@@ -2542,12 +2542,10 @@ def _build_ozet_charts_sheet(
                 c.font = _HEADER_FONT
                 c.alignment = wrap_center
                 c.border = _BORDER
-            # Basligi grafiklerin sag kenarina kadar uzat: cols 6-24
-            # (F-X) bos hucrelere navy fill ver -> table + charts arasi
-            # ayrim netlesir, block basligi tam gerinir.
-            for j in range(6, 25):
-                c = ws.cell(row=hdr_row, column=j)
-                c.fill = _HEADER_FILL
+            # Tablo header dolgusu (task 16'da F-X uzatilmisti) kullanici
+            # istegiyle geri alindi -- fill sadece tablo cols A-E'de,
+            # tablo bittiginde dolgu bitiyor. Uzeriindeki BANNER (block_row)
+            # zaten merged A:X navy dolgulu, gorsel bagli.
             ws.row_dimensions[hdr_row].height = 40
 
             # Veri satırları — Yarı Mamul Tonajı ham gerçekleşen tonaj;
