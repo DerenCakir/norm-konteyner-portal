@@ -2622,6 +2622,7 @@ def _build_ozet_charts_sheet(
             def _mini(
                 anchor: str, title: str, src_col: int,
                 num_fmt: str, line_color: str, series_vals: list[float],
+                y_min: float = 0,
             ) -> None:
                 ch = LineChart()
                 ch.title = _make_chart_title(title)
@@ -2641,11 +2642,12 @@ def _build_ozet_charts_sheet(
                 _clean_axis(ch.x_axis)
                 _clean_axis(ch.y_axis)
                 ch.y_axis.numFmt = num_fmt
-                ch.y_axis.scaling.min = 0
+                ch.y_axis.scaling.min = y_min
                 max_v = max(series_vals) if series_vals else 0
                 # max=0 durumunda 5 sabit; aksi halde %20 üst boşluk.
+                # y_min>0 iken de tepe degeri korunuyor.
                 ch.y_axis.scaling.max = (
-                    float(max_v) * 1.2 if max_v > 0 else 5
+                    float(max_v) * 1.2 if max_v > 0 else max(y_min + 1, 5)
                 )
                 ch.legend = None
                 for s in ch.series:
@@ -2678,9 +2680,11 @@ def _build_ozet_charts_sheet(
             _mini("H", "Yarı Mamul Tonajı", 2, "#,##0", "EA580C", site_ton_vals)
             _mini("L", "Boş Konteyner", 3, "#,##0", "BE123C", site_empty_vals)
             _mini("P", "Dolu Konteyner", 4, "#,##0", "1F3A8A", site_full_vals)
+            # Dolu Konteyner Tonaji ratio (0.3-0.6 arasi); y ekseni 0'dan
+            # baslarsa varyasyon gorunmuyor. y_min=0.25 sıkıştırır.
             _mini(
                 "T", "Dolu Konteyner Tonajı", 5, "0.00", "F59E0B",
-                site_ton_per_dolu_vals,
+                site_ton_per_dolu_vals, y_min=0.25,
             )
 
 
