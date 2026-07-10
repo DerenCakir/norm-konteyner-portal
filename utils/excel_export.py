@@ -1581,8 +1581,18 @@ def _build_ozet_charts_sheet(
     _max_bos = max(_bos_vals) if _bos_vals else 0
     if empty_line_overlay.series and _max_ton and _max_bos:
         _line_series = empty_line_overlay.series[0]
-        if _line_series.dLbls is None:
-            _line_series.dLbls = DataLabelList()
+        # Series-level dLbls'i explicit init edip show* flag'leri sifir
+        # yapıyoruz. Bos DataLabelList() -> XML'de <dLbls/> -> Excel
+        # default'a dusuyor ve line chart default showSerName=TRUE ile
+        # her data point'te "Bos Konteyner" seri adini yaziyordu.
+        _line_series.dLbls = DataLabelList(
+            showVal=True,
+            showLegendKey=False,
+            showCatName=False,
+            showSerName=False,
+            showPercent=False,
+            showBubbleSize=False,
+        )
         _white_txpr = _bold_large_label_props(size_pt=10, color="FFFFFF")
         for _i, (_t, _b) in enumerate(zip(_tonaj_vals, _bos_vals)):
             _bar_frac = _t / _max_ton
