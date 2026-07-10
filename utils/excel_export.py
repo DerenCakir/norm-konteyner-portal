@@ -3276,11 +3276,12 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
         ws["A1"].font = Font(italic=True, color="64748B")
         return
 
-    # Son sütun: son haftanın önceki 3 haftanın ortalamasına göre
-    # farkı. Örn. W28 sayımında W25/W26/W27 ortalamasıyla
-    # karşılaştırılıyor. Yeterli hafta yoksa (< 2) sütunu atlıyoruz.
+    # Son sütun: son haftanın TÜM önceki haftaların ortalamasına göre
+    # farkı. Örn. W28 sayımında W20..W27'nin ortalamasıyla
+    # karşılaştırılıyor. Kullanici son 3 haftaya sinirlamak yerine tum
+    # gecmisi baz almayi istedi. Yeterli hafta yoksa (< 2) sutunu atliyoruz.
     latest_wk = weeks[-1]
-    prev_weeks = weeks[-4:-1] if len(weeks) >= 4 else weeks[:-1]
+    prev_weeks = weeks[:-1]
     show_delta_col = bool(prev_weeks)
 
     if show_delta_col:
