@@ -2101,7 +2101,9 @@ def _build_ozet_charts_sheet(
     _clean_axis(chart_wtonnage_trend.x_axis)
     _clean_axis(chart_wtonnage_trend.y_axis)
     chart_wtonnage_trend.y_axis.numFmt = "[$-tr-TR]#,##0"
-    chart_wtonnage_trend.y_axis.scaling.min = 0
+    # Y ekseni 6000'den baslasin — degerler 7-9k aralik, 0-6k grafik
+    # alanini yiğiyordu.
+    chart_wtonnage_trend.y_axis.scaling.min = 6000
     chart_wtonnage_trend.dataLabels = _value_only_labels(
         "t", "[$-tr-TR]#,##0",
         txPr=_bold_large_label_props(size_pt=12, color="0F172A"),
