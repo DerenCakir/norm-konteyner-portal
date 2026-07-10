@@ -2567,7 +2567,7 @@ def _build_ozet_charts_sheet(
                 c4.border = _BORDER
                 c5 = ws.cell(row=r, column=5, value=ton_per_dolu)
                 c5.alignment = _RIGHT
-                c5.number_format = "0.000"
+                c5.number_format = "0.00"
                 c5.border = _BORDER
 
             table_end_row = hdr_row + len(full_weeks)
@@ -2663,7 +2663,7 @@ def _build_ozet_charts_sheet(
             _mini("L", "Boş Konteyner", 3, "#,##0", "BE123C", site_empty_vals)
             _mini("P", "Dolu Konteyner", 4, "#,##0", "1F3A8A", site_full_vals)
             _mini(
-                "T", "Dolu Konteyner Tonajı", 5, "0.000", "F59E0B",
+                "T", "Dolu Konteyner Tonajı", 5, "0.00", "F59E0B",
                 site_ton_per_dolu_vals,
             )
 
