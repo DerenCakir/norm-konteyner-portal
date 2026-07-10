@@ -1009,8 +1009,9 @@ def _horizontal_axis_title_right(text: str) -> Title:
 
     ``_horizontal_axis_title`` sol-üst köşeye yerleştiriyor, ama chart
     iki y-eksenli olduğunda sol-üst ve sağ-üst başlıkları çakışabiliyor.
-    Bu varyant title'ı sağ kenara yaklaştırır (x=0.72, edge mode),
-    böylece secondary axis'in üstünde durur.
+    Bu varyant title'ı sağ kenara yaklaştırır (x=0.87, edge mode),
+    böylece secondary axis'in tam üstünde durur — 0.78'de plot area
+    içinde 'bosluk gibi' gorunuyordu.
     """
     body_pr = RichTextProperties(rot=0, vert="horz")
     char_props = CharacterProperties(b=True, sz=1000)
@@ -1021,7 +1022,7 @@ def _horizontal_axis_title_right(text: str) -> Title:
     tx = Text(rich=rt)
     layout = Layout(
         manualLayout=ManualLayout(
-            x=0.78, y=0.02, xMode="edge", yMode="edge",
+            x=0.87, y=0.02, xMode="edge", yMode="edge",
         )
     )
     return Title(tx=tx, layout=layout, overlay=True)
