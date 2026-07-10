@@ -26,6 +26,7 @@ from openpyxl import Workbook
 from openpyxl.chart import BarChart, LineChart, Reference
 from openpyxl.chart.data_source import NumFmt
 from openpyxl.chart.label import DataLabel, DataLabelList
+from openpyxl.chart.series import SeriesLabel
 from openpyxl.chart.layout import Layout, ManualLayout
 from openpyxl.chart.legend import LegendEntry
 from openpyxl.chart.marker import Marker
@@ -1432,7 +1433,12 @@ def _build_ozet_charts_sheet(
     total_line.add_data(total_ref, titles_from_data=False)
     total_line.set_categories(cats_ref)
     for s in total_line.series:
-        s.tx = None  # legend entry doğmasın
+        # tx=None yaptigimizda Excel otomatik 'Seri5' adini uretiyor.
+        # SeriesLabel(v=' ') inline empty-space title verir; Excel bunu
+        # 'kullanici belirledi, bosluk demek' diye kabul edip 'Seri5'e
+        # dusmez. legendEntry delete=1 flag'i de bu bosluklu ismi
+        # legenden temizler.
+        s.tx = SeriesLabel(v=" ")
         gp = GraphicalProperties()
         gp.line = LineProperties(noFill=True)
         s.graphicalProperties = gp
