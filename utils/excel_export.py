@@ -3510,8 +3510,12 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
     ws.add_chart(main_chart, f"A{main_chart_anchor}")
 
     # Yandaki üretim yeri butonları — target_cell doğrudan blok
-    # banner satırına (offset yok).
-    btn_col = 16
+    # banner satırına (offset yok). Kullanici isteği: buton genisligi
+    # 4 -> 3 sutun, grafik ile buton arasindaki bosluk 4 -> 2 sutun.
+    # Ana grafik cols A-K spans (~22cm/2cm-per-col = 11 col). Grafik
+    # sonu K (11). 2 sutun bosluk = L, M. Buton N (14)'ten baslar,
+    # width 3 = N/O/P.
+    btn_col = 14
     btn_h = 2
     chart_span_rows = 20
     total_btn_h = n_sites * btn_h
@@ -3523,7 +3527,7 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
         _link_button_excel(
             ws,
             row=main_chart_anchor + start_offset + i * btn_h,
-            col=btn_col, width=4, height=btn_h,
+            col=btn_col, width=3, height=btn_h,
             label=s,
             target_sheet="Yarı Mamul Tonajı Özeti",
             target_cell=f"A{_blk_start}:{get_column_letter(n_cols)}{_blk_end}",
