@@ -2662,11 +2662,11 @@ def _build_ozet_charts_sheet(
                 # cizgi kesiliyordu.
                 ch.display_blanks = "span"
                 _apply_chart_frame(ch)
-                # Chart anchor bir satir yukari (back-link row = hdr_row-1)
-                # cekildi -> chart drawing (8cm) tablonun (5.6cm) uzerinde
-                # gorsel olarak daha ortalanmis oturuyor. Tablonun pozisyonu
-                # degismedi; sadece charts biraz yukari kaydi.
-                ws.add_chart(ch, f"{anchor}{hdr_row - 1}")
+                # Chart anchor tablo header'inin (blue fill) 1 satir altina
+                # (hdr_row+1 = ilk data satiri) yerlestirildi. Tablo mavi
+                # dolgusu ile chart drawing arasinda 1 satir gorsel bosluk
+                # olusuyor, yapisikligi kalkiyor.
+                ws.add_chart(ch, f"{anchor}{hdr_row + 1}")
 
             # Tablo cols A-E'de. Grafik anchor'lari F -> H'a kaydirildi
             # (2 sutun bosluk: F, G tampon). Sonraki 3 grafik 4 sutunluk
