@@ -2643,6 +2643,12 @@ def _build_ozet_charts_sheet(
                     s.graphicalProperties = gp
                 ch.height = 8
                 ch.width = 8
+                # Bos hucreleri span et: verinin oldugu haftalar
+                # arasinda veri girilmeyen hafta varsa cizgi kopmasin,
+                # noktalar duz cizgiyle birlesir. Default 'gap' idi ->
+                # ornegin W20 ile W21 arasinda W20.5 bos oldugunda
+                # cizgi kesiliyordu.
+                ch.display_blanks = "span"
                 _apply_chart_frame(ch)
                 # Chart anchor bir satir yukari (back-link row = hdr_row-1)
                 # cekildi -> chart drawing (8cm) tablonun (5.6cm) uzerinde
