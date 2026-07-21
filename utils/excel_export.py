@@ -998,6 +998,31 @@ def _short_week(week_iso: str) -> str:
     return week_iso
 
 
+def _axis_bounds_hug(
+    values: list[float], round_step: float | None = None,
+) -> tuple[float, float]:
+    """Veri araligina odakli y-axis min/max hesapla.
+
+    None ve <=0 degerler atlanir. %10 pay eklenir (sıfır alt sinir).
+    ``round_step`` verilirse min/max degerler bu adima yuvarlanir
+    (ornek: 500 -> min 3000 icin 3000 asagi, max 8200 -> 8500 yukari).
+    """
+    _pos = [float(v) for v in values if v is not None and float(v) > 0]
+    if not _pos:
+        return 0.0, 1.0
+    d_min = min(_pos)
+    d_max = max(_pos)
+    span = d_max - d_min
+    pad = max(span * 0.10, d_max * 0.02)
+    lo = max(0.0, d_min - pad)
+    hi = d_max + pad
+    if round_step and round_step > 0:
+        import math
+        lo = math.floor(lo / round_step) * round_step
+        hi = math.ceil(hi / round_step) * round_step
+    return lo, hi
+
+
 def _clean_axis(axis) -> None:
     """Common axis styling: visible labels, no major gridlines."""
     axis.delete = False
@@ -1975,8 +2000,11 @@ def _build_ozet_charts_sheet(
     _clean_axis(chart_empty_trend.x_axis)
     _clean_axis(chart_empty_trend.y_axis)
     chart_empty_trend.y_axis.numFmt = "[$-tr-TR]#,##0"
-    # Y ekseni 2000'den baslasin — degerler ust bantta yiğiliyordu.
-    chart_empty_trend.y_axis.scaling.min = 2000
+    # Y ekseni verinin araligina odakli — 500 adimla yuvarlanir.
+    _emp_vals = [int(weekly_totals[w].get("empty", 0) or 0) for w in full_weeks]
+    _lo, _hi = _axis_bounds_hug(_emp_vals, round_step=500)
+    chart_empty_trend.y_axis.scaling.min = _lo
+    chart_empty_trend.y_axis.scaling.max = _hi
     chart_empty_trend.dataLabels = _value_only_labels(
         "t", "[$-tr-TR]#,##0",
         txPr=_bold_large_label_props(size_pt=12, color="0F172A"),
@@ -2038,9 +2066,11 @@ def _build_ozet_charts_sheet(
     _clean_axis(chart_full_trend.x_axis)
     _clean_axis(chart_full_trend.y_axis)
     chart_full_trend.y_axis.numFmt = "[$-tr-TR]#,##0"
-    # Y ekseni 21000'den baslasin — 15000'den de degerler ust bantta
-    # yigiliyordu, kullanici daha sıkı bir aralık istedi.
-    chart_full_trend.y_axis.scaling.min = 21000
+    # Y ekseni verinin araligina odakli — 500 adimla yuvarlanir.
+    _full_vals = [int(weekly_totals[w].get("full", 0) or 0) for w in full_weeks]
+    _lo, _hi = _axis_bounds_hug(_full_vals, round_step=500)
+    chart_full_trend.y_axis.scaling.min = _lo
+    chart_full_trend.y_axis.scaling.max = _hi
     chart_full_trend.dataLabels = _value_only_labels(
         "t", "[$-tr-TR]#,##0",
         txPr=_bold_large_label_props(size_pt=12, color="0F172A"),
@@ -2102,9 +2132,13 @@ def _build_ozet_charts_sheet(
     _clean_axis(chart_wtonnage_trend.x_axis)
     _clean_axis(chart_wtonnage_trend.y_axis)
     chart_wtonnage_trend.y_axis.numFmt = "[$-tr-TR]#,##0"
-    # Y ekseni 6000'den baslasin — degerler 7-9k aralik, 0-6k grafik
-    # alanini yiğiyordu.
-    chart_wtonnage_trend.y_axis.scaling.min = 6000
+    # Y ekseni verinin araligina odakli — 500 adimla yuvarlanir.
+    _wton_vals = [
+        float(weekly_totals[w].get("tonnage", 0) or 0) for w in full_weeks
+    ]
+    _lo, _hi = _axis_bounds_hug(_wton_vals, round_step=500)
+    chart_wtonnage_trend.y_axis.scaling.min = _lo
+    chart_wtonnage_trend.y_axis.scaling.max = _hi
     chart_wtonnage_trend.dataLabels = _value_only_labels(
         "t", "[$-tr-TR]#,##0",
         txPr=_bold_large_label_props(size_pt=12, color="0F172A"),
