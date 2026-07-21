@@ -2651,13 +2651,28 @@ def _build_ozet_charts_sheet(
                 _clean_axis(ch.x_axis)
                 _clean_axis(ch.y_axis)
                 ch.y_axis.numFmt = num_fmt
-                ch.y_axis.scaling.min = y_min
-                max_v = max(series_vals) if series_vals else 0
-                # max=0 durumunda 5 sabit; aksi halde %20 üst boşluk.
-                # y_min>0 iken de tepe degeri korunuyor.
-                ch.y_axis.scaling.max = (
-                    float(max_v) * 1.2 if max_v > 0 else max(y_min + 1, 5)
-                )
+                # Sadece pozitif degerleri baz al (None ve 0'lar span
+                # edildi, chart'ta yer almiyor). Min: verinin en dususu
+                # (asagida bir tik), Max: en yuksegi (yukarida bir tik).
+                # Excel auto-scale negatif padding koyup uc'a yayilma
+                # yapmasin -> tam veri araligina odaklan.
+                _positive_vals = [
+                    float(v) for v in series_vals
+                    if v is not None and float(v) > 0
+                ]
+                if _positive_vals:
+                    _data_min = min(_positive_vals)
+                    _data_max = max(_positive_vals)
+                    _span = _data_max - _data_min
+                    # 10% pay üstte ve altta, negatife inmesin.
+                    _pad = max(_span * 0.10, _data_max * 0.02)
+                    ch.y_axis.scaling.min = max(
+                        y_min, max(0.0, _data_min - _pad),
+                    )
+                    ch.y_axis.scaling.max = _data_max + _pad
+                else:
+                    ch.y_axis.scaling.min = y_min
+                    ch.y_axis.scaling.max = max(y_min + 1, 5)
                 ch.legend = None
                 for s in ch.series:
                     s.marker = Marker(symbol="circle", size=5)
