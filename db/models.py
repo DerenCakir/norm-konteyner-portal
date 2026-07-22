@@ -467,6 +467,61 @@ class ClosedWeek(Base):
 
 
 # ---------------------------------------------------------------------------
+# 8d. SITE TONNAGE TARGETS (üretim yeri bazlı, dönemsel hedef)
+# ---------------------------------------------------------------------------
+class SiteTonnageTarget(Base):
+    """Üretim yeri × hafta hedef tonaj. Dönemsel (3 ayda bir tipik).
+
+    Aynı site için birden fazla dönem kaydı olur; hangi hafta hangi
+    hedef geçerli, ``effective_from``/``effective_to`` ile belirlenir.
+    Yeni kayıt eklendiğinde önceki açık uçlu kayıt kapatılır
+    (uygulama katmanı yapıyor, trigger yok).
+    """
+
+    __tablename__ = "site_tonnage_targets"
+    __table_args__ = (
+        UniqueConstraint(
+            "production_site_id", "effective_from",
+            name="site_tonnage_targets_site_from_key",
+        ),
+        CheckConstraint(
+            "weekly_target_ton >= 0",
+            name="site_tonnage_targets_non_negative",
+        ),
+        CheckConstraint(
+            "effective_to IS NULL OR effective_to >= effective_from",
+            name="site_tonnage_targets_range_check",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    production_site_id: Mapped[int] = mapped_column(
+        ForeignKey("production_sites.id"), nullable=False, index=True,
+    )
+    weekly_target_ton: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2), nullable=False,
+    )
+    effective_from: Mapped[date] = mapped_column(Date, nullable=False)
+    effective_to: Mapped[Optional[date]] = mapped_column(Date)
+    created_by: Mapped[int] = mapped_column(
+        ForeignKey("users.id"), nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), nullable=False,
+    )
+
+    site: Mapped["ProductionSite"] = relationship()
+    creator: Mapped["User"] = relationship()
+
+    def __repr__(self) -> str:
+        return (
+            f"<SiteTonnageTarget site_id={self.production_site_id} "
+            f"target={self.weekly_target_ton} "
+            f"from={self.effective_from} to={self.effective_to}>"
+        )
+
+
+# ---------------------------------------------------------------------------
 # 9. AUDIT LOG
 # ---------------------------------------------------------------------------
 class AuditLog(Base):

@@ -31,6 +31,7 @@ from db.models import (
     LateWindowOverride,
     ManualSiteAggregate,
     ProductionSite,
+    SiteTonnageTarget,
     SubmissionSchedule,
     User,
     UserDepartment,
@@ -45,6 +46,12 @@ from utils.cached_queries import (
     get_week_export_rows,
 )
 from utils.excel_export import build_all_weeks_excel, build_week_excel
+from utils.site_targets import (
+    create_new_period as create_target_period,
+    delete_target as delete_site_target,
+    latest_targets_by_site,
+    list_all_targets,
+)
 from utils.performance import page_timer
 from utils.ui import (
     flush_pending_toasts,
@@ -105,6 +112,7 @@ _TAB_KEYS = [
     ("perms",        "Yetkilendirme"),
     ("departments",  "Bölümler"),
     ("colors",       "Renkler"),
+    ("targets",      "Tonaj Hedefleri"),
     ("schedule",     "Sayım Takvimi"),
     ("late",         "Geç Giriş"),
     ("closed",       "Sayım Kapat"),
@@ -964,6 +972,234 @@ if _is_active("perms"):
                     st.rerun()
                 except Exception as exc:
                     st.error(f"Hata: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# TAB — TONAJ HEDEFLERİ (üretim yeri × haftalık hedef, dönemsel)
+# ---------------------------------------------------------------------------
+if _is_active("targets"):
+    st.subheader("Tonaj Hedefleri")
+    st.caption(
+        "Üretim yeri bazlı **haftalık** tonaj hedefleri. Hedefler "
+        "genelde 3 ayda bir yenilenir — yeni dönem başlattığında önceki "
+        "dönem otomatik olarak bir gün öncesine kapatılır. Geçmiş "
+        "haftaların analizi kendi dönemindeki hedefe göre yapılır."
+    )
+
+    from datetime import date as _date, timedelta as _td
+
+    def _next_monday(from_date: _date) -> _date:
+        # 0=Mon..6=Sun → gelecek Pazartesi
+        days_ahead = (7 - from_date.weekday()) % 7
+        if days_ahead == 0:
+            days_ahead = 7
+        return from_date + _td(days=days_ahead)
+
+    with get_session() as s:
+        sites = list(s.execute(
+            select(ProductionSite)
+            .where(ProductionSite.is_active.is_(True))
+            .order_by(ProductionSite.name)
+        ).scalars())
+        latest = latest_targets_by_site(s)
+        # relationship'leri detach etmemek için isim + son hedef verisini
+        # dict'e alıyoruz (session kapanınca ORM lazy-load patlıyor).
+        latest_view = [
+            {
+                "site_id": site.id,
+                "site_name": site.name,
+                "target": (
+                    float(latest[site.id].weekly_target_ton)
+                    if site.id in latest else None
+                ),
+                "effective_from": (
+                    latest[site.id].effective_from
+                    if site.id in latest else None
+                ),
+                "effective_to": (
+                    latest[site.id].effective_to
+                    if site.id in latest else None
+                ),
+            }
+            for site in sites
+        ]
+        all_history = list_all_targets(s)
+        history_view = [
+            {
+                "id": row.id,
+                "site_id": row.production_site_id,
+                "target": float(row.weekly_target_ton),
+                "effective_from": row.effective_from,
+                "effective_to": row.effective_to,
+            }
+            for row in all_history
+        ]
+
+    site_name_by_id = {v["site_id"]: v["site_name"] for v in latest_view}
+
+    # ---- Aktif hedefler tablosu ----
+    st.markdown("#### Aktif / Son Hedefler")
+    if latest_view:
+        df_active = pd.DataFrame([
+            {
+                "Üretim Yeri": v["site_name"],
+                "Haftalık Hedef (t)": v["target"],
+                "Başlangıç": v["effective_from"],
+                "Bitiş": v["effective_to"] or "— (açık)",
+            }
+            for v in latest_view
+        ])
+        st.dataframe(
+            df_active,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Haftalık Hedef (t)": st.column_config.NumberColumn(
+                    format="%.2f",
+                ),
+            },
+        )
+    else:
+        st.info("Henüz hedef tanımlı değil.")
+
+    st.divider()
+
+    # ---- Yeni dönem başlat ----
+    st.markdown("#### Yeni Dönem Başlat")
+    st.caption(
+        "Verilen başlangıç tarihi bir Pazartesi olmalıdır (haftalık "
+        "sayım Pazartesi'den itibaren geçerli). Bu tarihte veya öncesinde "
+        "açık uçlu önceki kayıtlar bir gün öncesine kapatılır."
+    )
+
+    default_start = _next_monday(_date.today())
+    with st.form("new_target_period_form", clear_on_submit=False):
+        start_date = st.date_input(
+            "Başlangıç Tarihi (Pazartesi)",
+            value=default_start,
+            help="Bu tarih dahil olmak üzere yeni hedefler geçerli.",
+        )
+        st.markdown("**Üretim yeri hedefleri (ton):**")
+        target_inputs: dict[int, float] = {}
+        cols = st.columns(2)
+        for i, v in enumerate(latest_view):
+            col = cols[i % 2]
+            with col:
+                target_inputs[v["site_id"]] = st.number_input(
+                    v["site_name"],
+                    min_value=0.0,
+                    value=float(v["target"] or 0.0),
+                    step=1.0,
+                    format="%.2f",
+                    key=f"tgt_{v['site_id']}",
+                )
+        submitted = st.form_submit_button(
+            "Yeni Dönem Kaydet", use_container_width=True, type="primary",
+        )
+
+    if submitted:
+        if start_date.weekday() != 0:
+            st.error(
+                f"Başlangıç tarihi Pazartesi olmalı "
+                f"(seçilen gün: {start_date.strftime('%A')})."
+            )
+        else:
+            # 0 verilen siteler dahil edilmiyor (hedef girmediyseniz
+            # kayıt oluşmasın; sıfır hedef mantıksız).
+            payload = {
+                sid: Decimal(str(val))
+                for sid, val in target_inputs.items()
+                if val > 0
+            }
+            if not payload:
+                st.error("En az bir üretim yeri için pozitif hedef girin.")
+            else:
+                try:
+                    with get_session() as s:
+                        created = create_target_period(
+                            s, start_date, payload, created_by=admin_id,
+                        )
+                        s.add(AuditLog(
+                            user_id=admin_id,
+                            action="site_target_period_create",
+                            entity_type="site_tonnage_targets",
+                            new_value={
+                                "effective_from": start_date.isoformat(),
+                                "count": len(created),
+                                "targets": {
+                                    site_name_by_id.get(sid, str(sid)): float(v)
+                                    for sid, v in payload.items()
+                                },
+                            },
+                        ))
+                    clear_cached_queries()
+                    queue_toast(
+                        f"{len(created)} hedef için yeni dönem başlatıldı.",
+                        icon="✅",
+                    )
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f"Hata: {exc}")
+
+    st.divider()
+
+    # ---- Geçmiş kayıtlar / silme ----
+    with st.expander(f"📚 Tüm Hedef Geçmişi ({len(history_view)})", expanded=False):
+        if not history_view:
+            st.info("Kayıt yok.")
+        else:
+            df_hist = pd.DataFrame([
+                {
+                    "ID": h["id"],
+                    "Üretim Yeri": site_name_by_id.get(h["site_id"], "?"),
+                    "Hedef (t/hafta)": h["target"],
+                    "Başlangıç": h["effective_from"],
+                    "Bitiş": h["effective_to"] or "— (açık)",
+                }
+                for h in history_view
+            ])
+            st.dataframe(df_hist, use_container_width=True, hide_index=True)
+
+            st.markdown("**Kayıt Sil** (yanlış girilen dönem için)")
+            delete_id = st.number_input(
+                "Silinecek Kayıt ID",
+                min_value=0, step=1, value=0,
+                key="delete_target_id",
+            )
+            if st.button("Sil", type="secondary"):
+                if delete_id <= 0:
+                    st.error("Geçerli bir ID girin.")
+                else:
+                    try:
+                        with get_session() as s:
+                            row = s.get(SiteTonnageTarget, int(delete_id))
+                            if row is None:
+                                st.error(f"ID {delete_id} bulunamadı.")
+                            else:
+                                snapshot = {
+                                    "site_id": row.production_site_id,
+                                    "target": float(row.weekly_target_ton),
+                                    "effective_from": row.effective_from.isoformat(),
+                                    "effective_to": (
+                                        row.effective_to.isoformat()
+                                        if row.effective_to else None
+                                    ),
+                                }
+                                delete_site_target(s, int(delete_id))
+                                s.add(AuditLog(
+                                    user_id=admin_id,
+                                    action="site_target_delete",
+                                    entity_type="site_tonnage_targets",
+                                    entity_id=int(delete_id),
+                                    old_value=snapshot,
+                                ))
+                        clear_cached_queries()
+                        queue_toast(
+                            f"ID {delete_id} silindi.", icon="🗑",
+                        )
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Hata: {exc}")
 
 
 # ---------------------------------------------------------------------------
