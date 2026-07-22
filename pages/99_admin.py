@@ -980,10 +980,10 @@ if _is_active("perms"):
 if _is_active("targets"):
     st.subheader("Tonaj Hedefleri")
     st.caption(
-        "Üretim yeri bazlı **haftalık** tonaj hedefleri. Hedefler "
-        "genelde 3 ayda bir yenilenir — yeni dönem başlattığında önceki "
-        "dönem otomatik olarak bir gün öncesine kapatılır. Geçmiş "
-        "haftaların analizi kendi dönemindeki hedefe göre yapılır."
+        "Üretim yeri bazlı **haftalık** tonaj hedefleri. Girdiğiniz "
+        "hedef, siz değiştirene kadar geçerlidir. Değiştirdiğinizde "
+        "önceki hedef otomatik olarak yeni tarihin bir gün öncesine "
+        "kapatılır ve geçmiş haftaların analizinde eski hedef kullanılır."
     )
 
     from datetime import date as _date, timedelta as _td
@@ -1041,15 +1041,15 @@ if _is_active("targets"):
     site_name_by_id = {v["site_id"]: v["site_name"] for v in latest_view}
 
     # ---- Aktif hedefler tablosu ----
-    st.markdown("#### Aktif / Son Hedefler")
+    st.markdown("#### Şu An Geçerli Hedefler")
     if latest_view:
         df_active = pd.DataFrame([
             {
                 "Kod": v["site_code"],
                 "Üretim Yeri": v["site_name"],
                 "Haftalık Hedef (t)": v["target"],
-                "Başlangıç": v["effective_from"],
-                "Bitiş": v["effective_to"] or "— (açık)",
+                "Geçerli Başlangıç": v["effective_from"],
+                "Geçerli Bitiş": v["effective_to"] or "— (hâlâ geçerli)",
             }
             for v in latest_view
         ])
@@ -1068,24 +1068,24 @@ if _is_active("targets"):
 
     st.divider()
 
-    # ---- Yeni dönem başlat ----
-    st.markdown("#### Yeni Dönem Başlat")
+    # ---- Hedef gir / güncelle ----
+    st.markdown("#### Hedef Gir / Güncelle")
     st.caption(
-        "Başlangıç tarihi bir Pazartesi olmalıdır (haftalık sayım "
-        "Pazartesi'den itibaren geçerli). **Geçmişe dönük** kayıt "
+        "Geçerlilik tarihi bir Pazartesi olmalıdır (haftalık sayım "
+        "Pazartesi'den itibaren geçerli). **Geçmişe dönük** giriş "
         "yapılabilir: eski bir tarih girildiğinde önceki/sonraki "
-        "dönemlerin geçerlilik aralıkları otomatik ayarlanır."
+        "kayıtların geçerlilik aralıkları otomatik ayarlanır."
     )
 
     default_start = _next_monday(_date.today())
     with st.form("new_target_period_form", clear_on_submit=False):
         start_date = st.date_input(
-            "Başlangıç Tarihi (Pazartesi)",
+            "Geçerlilik Tarihi (Pazartesi)",
             value=default_start,
-            min_value=_date(2020, 1, 6),  # geçmişe dönük giriş için geniş alt sınır
+            min_value=_date(2020, 1, 6),
             help=(
-                "Bu tarih dahil olmak üzere yeni hedefler geçerli. "
-                "Geçmiş tarih seçebilirsiniz."
+                "Bu tarih dahil olmak üzere yeni hedefler geçerli — "
+                "siz tekrar değiştirene kadar. Geçmiş tarih seçebilirsiniz."
             ),
         )
         st.markdown("**Üretim yeri hedefleri (ton):**")
@@ -1103,7 +1103,7 @@ if _is_active("targets"):
                     key=f"tgt_{v['site_id']}",
                 )
         submitted = st.form_submit_button(
-            "Dönem Kaydet", use_container_width=True, type="primary",
+            "Hedefleri Kaydet", use_container_width=True, type="primary",
         )
 
     if submitted:
@@ -1143,7 +1143,7 @@ if _is_active("targets"):
                         ))
                     clear_cached_queries()
                     queue_toast(
-                        f"{len(created)} hedef için yeni dönem başlatıldı.",
+                        f"{len(created)} üretim yeri için hedef kaydedildi.",
                         icon="✅",
                     )
                     st.rerun()
@@ -1162,14 +1162,14 @@ if _is_active("targets"):
                     "ID": h["id"],
                     "Üretim Yeri": site_label_by_id.get(h["site_id"], "?"),
                     "Hedef (t/hafta)": h["target"],
-                    "Başlangıç": h["effective_from"],
-                    "Bitiş": h["effective_to"] or "— (açık)",
+                    "Geçerli Başlangıç": h["effective_from"],
+                    "Geçerli Bitiş": h["effective_to"] or "— (hâlâ geçerli)",
                 }
                 for h in history_view
             ])
             st.dataframe(df_hist, use_container_width=True, hide_index=True)
 
-            st.markdown("**Kayıt Sil** (yanlış girilen dönem için)")
+            st.markdown("**Kayıt Sil** (yanlış girilen hedef için)")
             delete_id = st.number_input(
                 "Silinecek Kayıt ID",
                 min_value=0, step=1, value=0,
