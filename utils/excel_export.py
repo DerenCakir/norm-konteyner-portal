@@ -2821,14 +2821,23 @@ def _build_uretim_yeri_karsilastirma_sheet(
     wb: Workbook,
     all_rows: list[dict[str, Any]],
     manual_aggs: list[dict[str, Any]] | None = None,
+    targets_by_week_site: dict[str, dict[int, float]] | None = None,
+    site_labels: dict[int, tuple[str, str]] | None = None,
 ) -> None:
     """Sheet 6: per-week ``Üretim Yeri Özeti`` tables stacked vertically.
 
     Each week renders its own table top-to-bottom (week-title row, header
     row, one row per production site, then a TOPLAM row). A two-row gap
     separates consecutive weeks. Newest week first.
+
+    ``targets_by_week_site`` verilirse her tablo Toplam Tonaj'in solunda
+    'Hedef Tonaj', sagında 'Sapma (%)' sütunlariyla genisler.
     """
     ws = wb.create_sheet("Üretim Yeri Karşılaştırma")
+    # Site adi -> id (hedef lookup icin)
+    site_labels = site_labels or {}
+    name_to_id = {name: sid for sid, (_c, name) in site_labels.items()}
+    targets_by_week_site = targets_by_week_site or {}
     ws["A1"] = "Üretim Yeri Özeti — Haftalık Karşılaştırma"
     ws["A1"].font = Font(bold=True, size=14, color="1F3A8A")
 
@@ -2849,7 +2858,10 @@ def _build_uretim_yeri_karsilastirma_sheet(
     sub_headers = [
         "Üretim Yeri", "Boş", "Proseste", "Dolu", "Dolu içindeki Kanban",
         "Hurdaya ayrılacak",
-        "Toplam Konteyner", "Toplam (%)", "Toplam Tonaj",
+        "Toplam Konteyner", "Toplam (%)",
+        "Hedef Tonaj",
+        "Toplam Tonaj",
+        "Sapma (%)",
         "Dolu Konteyner Başına Yük",
     ]
     cols_per_table = len(sub_headers)
@@ -2899,7 +2911,8 @@ def _build_uretim_yeri_karsilastirma_sheet(
             for s in sites_in_week.values()
         )
         totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0,
-                  "bdh": 0, "tonnage": 0.0}
+                  "bdh": 0, "tonnage": 0.0, "hedef": 0.0}
+        _week_tgts = targets_by_week_site.get(w, {})
 
         for r_offset, (site, agg) in enumerate(
             sorted(
@@ -2912,11 +2925,20 @@ def _build_uretim_yeri_karsilastirma_sheet(
             bdh = agg["empty"] + wip_v + agg["full"] + agg["scrap"]
             pct = (bdh / grand_total_bdh) if grand_total_bdh else 0
             ton_per = (agg["tonnage"] / agg["full"]) if agg["full"] else 0
+            sid = name_to_id.get(site)
+            hedef = _week_tgts.get(sid) if sid is not None else None
+            sapma = None
+            if hedef and hedef > 0:
+                sapma = (agg["tonnage"] - hedef) / hedef
 
             values = [
                 site,
                 agg["empty"], wip_v, agg["full"], agg["kanban"], agg["scrap"],
-                bdh, pct, agg["tonnage"], ton_per,
+                bdh, pct,
+                hedef,
+                agg["tonnage"],
+                sapma,
+                ton_per,
             ]
             for j, val in enumerate(values):
                 cell = ws.cell(row=r_offset, column=1 + j, value=val)
@@ -2926,7 +2948,17 @@ def _build_uretim_yeri_karsilastirma_sheet(
                 elif j == 7:  # Toplam (%)
                     cell.alignment = _RIGHT
                     cell.number_format = "0.0%"
-                elif j == 9:  # Dolu Konteyner Başına Yük
+                elif j == 10:  # Sapma (%)
+                    cell.alignment = _RIGHT
+                    if sapma is not None and sapma != 0:
+                        cell.number_format = "\"+\"0.0%;\"-\"0.0%"
+                        cell.font = Font(
+                            bold=True,
+                            color="047857" if sapma > 0 else "BE123C",
+                        )
+                    else:
+                        cell.number_format = "0.0%"
+                elif j == 11:  # Dolu Konteyner Başına Yük
                     cell.alignment = _RIGHT
                     cell.number_format = "0.00"
                 else:
@@ -2940,14 +2972,24 @@ def _build_uretim_yeri_karsilastirma_sheet(
             totals["scrap"] += agg["scrap"]
             totals["bdh"] += bdh
             totals["tonnage"] += agg["tonnage"]
+            if hedef:
+                totals["hedef"] += float(hedef)
 
         total_row = header_row + 1 + len(sites_in_week)
         ton_per_total = (totals["tonnage"] / totals["full"]) if totals["full"] else 0
+        total_hedef = totals["hedef"] if totals["hedef"] > 0 else None
+        total_sapma = None
+        if total_hedef and total_hedef > 0:
+            total_sapma = (totals["tonnage"] - total_hedef) / total_hedef
         total_values = [
             "TOPLAM",
             totals["empty"], totals["wip"], totals["full"],
             totals["kanban"], totals["scrap"],
-            totals["bdh"], 1.0, totals["tonnage"], ton_per_total,
+            totals["bdh"], 1.0,
+            total_hedef,
+            totals["tonnage"],
+            total_sapma,
+            ton_per_total,
         ]
         for j, val in enumerate(total_values):
             cell = ws.cell(row=total_row, column=1 + j, value=val)
@@ -2959,7 +3001,17 @@ def _build_uretim_yeri_karsilastirma_sheet(
             elif j == 7:
                 cell.alignment = _RIGHT
                 cell.number_format = "0.0%"
-            elif j == 9:
+            elif j == 10:  # Sapma (%)
+                cell.alignment = _RIGHT
+                if total_sapma is not None and total_sapma != 0:
+                    cell.number_format = "\"+\"0.0%;\"-\"0.0%"
+                    cell.font = Font(
+                        bold=True,
+                        color="047857" if total_sapma > 0 else "BE123C",
+                    )
+                else:
+                    cell.number_format = "0.0%"
+            elif j == 11:
                 cell.alignment = _RIGHT
                 cell.number_format = "0.00"
             else:
@@ -4214,7 +4266,9 @@ def build_week_excel(
         site_labels=site_labels,
     )
     _build_uretim_yeri_karsilastirma_sheet(
-        wb, all_weeks_rows or [], manual_aggs or []
+        wb, all_weeks_rows or [], manual_aggs or [],
+        targets_by_week_site=targets_by_week_site,
+        site_labels=site_labels,
     )
     # Pivot için ham veri — kullanıcı analiz sayfalarında olmayan
     # soruları buradan cevaplayabilir.
