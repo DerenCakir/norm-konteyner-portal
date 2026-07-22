@@ -2648,7 +2648,7 @@ def _build_ozet_charts_sheet(
                 horizontal="center", vertical="center", wrap_text=True,
             )
             for j, h in enumerate(
-                ["Hafta", "Hedef",
+                ["Hafta", "Hedef Tonaj",
                  "Yarı Mamul Tonajı", "Boş Konteyner",
                  "Dolu Konteyner", "Dolu Konteyner Tonajı"],
                 start=1,
