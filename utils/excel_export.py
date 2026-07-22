@@ -3863,6 +3863,27 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
                 max_row=hidden_last_row,
             )
         )
+        # Sadece SON NOKTA'da hedef etiketi olsun (per-nokta override).
+        # Ana grafik icin: son haftada toplam hedef vs toplam gerceklesen.
+        # Hedef gerceklesenden dusukse (bar icinde kalirsa) etiket
+        # beyaz — turuncu bar uzerinde okunur.
+        _last_idx = len(weeks) - 1 if weeks else 0
+        _last_wk = weeks[_last_idx] if weeks else None
+        _last_bar = sum(
+            float(
+                weekly_site.get(_last_wk, {}).get(s, {}).get("tonnage", 0.0)
+                or 0
+            )
+            for s in all_sites
+        ) if _last_wk else 0.0
+        _last_tgt = 0.0
+        if _last_wk:
+            _wk_tgts = targets_by_week_site.get(_last_wk, {})
+            _last_tgt = sum(float(v or 0) for v in _wk_tgts.values())
+        _label_color = (
+            "FFFFFF" if _last_tgt > 0 and _last_tgt < _last_bar
+            else _HEDEF_COLOR
+        )
         for s in _tgt_line_main.series:
             marker = _Marker(symbol="circle", size=6)
             m_gp = GraphicalProperties(solidFill="FFFFFF")
@@ -3870,19 +3891,28 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
             marker.graphicalProperties = m_gp
             s.marker = marker
             gp = GraphicalProperties()
-            # Kesikli cizgi (dash) — hedef line'i gerceklesenden gorsel
-            # olarak ayirdedelim.
+            # Kesikli cizgi (dash).
             gp.line = LineProperties(
                 solidFill=_HEDEF_COLOR, w=28000, prstDash="dash",
             )
             s.graphicalProperties = gp
+            # Series-level: hicbir noktada default etiket yok.
             s.dLbls = _DLbls(
+                showVal=False, showLegendKey=False, showCatName=False,
+                showSerName=False, showPercent=False, showBubbleSize=False,
+            )
+            # Sadece son noktaya per-nokta etiket (position="t" -> ust).
+            _last_lbl = DataLabel(
+                idx=_last_idx,
                 showVal=True, showLegendKey=False, showCatName=False,
                 showSerName=False, showPercent=False, showBubbleSize=False,
-                dLblPos="r",  # noktanin sagi -> bar sayisiyla cakisma
+                dLblPos="t",
                 numFmt="#,##0",
-                txPr=_bold_large_label_props(size_pt=10, color=_HEDEF_COLOR),
+                txPr=_bold_large_label_props(
+                    size_pt=10, color=_label_color,
+                ),
             )
+            s.dLbls.dLbl.append(_last_lbl)
         main_chart += _tgt_line_main
         main_chart.legend = None
     else:
@@ -4032,6 +4062,22 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
                 )
             )
             _HEDEF_COLOR = "EA580C"
+            # Per-tesis chart: son noktada bar (site actual) vs hedef.
+            _last_idx_s = len(weeks) - 1
+            _last_wk_s = weeks[_last_idx_s]
+            _last_bar_s = float(
+                weekly_site.get(_last_wk_s, {}).get(s, {}).get("tonnage", 0.0)
+                or 0
+            )
+            _last_tgt_s = float(
+                targets_by_week_site.get(_last_wk_s, {}).get(
+                    name_to_id.get(s), 0
+                ) or 0
+            )
+            _lbl_color = (
+                "FFFFFF" if _last_tgt_s > 0 and _last_tgt_s < _last_bar_s
+                else _HEDEF_COLOR
+            )
             for ls in _tgt_line.series:
                 m = _Marker(symbol="circle", size=6)
                 m_gp = GraphicalProperties(solidFill="FFFFFF")
@@ -4039,21 +4085,29 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
                 m.graphicalProperties = m_gp
                 ls.marker = m
                 lgp = GraphicalProperties()
-                # Kesikli cizgi — bkz. ana grafik notu.
+                # Kesikli cizgi.
                 lgp.line = LineProperties(
                     solidFill=_HEDEF_COLOR, w=28000, prstDash="dash",
                 )
                 ls.graphicalProperties = lgp
+                # Default: hicbir noktada etiket yok.
                 ls.dLbls = _DLbls(
-                    showVal=True, showLegendKey=False, showCatName=False,
+                    showVal=False, showLegendKey=False, showCatName=False,
                     showSerName=False, showPercent=False,
                     showBubbleSize=False,
-                    dLblPos="r",  # noktanin sagi (bar sayilariyla cakismasin)
+                )
+                # Sadece son noktada etiket (position="t" ust).
+                _lbl = DataLabel(
+                    idx=_last_idx_s,
+                    showVal=True, showLegendKey=False, showCatName=False,
+                    showSerName=False, showPercent=False, showBubbleSize=False,
+                    dLblPos="t",
                     numFmt="#,##0",
                     txPr=_bold_large_label_props(
-                        size_pt=9, color=_HEDEF_COLOR,
+                        size_pt=9, color=_lbl_color,
                     ),
                 )
+                ls.dLbls.dLbl.append(_lbl)
             ch += _tgt_line
             ch.legend.position = "b"
             ch.legend.overlay = False
