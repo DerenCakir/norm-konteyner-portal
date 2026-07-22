@@ -3753,45 +3753,28 @@ def _build_hedef_vs_gerceklesen_sheet(
         )
         return
 
-    # Haftalik gerceklesen tonaji topla (site_id -> {week: ton})
-    # all_weeks_rows'da 'Üretim Yeri' isim; ProductionSite mapping'i
-    # site_labels dict'inde. isim -> site_id ters harita cikar.
+    # Haftalik gerceklesen tonaji topla — _aggregate_all_weeks'un
+    # tonnage_seen dedup logici ayni submission'in birden fazla color
+    # row'unda tekrarlanan tonaji tek sayar VE ayni sitedeki farkli
+    # bolumleri toplar. Manuel aggregate'leri de folder eder.
+    # (Yari Mamul Tonaji Ozeti sheet'i ayni helper'i kullaniyor.)
     site_labels = site_labels or {}
+    _, weekly_site_named, _, _, _ = _aggregate_all_weeks(
+        all_weeks_rows, manual_aggs,
+    )
+    # weekly_site_named: {week_iso: {site_NAME: {"tonnage": ...}}}
+    # site_id ile chart'lari cizecegiz -> name'i id'e cevir.
     name_to_id = {name: sid for sid, (_code, name) in site_labels.items()}
-
-    # weekly_site: {week_iso: {site_id: gerceklesen_tonaj}}
     weekly_site: dict[str, dict[int, float]] = {}
-    for r in all_weeks_rows:
-        wk = r.get("Hafta")
-        site_name = r.get("Üretim Yeri")
-        sid = name_to_id.get(site_name)
-        if not wk or sid is None:
-            continue
-        # Ayni site x hafta icin birden fazla row olabilir (bolum
-        # kirilimli); tonaji ilk kez ekliyoruz cunku Yari Mamul Tonaji
-        # bolum bazli degil, submission bazli.
-        by_site = weekly_site.setdefault(wk, {})
-        if sid not in by_site:
-            ton = r.get("Gerçekleşen Tonaj")
+    for wk, sites_dict in weekly_site_named.items():
+        for site_name, agg in sites_dict.items():
+            sid = name_to_id.get(site_name)
+            if sid is None:
+                continue
+            ton = agg.get("tonnage")
             if ton is None:
                 continue
-            try:
-                by_site[sid] = float(ton)
-            except (TypeError, ValueError):
-                continue
-    # Manuel aggregate'leri de ekle
-    for m in manual_aggs:
-        wk = m.get("Hafta") or m.get("week_iso")
-        sid = m.get("site_id")
-        ton = m.get("Gerçekleşen Tonaj") or m.get("tonnage_total")
-        if not wk or sid is None or ton is None:
-            continue
-        by_site = weekly_site.setdefault(wk, {})
-        if sid not in by_site:
-            try:
-                by_site[sid] = float(ton)
-            except (TypeError, ValueError):
-                pass
+            weekly_site.setdefault(wk, {})[sid] = float(ton)
 
     # Sorted week list — hedefte ya da veride gecen tum haftalari
     # union alarak sabit sütun sırası olustur.
