@@ -3743,11 +3743,14 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
     main_chart.visible_cells_only = False
 
     # Hedef line overlay — tum tesislerin toplam hedefi. Hedef yoksa
-    # eklenmez (bos overlay bar chart'la cakismasın).
+    # eklenmez. Cizgi rengi turuncu (EA580C), noktalar uzerinde hedef
+    # sayisi yaziyor (turuncu, dLblPos='r' -> noktanin sagi, bar
+    # data label'lariyla ust uste binmez).
     if has_any_target:
         from openpyxl.chart import LineChart as _LineChart
         from openpyxl.chart.marker import Marker as _Marker
         from openpyxl.chart.label import DataLabelList as _DLbls
+        _HEDEF_COLOR = "EA580C"
         _tgt_line_main = _LineChart()
         _tgt_line_main.add_data(
             Reference(
@@ -3765,15 +3768,18 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
         for s in _tgt_line_main.series:
             marker = _Marker(symbol="circle", size=6)
             m_gp = GraphicalProperties(solidFill="FFFFFF")
-            m_gp.line = LineProperties(solidFill="047857", w=15000)
+            m_gp.line = LineProperties(solidFill=_HEDEF_COLOR, w=15000)
             marker.graphicalProperties = m_gp
             s.marker = marker
             gp = GraphicalProperties()
-            gp.line = LineProperties(solidFill="047857", w=28000)
+            gp.line = LineProperties(solidFill=_HEDEF_COLOR, w=28000)
             s.graphicalProperties = gp
             s.dLbls = _DLbls(
-                showVal=False, showLegendKey=False, showCatName=False,
+                showVal=True, showLegendKey=False, showCatName=False,
                 showSerName=False, showPercent=False, showBubbleSize=False,
+                dLblPos="r",  # noktanin sagi -> bar sayisiyla cakisma
+                numFmt="#,##0",
+                txPr=_bold_large_label_props(size_pt=10, color=_HEDEF_COLOR),
             )
         main_chart += _tgt_line_main
         main_chart.legend = None
@@ -3923,19 +3929,25 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
                     max_row=hidden_last_row,
                 )
             )
+            _HEDEF_COLOR = "EA580C"
             for ls in _tgt_line.series:
                 m = _Marker(symbol="circle", size=6)
                 m_gp = GraphicalProperties(solidFill="FFFFFF")
-                m_gp.line = LineProperties(solidFill="047857", w=15000)
+                m_gp.line = LineProperties(solidFill=_HEDEF_COLOR, w=15000)
                 m.graphicalProperties = m_gp
                 ls.marker = m
                 lgp = GraphicalProperties()
-                lgp.line = LineProperties(solidFill="047857", w=28000)
+                lgp.line = LineProperties(solidFill=_HEDEF_COLOR, w=28000)
                 ls.graphicalProperties = lgp
                 ls.dLbls = _DLbls(
-                    showVal=False, showLegendKey=False, showCatName=False,
+                    showVal=True, showLegendKey=False, showCatName=False,
                     showSerName=False, showPercent=False,
                     showBubbleSize=False,
+                    dLblPos="r",  # noktanin sagi (bar sayilariyla cakismasin)
+                    numFmt="#,##0",
+                    txPr=_bold_large_label_props(
+                        size_pt=9, color=_HEDEF_COLOR,
+                    ),
                 )
             ch += _tgt_line
             ch.legend.position = "b"
