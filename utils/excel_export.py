@@ -596,15 +596,35 @@ def _build_uretim_yeri_kirilim_sheet(
 
 
 def _build_uretim_yeri_ozeti_sheet(
-    wb: Workbook, dept_aggs: dict[tuple[str, str], dict[str, Any]]
+    wb: Workbook,
+    dept_aggs: dict[tuple[str, str], dict[str, Any]],
+    week_targets: dict[int, float] | None = None,
+    site_labels: dict[int, tuple[str, str]] | None = None,
 ) -> None:
-    """Sheet 3: per-site aggregate with percentage and ton/dolu KPI."""
+    """Sheet 3: per-site aggregate with percentage and ton/dolu KPI.
+
+    ``week_targets`` (site_id → weekly target tonnage) + ``site_labels``
+    (site_id → (code, name)) verilirse iki yeni sütun eklenir:
+    'Hedef Tonaj' (Toplam Tonaj'ın solu) ve 'Sapma (%)' (sağı).
+    Sapma = (gerçekleşen - hedef) / hedef.
+    """
     ws = wb.create_sheet("Üretim Yeri Özeti")
+    # site adi -> hedef ton haritasi (adla eslesme cok daha kolay)
+    site_labels = site_labels or {}
+    target_by_name: dict[str, float] = {}
+    if week_targets:
+        for sid, tgt in week_targets.items():
+            _, name = site_labels.get(sid, (None, None))
+            if name:
+                target_by_name[name] = float(tgt)
     headers = [
         "Üretim Yeri",
         "Boş", "Proseste", "Dolu", "Dolu içindeki Kanban", "Hurdaya ayrılacak",
         "Toplam Konteyner", "Toplam (%)",
-        "Toplam Tonaj", "Dolu Konteyner Başına Yük (ton/konteyner)",
+        "Hedef Tonaj",
+        "Toplam Tonaj",
+        "Sapma (%)",
+        "Dolu Konteyner Başına Yük (ton/konteyner)",
     ]
     ws.append(headers)
     # Uzun başlıklar (Dolu içindeki Kanban, Hurdaya ayrılacak, Toplam
@@ -641,12 +661,20 @@ def _build_uretim_yeri_ozeti_sheet(
         bdh = s["empty"] + s["wip"] + s["full"] + s["scrap"]
         pct = (bdh / grand_total_bdh) if grand_total_bdh else 0  # stored as fraction
         ton_per = (s["tonnage"] / s["full"]) if s["full"] else 0
+        # Hedef ve sapma — hedef yoksa hucreler bos (None) kalir.
+        hedef_ton = target_by_name.get(site)
+        sapma = None
+        if hedef_ton and hedef_ton > 0:
+            sapma = (s["tonnage"] - hedef_ton) / hedef_ton  # fraction
 
         values = [
             site,
             s["empty"], s["wip"], s["full"], s["kanban"], s["scrap"],
             bdh, pct,
-            s["tonnage"], ton_per,
+            hedef_ton,
+            s["tonnage"],
+            sapma,
+            ton_per,
         ]
         ws.append(values)
         totals["empty"] += s["empty"]
@@ -669,10 +697,24 @@ def _build_uretim_yeri_ozeti_sheet(
             elif col_idx == 8:  # Toplam %
                 cell.alignment = _RIGHT
                 cell.number_format = "0.0%"
-            elif col_idx == 9:  # Toplam Tonaj
+            elif col_idx == 9:  # Hedef Tonaj
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 10:  # ton/konteyner
+            elif col_idx == 10:  # Toplam Tonaj (gerceklesen)
+                cell.alignment = _RIGHT
+                cell.number_format = "#,##0"
+            elif col_idx == 11:  # Sapma %
+                cell.alignment = _RIGHT
+                # Isaretli yuzde, pozitif yesil/negatif kirmizi
+                if sapma is not None and sapma != 0:
+                    cell.number_format = "\"+\"0.0%;\"-\"0.0%"
+                    cell.font = Font(
+                        bold=True,
+                        color="047857" if sapma > 0 else "BE123C",
+                    )
+                else:
+                    cell.number_format = "0.0%"
+            elif col_idx == 12:  # ton/konteyner
                 cell.alignment = _RIGHT
                 cell.number_format = "0.00"
             else:
@@ -681,25 +723,50 @@ def _build_uretim_yeri_ozeti_sheet(
     if site_aggs:
         total_row_idx = ws.max_row + 1
         ton_per_total = (totals["tonnage"] / totals["full"]) if totals["full"] else 0
+        # Toplam hedef = tum hedefi girilmis sitelerin toplami
+        total_hedef = (
+            sum(target_by_name.get(site, 0) or 0 for site in site_aggs)
+            if target_by_name else None
+        )
+        # Toplam sapma
+        total_sapma = None
+        if total_hedef and total_hedef > 0:
+            total_sapma = (totals["tonnage"] - total_hedef) / total_hedef
         ws.append([
             "TOPLAM",
             totals["empty"], totals["wip"], totals["full"],
             totals["kanban"], totals["scrap"],
             totals["bdh"], 1.0,
-            totals["tonnage"], ton_per_total,
+            total_hedef,
+            totals["tonnage"],
+            total_sapma,
+            ton_per_total,
         ])
         for col_idx in range(1, len(headers) + 1):
             cell = ws.cell(row=total_row_idx, column=col_idx)
             cell.fill = _TOTAL_FILL
             cell.font = _TOTAL_FONT
             cell.border = _BORDER
-            if col_idx in (2, 3, 4, 5, 6, 7, 9):
+            if col_idx in (2, 3, 4, 5, 6, 7, 9, 10):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
             elif col_idx == 8:
                 cell.alignment = _RIGHT
                 cell.number_format = "0.0%"
-            elif col_idx == 10:
+            elif col_idx == 11:  # Sapma %
+                cell.alignment = _RIGHT
+                if total_sapma is not None and total_sapma != 0:
+                    cell.number_format = "\"+\"0.0%;\"-\"0.0%"
+                    # TOPLAM satirinda _TOTAL_FONT bold; sadece renk ver
+                    cell.font = Font(
+                        bold=True,
+                        color=(
+                            "047857" if total_sapma > 0 else "BE123C"
+                        ),
+                    )
+                else:
+                    cell.number_format = "0.0%"
+            elif col_idx == 12:
                 cell.alignment = _RIGHT
                 cell.number_format = "0.00"
             elif col_idx == 1:
@@ -3984,7 +4051,16 @@ def build_week_excel(
     )
     _build_renk_kirilim_sheet(wb, rows)
     dept_aggs = _build_uretim_yeri_kirilim_sheet(wb, rows)
-    _build_uretim_yeri_ozeti_sheet(wb, dept_aggs)
+    # Uretim Yeri Ozeti'ne bu hafta gecerli hedefleri geciriyoruz
+    # (Hedef Tonaj ve Sapma % sütunlari).
+    _selected_week_targets = None
+    if targets_by_week_site:
+        _selected_week_targets = targets_by_week_site.get(week_iso)
+    _build_uretim_yeri_ozeti_sheet(
+        wb, dept_aggs,
+        week_targets=_selected_week_targets,
+        site_labels=site_labels,
+    )
     _build_renk_ozeti_sheet(wb, rows)
     _build_dolu_yuk_ozeti_sheet(wb, all_weeks_rows or [], manual_aggs or [])
     _build_yari_mamul_tonaj_ozeti_sheet(
