@@ -3848,7 +3848,10 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
         from openpyxl.chart import LineChart as _LineChart
         from openpyxl.chart.marker import Marker as _Marker
         from openpyxl.chart.label import DataLabelList as _DLbls
-        _HEDEF_COLOR = "EA580C"
+        # Soft turuncu (Tailwind orange-300) -- EA580C (orange-600) cok
+        # kanli/koyu duruyordu, bu ton daha pastel ve grafigi
+        # bogmuyor.
+        _HEDEF_COLOR = "FDBA74"
         _tgt_line_main = _LineChart()
         _tgt_line_main.add_data(
             Reference(
@@ -4061,7 +4064,9 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
                     max_row=hidden_last_row,
                 )
             )
-            _HEDEF_COLOR = "EA580C"
+            # Soft turuncu (Tailwind orange-300) -- EA580C (orange-600)
+            # cok kanli/koyu duruyordu, bu ton daha pastel.
+            _HEDEF_COLOR = "FDBA74"
             # Per-tesis chart: son noktada bar (site actual) vs hedef.
             _last_idx_s = len(weeks) - 1
             _last_wk_s = weeks[_last_idx_s]
