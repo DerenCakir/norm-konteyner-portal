@@ -3370,6 +3370,8 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
     wb: Workbook,
     all_rows: list[dict[str, Any]],
     manual_aggs: list[dict[str, Any]] | None = None,
+    targets_by_week_site: dict[str, dict[int, float]] | None = None,
+    site_labels: dict[int, tuple[str, str]] | None = None,
 ) -> None:
     """Per-site weekly yarı mamul (ham) tonaj matrisi.
 
@@ -3377,6 +3379,10 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
     değil ham gerçekleşen tonaj toplamı. Satırlar üretim yerleri,
     sütunlar haftalar kronolojik. Son sütun tesis toplamı; alt
     satır haftalık toplam + genel toplam.
+
+    ``targets_by_week_site`` + ``site_labels`` verilirse ana chart ve
+    per-tesis chart'lara **hedef line overlay** eklenir (mavi çizgi,
+    beyaz dolgu marker).
     """
     ws = wb.create_sheet("Yarı Mamul Tonajı Özeti")
 
@@ -3555,12 +3561,33 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
     ws.row_dimensions[sec_row].height = 24
 
     # Gizli veri alanı — chart Reference'ları için sağda kolonlar.
+    # Layout:
+    #   40 (AN) : Hafta
+    #   41 (AO) : Toplam Gerceklesen Tonaj
+    #   42..42+N-1 : Per-site Gerceklesen (N = n_sites)
+    #   42+N : Toplam Hedef Tonaj
+    #   42+N+1..42+2N : Per-site Hedef
     hidden_col_weeks = 40
     hidden_col_total = 41
+    hidden_col_site_actual = 42  # base for per-site actual
+    hidden_col_total_target = hidden_col_site_actual + n_sites
+    hidden_col_site_target = hidden_col_total_target + 1  # base for per-site target
+
     ws.cell(row=1, column=hidden_col_weeks, value="Hafta")
     ws.cell(row=1, column=hidden_col_total, value="Toplam Tonaj")
     for i, s in enumerate(all_sites):
-        ws.cell(row=1, column=42 + i, value=s)
+        ws.cell(row=1, column=hidden_col_site_actual + i, value=s)
+    ws.cell(row=1, column=hidden_col_total_target, value="Toplam Hedef")
+    for i, s in enumerate(all_sites):
+        ws.cell(
+            row=1, column=hidden_col_site_target + i,
+            value=f"{s} Hedef",
+        )
+
+    # Site adi -> id (hedef lookup icin)
+    site_labels = site_labels or {}
+    name_to_id = {name: sid for sid, (_c, name) in site_labels.items()}
+    targets_by_week_site = targets_by_week_site or {}
 
     for k, w in enumerate(weeks):
         ws.cell(row=2 + k, column=hidden_col_weeks, value=_short_week(w))
@@ -3574,13 +3601,40 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
             row=2 + k, column=hidden_col_total, value=total_ton,
         )
         c_tot.number_format = "#,##0"
+        # Per-site gerceklesen
         for i, s in enumerate(all_sites):
             val = float(
                 weekly_site.get(w, {}).get(s, {}).get("tonnage", 0.0) or 0
             )
-            cell = ws.cell(row=2 + k, column=42 + i, value=val)
+            cell = ws.cell(
+                row=2 + k, column=hidden_col_site_actual + i, value=val,
+            )
             cell.number_format = "#,##0"
+        # Hedefler — bu haftada gecerli hedefler dict'i
+        week_tgts = targets_by_week_site.get(w, {})
+        total_tgt = 0.0
+        any_target = False
+        for i, s in enumerate(all_sites):
+            sid = name_to_id.get(s)
+            tval = week_tgts.get(sid) if sid is not None else None
+            if tval is not None:
+                any_target = True
+                total_tgt += float(tval)
+                c = ws.cell(
+                    row=2 + k, column=hidden_col_site_target + i,
+                    value=float(tval),
+                )
+                c.number_format = "#,##0"
+        if any_target:
+            c = ws.cell(
+                row=2 + k, column=hidden_col_total_target, value=total_tgt,
+            )
+            c.number_format = "#,##0"
+
     hidden_last_row = 1 + n_weeks
+    # Genelde hedef veri var mi kontrolu — chart overlay'i sadece
+    # veri varsa ekleyecegiz (bos overlay yaratmasin).
+    has_any_target = any(bool(v) for v in targets_by_week_site.values())
 
     main_chart_anchor = sec_row + 2
     per_site_block_rows = 20  # banner(1) + back(1) + chart ~16 + gap 2
@@ -3631,9 +3685,48 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
         "t", "#,##0",
         txPr=_bold_large_label_props(size_pt=10, color="0F172A"),
     )
-    main_chart.legend = None
     main_chart.height = 10
     main_chart.width = 22
+    # Hidden data col overlayler icin kritik — plotVisOnly=0 olmali.
+    main_chart.visible_cells_only = False
+
+    # Hedef line overlay — tum tesislerin toplam hedefi. Hedef yoksa
+    # eklenmez (bos overlay bar chart'la cakismasın).
+    if has_any_target:
+        from openpyxl.chart import LineChart as _LineChart
+        from openpyxl.chart.marker import Marker as _Marker
+        from openpyxl.chart.label import DataLabelList as _DLbls
+        _tgt_line_main = _LineChart()
+        _tgt_line_main.add_data(
+            Reference(
+                ws, min_col=hidden_col_total_target, min_row=1,
+                max_col=hidden_col_total_target, max_row=hidden_last_row,
+            ),
+            titles_from_data=True,
+        )
+        _tgt_line_main.set_categories(
+            Reference(
+                ws, min_col=hidden_col_weeks, min_row=2,
+                max_row=hidden_last_row,
+            )
+        )
+        for s in _tgt_line_main.series:
+            marker = _Marker(symbol="circle", size=6)
+            m_gp = GraphicalProperties(solidFill="FFFFFF")
+            m_gp.line = LineProperties(solidFill="047857", w=15000)
+            marker.graphicalProperties = m_gp
+            s.marker = marker
+            gp = GraphicalProperties()
+            gp.line = LineProperties(solidFill="047857", w=28000)
+            s.graphicalProperties = gp
+            s.dLbls = _DLbls(
+                showVal=False, showLegendKey=False, showCatName=False,
+                showSerName=False, showPercent=False, showBubbleSize=False,
+            )
+        main_chart += _tgt_line_main
+        main_chart.legend = None
+    else:
+        main_chart.legend = None
     _apply_chart_frame(main_chart)
     ws.add_chart(main_chart, f"A{main_chart_anchor}")
 
@@ -3704,7 +3797,8 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
         bk.alignment = Alignment(horizontal="left", vertical="center")
 
         # Per-tesis mavi BarChart
-        site_col = 42 + i
+        site_col = hidden_col_site_actual + i
+        site_tgt_col = hidden_col_site_target + i
         ch = BarChart()
         ch.type = "col"
         ch.style = 2
@@ -3735,7 +3829,14 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
             for w in weeks
         ]
         max_v = max(site_vals) if site_vals else 0
-        ch.y_axis.scaling.max = max_v * 1.2 if max_v > 0 else 5
+        # Site hedefi max'a dahil edilsin (hedef line grafik disina taşmasın)
+        _sid_here = name_to_id.get(s)
+        _site_tgt_vals = [
+            float(targets_by_week_site.get(w, {}).get(_sid_here) or 0)
+            for w in weeks
+        ] if _sid_here is not None else []
+        _max_with_tgt = max([max_v] + _site_tgt_vals) if _site_tgt_vals else max_v
+        ch.y_axis.scaling.max = _max_with_tgt * 1.2 if _max_with_tgt > 0 else 5
         ch.gapWidth = 30
         for series in ch.series:
             gp = GraphicalProperties(solidFill="1F3A8A")
@@ -3744,9 +3845,51 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
             "t", "#,##0",
             txPr=_bold_large_label_props(size_pt=9, color="0F172A"),
         )
-        ch.legend = None
         ch.height = 8
         ch.width = 22
+        # KRITIK: hedef verisi hidden col'da; plotVisOnly=0 olmali.
+        ch.visible_cells_only = False
+
+        # Hedef line overlay — sadece bu site icin herhangi bir haftada
+        # hedef girilmisse.
+        _site_has_target = any(v > 0 for v in _site_tgt_vals)
+        if _site_has_target:
+            from openpyxl.chart import LineChart as _LineChart
+            from openpyxl.chart.marker import Marker as _Marker
+            from openpyxl.chart.label import DataLabelList as _DLbls
+            _tgt_line = _LineChart()
+            _tgt_line.add_data(
+                Reference(
+                    ws, min_col=site_tgt_col, min_row=1,
+                    max_col=site_tgt_col, max_row=hidden_last_row,
+                ),
+                titles_from_data=True,
+            )
+            _tgt_line.set_categories(
+                Reference(
+                    ws, min_col=hidden_col_weeks, min_row=2,
+                    max_row=hidden_last_row,
+                )
+            )
+            for ls in _tgt_line.series:
+                m = _Marker(symbol="circle", size=6)
+                m_gp = GraphicalProperties(solidFill="FFFFFF")
+                m_gp.line = LineProperties(solidFill="047857", w=15000)
+                m.graphicalProperties = m_gp
+                ls.marker = m
+                lgp = GraphicalProperties()
+                lgp.line = LineProperties(solidFill="047857", w=28000)
+                ls.graphicalProperties = lgp
+                ls.dLbls = _DLbls(
+                    showVal=False, showLegendKey=False, showCatName=False,
+                    showSerName=False, showPercent=False,
+                    showBubbleSize=False,
+                )
+            ch += _tgt_line
+            ch.legend.position = "b"
+            ch.legend.overlay = False
+        else:
+            ch.legend = None
         _apply_chart_frame(ch)
         ws.add_chart(ch, f"A{blk + 2}")
 
@@ -4063,15 +4206,12 @@ def build_week_excel(
     )
     _build_renk_ozeti_sheet(wb, rows)
     _build_dolu_yuk_ozeti_sheet(wb, all_weeks_rows or [], manual_aggs or [])
+    # Yari Mamul Tonaji Ozeti — hedef verildiyse ana grafik ve
+    # per-tesis grafiklerine mavi/yesil hedef line overlay eklenir.
     _build_yari_mamul_tonaj_ozeti_sheet(
         wb, all_weeks_rows or [], manual_aggs or [],
-    )
-    # Hedef vs Gerçekleşen — hedef tanimliysa siter bazli comparison
-    # + trend grafikleri. Hedef yoksa placeholder mesaj yazan bos
-    # sheet olusur; bu, hedef girildikten sonra otomatik dolar.
-    _build_hedef_vs_gerceklesen_sheet(
-        wb, all_weeks_rows or [], manual_aggs or [],
-        targets_by_week_site, site_labels,
+        targets_by_week_site=targets_by_week_site,
+        site_labels=site_labels,
     )
     _build_uretim_yeri_karsilastirma_sheet(
         wb, all_weeks_rows or [], manual_aggs or []
