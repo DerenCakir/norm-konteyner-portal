@@ -3870,7 +3870,11 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
             marker.graphicalProperties = m_gp
             s.marker = marker
             gp = GraphicalProperties()
-            gp.line = LineProperties(solidFill=_HEDEF_COLOR, w=28000)
+            # Kesikli cizgi (dash) — hedef line'i gerceklesenden gorsel
+            # olarak ayirdedelim.
+            gp.line = LineProperties(
+                solidFill=_HEDEF_COLOR, w=28000, prstDash="dash",
+            )
             s.graphicalProperties = gp
             s.dLbls = _DLbls(
                 showVal=True, showLegendKey=False, showCatName=False,
@@ -4035,7 +4039,10 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
                 m.graphicalProperties = m_gp
                 ls.marker = m
                 lgp = GraphicalProperties()
-                lgp.line = LineProperties(solidFill=_HEDEF_COLOR, w=28000)
+                # Kesikli cizgi — bkz. ana grafik notu.
+                lgp.line = LineProperties(
+                    solidFill=_HEDEF_COLOR, w=28000, prstDash="dash",
+                )
                 ls.graphicalProperties = lgp
                 ls.dLbls = _DLbls(
                     showVal=True, showLegendKey=False, showCatName=False,
