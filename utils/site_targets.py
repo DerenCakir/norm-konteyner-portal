@@ -91,8 +91,15 @@ def create_new_period(
     created_by: int,
 ) -> list[SiteTonnageTarget]:
     """Yeni dönem başlat: verilen tarihten itibaren siteler için hedefler
-    yazılır. Aynı sitedeki açık uçlu önceki kayıt kapatılır
-    (``effective_to = effective_from - 1``).
+    yazılır.
+
+    Geçmişe dönük veya out-of-order girişi de destekler:
+      • Önceki dönem (``effective_from < new_from``) kapsıyor mu (açık uçlu
+        veya ``effective_to >= new_from``)? → önceki dönemin
+        ``effective_to`` bunu ``new_from - 1``'e çekilir.
+      • Sonraki dönem (``effective_from > new_from``) var mı? → yeni
+        kaydın ``effective_to``, o en yakın sonraki dönemin
+        ``effective_from - 1``'ine set edilir (yoksa NULL — açık uçlu).
 
     Aynı (site, effective_from) daha önce yazıldıysa hata verir
     (UniqueConstraint). Bu davranış istenerek — kullanıcı önce eski
@@ -104,25 +111,44 @@ def create_new_period(
         raise ValueError("En az bir site hedefi verilmeli")
 
     from datetime import timedelta
-    close_date = effective_from - timedelta(days=1)
+    prev_close_date = effective_from - timedelta(days=1)
 
-    # Açık uçlu önceki kayıtları kapat
-    open_stmt = select(SiteTonnageTarget).where(
-        SiteTonnageTarget.production_site_id.in_(targets_by_site_id.keys()),
-        SiteTonnageTarget.effective_to.is_(None),
+    site_ids = list(targets_by_site_id.keys())
+
+    # 1) Önceki dönemleri kapat (yeni_from < mevcut kapsam ise)
+    prev_stmt = select(SiteTonnageTarget).where(
+        SiteTonnageTarget.production_site_id.in_(site_ids),
         SiteTonnageTarget.effective_from < effective_from,
+        or_(
+            SiteTonnageTarget.effective_to.is_(None),
+            SiteTonnageTarget.effective_to >= effective_from,
+        ),
     )
-    for row in session.scalars(open_stmt):
-        row.effective_to = close_date
+    for row in session.scalars(prev_stmt):
+        row.effective_to = prev_close_date
 
-    # Yeni kayıtları ekle
+    # 2) Her site için sonraki dönemin başlangıcını bul (yeni kaydın
+    #    üst sınırını belirlemek için). Site başına en yakın olanı seç.
+    next_start_by_site: dict[int, date] = {}
+    next_stmt = select(SiteTonnageTarget).where(
+        SiteTonnageTarget.production_site_id.in_(site_ids),
+        SiteTonnageTarget.effective_from > effective_from,
+    ).order_by(SiteTonnageTarget.effective_from.asc())
+    for row in session.scalars(next_stmt):
+        sid = row.production_site_id
+        if sid not in next_start_by_site:
+            next_start_by_site[sid] = row.effective_from
+
+    # 3) Yeni kayıtları ekle
     created: list[SiteTonnageTarget] = []
     for site_id, ton in targets_by_site_id.items():
+        next_start = next_start_by_site.get(site_id)
+        eff_to = (next_start - timedelta(days=1)) if next_start else None
         row = SiteTonnageTarget(
             production_site_id=site_id,
             weekly_target_ton=ton,
             effective_from=effective_from,
-            effective_to=None,
+            effective_to=eff_to,
             created_by=created_by,
         )
         session.add(row)

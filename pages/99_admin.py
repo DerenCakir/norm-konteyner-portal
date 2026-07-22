@@ -999,7 +999,7 @@ if _is_active("targets"):
         sites = list(s.execute(
             select(ProductionSite)
             .where(ProductionSite.is_active.is_(True))
-            .order_by(ProductionSite.name)
+            .order_by(ProductionSite.code)
         ).scalars())
         latest = latest_targets_by_site(s)
         # relationship'leri detach etmemek için isim + son hedef verisini
@@ -1007,7 +1007,9 @@ if _is_active("targets"):
         latest_view = [
             {
                 "site_id": site.id,
+                "site_code": site.code,
                 "site_name": site.name,
+                "site_label": f"[{site.code}] {site.name}",
                 "target": (
                     float(latest[site.id].weekly_target_ton)
                     if site.id in latest else None
@@ -1035,6 +1037,7 @@ if _is_active("targets"):
             for row in all_history
         ]
 
+    site_label_by_id = {v["site_id"]: v["site_label"] for v in latest_view}
     site_name_by_id = {v["site_id"]: v["site_name"] for v in latest_view}
 
     # ---- Aktif hedefler tablosu ----
@@ -1042,6 +1045,7 @@ if _is_active("targets"):
     if latest_view:
         df_active = pd.DataFrame([
             {
+                "Kod": v["site_code"],
                 "Üretim Yeri": v["site_name"],
                 "Haftalık Hedef (t)": v["target"],
                 "Başlangıç": v["effective_from"],
@@ -1067,9 +1071,10 @@ if _is_active("targets"):
     # ---- Yeni dönem başlat ----
     st.markdown("#### Yeni Dönem Başlat")
     st.caption(
-        "Verilen başlangıç tarihi bir Pazartesi olmalıdır (haftalık "
-        "sayım Pazartesi'den itibaren geçerli). Bu tarihte veya öncesinde "
-        "açık uçlu önceki kayıtlar bir gün öncesine kapatılır."
+        "Başlangıç tarihi bir Pazartesi olmalıdır (haftalık sayım "
+        "Pazartesi'den itibaren geçerli). **Geçmişe dönük** kayıt "
+        "yapılabilir: eski bir tarih girildiğinde önceki/sonraki "
+        "dönemlerin geçerlilik aralıkları otomatik ayarlanır."
     )
 
     default_start = _next_monday(_date.today())
@@ -1077,7 +1082,11 @@ if _is_active("targets"):
         start_date = st.date_input(
             "Başlangıç Tarihi (Pazartesi)",
             value=default_start,
-            help="Bu tarih dahil olmak üzere yeni hedefler geçerli.",
+            min_value=_date(2020, 1, 6),  # geçmişe dönük giriş için geniş alt sınır
+            help=(
+                "Bu tarih dahil olmak üzere yeni hedefler geçerli. "
+                "Geçmiş tarih seçebilirsiniz."
+            ),
         )
         st.markdown("**Üretim yeri hedefleri (ton):**")
         target_inputs: dict[int, float] = {}
@@ -1086,7 +1095,7 @@ if _is_active("targets"):
             col = cols[i % 2]
             with col:
                 target_inputs[v["site_id"]] = st.number_input(
-                    v["site_name"],
+                    v["site_label"],
                     min_value=0.0,
                     value=float(v["target"] or 0.0),
                     step=1.0,
@@ -1094,7 +1103,7 @@ if _is_active("targets"):
                     key=f"tgt_{v['site_id']}",
                 )
         submitted = st.form_submit_button(
-            "Yeni Dönem Kaydet", use_container_width=True, type="primary",
+            "Dönem Kaydet", use_container_width=True, type="primary",
         )
 
     if submitted:
@@ -1127,7 +1136,7 @@ if _is_active("targets"):
                                 "effective_from": start_date.isoformat(),
                                 "count": len(created),
                                 "targets": {
-                                    site_name_by_id.get(sid, str(sid)): float(v)
+                                    site_label_by_id.get(sid, str(sid)): float(v)
                                     for sid, v in payload.items()
                                 },
                             },
@@ -1151,7 +1160,7 @@ if _is_active("targets"):
             df_hist = pd.DataFrame([
                 {
                     "ID": h["id"],
-                    "Üretim Yeri": site_name_by_id.get(h["site_id"], "?"),
+                    "Üretim Yeri": site_label_by_id.get(h["site_id"], "?"),
                     "Hedef (t/hafta)": h["target"],
                     "Başlangıç": h["effective_from"],
                     "Bitiş": h["effective_to"] or "— (açık)",
