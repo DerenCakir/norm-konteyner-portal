@@ -1326,6 +1326,8 @@ def _build_ozet_charts_sheet(
     wb: Workbook,
     all_rows: list[dict[str, Any]],
     manual_aggs: list[dict[str, Any]] | None = None,
+    targets_by_week_site: dict[str, dict[int, float]] | None = None,
+    site_labels: dict[int, tuple[str, str]] | None = None,
 ) -> None:
     """Sheet 5 (ÖZET): four charts only.
 
@@ -2583,6 +2585,12 @@ def _build_ozet_charts_sheet(
     # Tesis Detayı — per-site weekly trend blocks (chart 3 ve chart 5
     # yan butonları buradaki bloklara link veriyor)
     # ================================================================
+    # Site adi -> id (haftalik hedef lookup icin). Hedef verilmediyse
+    # bu dict bos olur, hedef sutunu ve overlay eklenmez.
+    _name_to_id = {
+        name: sid
+        for sid, (_c, name) in (site_labels or {}).items()
+    }
     if all_sites and full_weeks:
         ws.merge_cells(
             f"A{detail_section_header_row}:X{detail_section_header_row}"
@@ -2630,15 +2638,16 @@ def _build_ozet_charts_sheet(
             )
             back.alignment = Alignment(horizontal="left", vertical="center")
 
-            # Tablo başlığı — sıra: Hafta / Yarı Mamul Tonajı / Boş /
-            # Dolu / Dolu Konteyner Tonajı. Uzun başlıklar wrap_text
-            # ile iki satıra kırılıyor.
+            # Tablo başlığı — sıra: Hafta / Hedef / Yarı Mamul Tonajı /
+            # Boş / Dolu / Dolu Konteyner Tonajı. Uzun başlıklar
+            # wrap_text ile iki satıra kırılıyor.
             hdr_row = block_row + 2
             wrap_center = Alignment(
                 horizontal="center", vertical="center", wrap_text=True,
             )
             for j, h in enumerate(
-                ["Hafta", "Yarı Mamul Tonajı", "Boş Konteyner",
+                ["Hafta", "Hedef",
+                 "Yarı Mamul Tonajı", "Boş Konteyner",
                  "Dolu Konteyner", "Dolu Konteyner Tonajı"],
                 start=1,
             ):
@@ -2653,10 +2662,10 @@ def _build_ozet_charts_sheet(
             # zaten merged A:X navy dolgulu, gorsel bagli.
             ws.row_dimensions[hdr_row].height = 40
 
-            # Veri satırları — Yarı Mamul Tonajı ham gerçekleşen tonaj;
-            # Dolu Konteyner Tonajı ise dolu KONTEYNER BAŞINA tonaj
-            # (chart 3'teki 'Dolu Konteyner Başına Tonaj' ile aynı
-            # anlam, ton/dolu ratio, birim = t/konteyner ≈ küçük ondalık).
+            # Bu site icin name -> id ve haftalik hedefleri once cek
+            _sid_here = _name_to_id.get(site) if _name_to_id else None
+            # Veri satırları — sıra: Hafta / Hedef / Yarı Mamul Tonajı /
+            # Boş / Dolu / Dolu Konteyner Tonajı.
             for k, w in enumerate(full_weeks):
                 r = hdr_row + 1 + k
                 sd = weekly_site.get(w, {}).get(site)
@@ -2672,25 +2681,35 @@ def _build_ozet_charts_sheet(
                     (ton_v / full_v)
                     if (sd and full_v and ton_v is not None) else None
                 )
+                # Bu hafta gecerli hedef (yoksa None -> hucre bos)
+                hedef_v = None
+                if _sid_here is not None:
+                    _t = (targets_by_week_site or {}).get(w, {}).get(_sid_here)
+                    if _t is not None:
+                        hedef_v = float(_t)
                 c1 = ws.cell(row=r, column=1, value=_short_week(w))
                 c1.alignment = _LEFT
                 c1.border = _BORDER
-                c2 = ws.cell(row=r, column=2, value=ton_v)
+                c2 = ws.cell(row=r, column=2, value=hedef_v)
                 c2.alignment = _RIGHT
                 c2.number_format = "#,##0"
                 c2.border = _BORDER
-                c3 = ws.cell(row=r, column=3, value=empty_v)
+                c3 = ws.cell(row=r, column=3, value=ton_v)
                 c3.alignment = _RIGHT
                 c3.number_format = "#,##0"
                 c3.border = _BORDER
-                c4 = ws.cell(row=r, column=4, value=full_v)
+                c4 = ws.cell(row=r, column=4, value=empty_v)
                 c4.alignment = _RIGHT
                 c4.number_format = "#,##0"
                 c4.border = _BORDER
-                c5 = ws.cell(row=r, column=5, value=ton_per_dolu)
+                c5 = ws.cell(row=r, column=5, value=full_v)
                 c5.alignment = _RIGHT
-                c5.number_format = "0.00"
+                c5.number_format = "#,##0"
                 c5.border = _BORDER
+                c6 = ws.cell(row=r, column=6, value=ton_per_dolu)
+                c6.alignment = _RIGHT
+                c6.number_format = "0.00"
+                c6.border = _BORDER
 
             table_end_row = hdr_row + len(full_weeks)
 
@@ -2727,12 +2746,30 @@ def _build_ozet_charts_sheet(
                 for t, f in zip(site_ton_vals, site_full_vals)
             ]
 
+            # Bu sitenin haftalik hedef degerleri (Yarı Mamul mini
+            # chart'a overlay icin). None ve 0 atlanir (span).
+            site_hedef_vals = (
+                [
+                    (
+                        float(
+                            (targets_by_week_site or {})
+                            .get(w, {}).get(_sid_here) or 0
+                        )
+                        or None
+                    )
+                    for w in full_weeks
+                ]
+                if _sid_here is not None else []
+            )
+
             # 4 mini chart yan yana — sütun sırasıyla aynı: Yarı Mamul
-            # Tonajı | Boş | Dolu | Dolu Konteyner Tonajı. Cols F/J/N/R.
+            # Tonajı | Boş | Dolu | Dolu Konteyner Tonajı. Cols H/L/P/T.
             def _mini(
                 anchor: str, title: str, src_col: int,
                 num_fmt: str, line_color: str, series_vals: list[float],
                 y_min: float = 0,
+                target_src_col: int | None = None,
+                target_vals: list[float] | None = None,
             ) -> None:
                 ch = LineChart()
                 ch.title = _make_chart_title(title)
@@ -2761,9 +2798,16 @@ def _build_ozet_charts_sheet(
                     float(v) for v in series_vals
                     if v is not None and float(v) > 0
                 ]
-                if _positive_vals:
-                    _data_min = min(_positive_vals)
-                    _data_max = max(_positive_vals)
+                # Hedef degerleri de min/max hesabina dahil (line
+                # chart disina taşmasın).
+                _positive_tgts = [
+                    float(v) for v in (target_vals or [])
+                    if v is not None and float(v) > 0
+                ]
+                _combined = _positive_vals + _positive_tgts
+                if _combined:
+                    _data_min = min(_combined)
+                    _data_max = max(_combined)
                     _span = _data_max - _data_min
                     # 10% pay üstte ve altta, negatife inmesin.
                     _pad = max(_span * 0.10, _data_max * 0.02)
@@ -2792,6 +2836,56 @@ def _build_ozet_charts_sheet(
                 # ornegin W20 ile W21 arasinda W20.5 bos oldugunda
                 # cizgi kesiliyordu.
                 ch.display_blanks = "span"
+                # Hedef overlay — sadece target_src_col verilmisse ve
+                # herhangi bir haftada pozitif hedef varsa. Turuncu
+                # cizgi, beyaz marker.
+                if target_src_col is not None and any(
+                    (v is not None and float(v) > 0)
+                    for v in (target_vals or [])
+                ):
+                    from openpyxl.chart.label import (
+                        DataLabelList as _DLbls
+                    )
+                    _tgt = LineChart()
+                    _tgt.add_data(
+                        Reference(
+                            ws, min_col=target_src_col,
+                            max_col=target_src_col,
+                            min_row=hdr_row, max_row=table_end_row,
+                        ),
+                        titles_from_data=True,
+                    )
+                    _tgt.set_categories(
+                        Reference(
+                            ws, min_col=1, max_col=1,
+                            min_row=hdr_row + 1,
+                            max_row=table_end_row,
+                        )
+                    )
+                    # Yarı Mamul mini chart actual line'i turuncu
+                    # (EA580C); target'i navy (1F3A8A) yapiyoruz ki iki
+                    # cizgi renkte cakismasin.
+                    _TGT_COLOR = "1F3A8A"
+                    for _s in _tgt.series:
+                        _mk = Marker(symbol="circle", size=5)
+                        _mgp = GraphicalProperties(solidFill="FFFFFF")
+                        _mgp.line = LineProperties(
+                            solidFill=_TGT_COLOR, w=15000,
+                        )
+                        _mk.graphicalProperties = _mgp
+                        _s.marker = _mk
+                        _gp = GraphicalProperties()
+                        _gp.line = LineProperties(
+                            solidFill=_TGT_COLOR, w=22000,
+                        )
+                        _s.graphicalProperties = _gp
+                        _s.dLbls = _DLbls(
+                            showVal=False, showLegendKey=False,
+                            showCatName=False, showSerName=False,
+                            showPercent=False, showBubbleSize=False,
+                        )
+                    ch += _tgt
+                    ch.visible_cells_only = False
                 _apply_chart_frame(ch)
                 # Chart anchor tablo header'inin (blue fill) 1 satir altina
                 # (hdr_row+1 = ilk data satiri) yerlestirildi. Tablo mavi
@@ -2799,16 +2893,20 @@ def _build_ozet_charts_sheet(
                 # olusuyor, yapisikligi kalkiyor.
                 ws.add_chart(ch, f"{anchor}{hdr_row + 1}")
 
-            # Tablo cols A-E'de. Grafik anchor'lari F -> H'a kaydirildi
-            # (2 sutun bosluk: F, G tampon). Sonraki 3 grafik 4 sutunluk
-            # aralikla H/L/P/T. T + 4 = X (col 24) — sayfa sonunda biter.
-            _mini("H", "Yarı Mamul Tonajı", 2, "#,##0", "EA580C", site_ton_vals)
-            _mini("L", "Boş Konteyner", 3, "#,##0", "BE123C", site_empty_vals)
-            _mini("P", "Dolu Konteyner", 4, "#,##0", "1F3A8A", site_full_vals)
-            # Dolu Konteyner Tonaji ratio (0.3-0.6 arasi); y ekseni 0'dan
-            # baslarsa varyasyon gorunmuyor. y_min=0.25 sıkıştırır.
+            # Tablo cols A-F'de (Hedef sutunu eklendi -> 6 kolon).
+            # Grafik anchor'lari H/L/P/T (2 sutun bosluk: G tampon).
+            # src_col +1 kaydı: Yarı Mamul 2->3, Boş 3->4, Dolu 4->5,
+            # Ton/Konteyner 5->6.
+            # Yarı Mamul mini chart'a hedef overlay (col 2 = Hedef).
             _mini(
-                "T", "Dolu Konteyner Tonajı", 5, "0.00", "F59E0B",
+                "H", "Yarı Mamul Tonajı", 3, "#,##0", "EA580C",
+                site_ton_vals,
+                target_src_col=2, target_vals=site_hedef_vals,
+            )
+            _mini("L", "Boş Konteyner", 4, "#,##0", "BE123C", site_empty_vals)
+            _mini("P", "Dolu Konteyner", 5, "#,##0", "1F3A8A", site_full_vals)
+            _mini(
+                "T", "Dolu Konteyner Tonajı", 6, "0.00", "F59E0B",
                 site_ton_per_dolu_vals, y_min=0.25,
             )
 
@@ -4288,7 +4386,11 @@ def build_week_excel(
     # Grafikler en son sheet olarak kalsın — üretim yeri trend
     # bloklarını kendi içinde, butonlarla erişilen 'Tesis Detayı'
     # bölümünde tutuyor.
-    _build_ozet_charts_sheet(wb, all_weeks_rows or [], manual_aggs or [])
+    _build_ozet_charts_sheet(
+        wb, all_weeks_rows or [], manual_aggs or [],
+        targets_by_week_site=targets_by_week_site,
+        site_labels=site_labels,
+    )
 
     # Analiz sayfasını 0. sıraya, Ana Data Sayfası'nı 1. sıraya taşı.
     # create_sheet ordinal 0 vermek her zaman çalışmıyor, o yüzden
