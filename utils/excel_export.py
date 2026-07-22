@@ -3688,12 +3688,291 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
 # Public API
 # ---------------------------------------------------------------------------
 
+def _build_hedef_vs_gerceklesen_sheet(
+    wb: Workbook,
+    all_weeks_rows: list[dict[str, Any]],
+    manual_aggs: list[dict[str, Any]],
+    targets_by_week_site: dict[str, dict[int, float]] | None,
+    site_labels: dict[int, tuple[str, str]] | None,
+) -> None:
+    """Yeni sheet: 'Hedef vs Gerçekleşen'.
+
+    Her üretim yeri için iki grafik:
+      • Sol: turuncu bar (haftalık gerçekleşen tonaj) + mavi line
+        (hedef — hafta bazında değişebilir, tipik olarak sabit).
+      • Sağ: mavi line — trend (aynı gerçekleşen değerleri).
+
+    Kritik detaylar (önceki debug session'ından ders):
+      • ``chart.visible_cells_only = False`` → data hidden col'larda
+        olduğu için plotVisOnly=1 olsa chart boş çizerdi.
+      • Line overlay için ``set_categories`` explicit — kategori
+        eksik olursa çizgi hiç çizilmez.
+      • Line series'e ``DataLabelList(showSerName=False, ...)``
+        explicit — bos <dLbls/> tag'i Excel default'una duser ve
+        seri adi her point'te yazilir.
+    """
+    from openpyxl.chart import BarChart, LineChart, Reference
+    from openpyxl.chart.label import DataLabelList
+    from openpyxl.chart.marker import Marker
+    from openpyxl.chart.shapes import GraphicalProperties
+    from openpyxl.drawing.line import LineProperties
+    from openpyxl.styles import Alignment, Font, PatternFill
+
+    ws = wb.create_sheet("Hedef vs Gerçekleşen")
+
+    # Baslik satiri
+    ws.merge_cells("A1:X1")
+    title_cell = ws["A1"]
+    title_cell.value = (
+        "Hedef vs Gerçekleşen Yarı Mamul Tonajı — Üretim Yeri Bazlı "
+        "Haftalık Karşılaştırma"
+    )
+    title_cell.font = Font(bold=True, size=16, color="1F3A8A")
+    title_cell.fill = PatternFill("solid", fgColor="E2E8F0")
+    title_cell.alignment = Alignment(
+        horizontal="left", vertical="center", indent=1,
+    )
+    ws.row_dimensions[1].height = 32
+
+    # Sutun genislikleri (baslik sayfasi genisliginde tutalim)
+    for c in range(1, 25):
+        ws.column_dimensions[get_column_letter(c)].width = 11
+
+    # Hedef veya veri yoksa uyarı
+    if not targets_by_week_site:
+        ws.merge_cells("A3:X3")
+        info = ws["A3"]
+        info.value = (
+            "Henüz tonaj hedefi tanımlı değil. Admin panelinden "
+            "'Tonaj Hedefleri' sekmesine girip hedefleri girin, "
+            "sonraki Excel indirmesinde grafikler burada oluşur."
+        )
+        info.font = Font(italic=True, color="64748B", size=11)
+        info.alignment = Alignment(
+            horizontal="left", vertical="center", indent=1,
+        )
+        return
+
+    # Haftalik gerceklesen tonaji topla (site_id -> {week: ton})
+    # all_weeks_rows'da 'Üretim Yeri' isim; ProductionSite mapping'i
+    # site_labels dict'inde. isim -> site_id ters harita cikar.
+    site_labels = site_labels or {}
+    name_to_id = {name: sid for sid, (_code, name) in site_labels.items()}
+
+    # weekly_site: {week_iso: {site_id: gerceklesen_tonaj}}
+    weekly_site: dict[str, dict[int, float]] = {}
+    for r in all_weeks_rows:
+        wk = r.get("Hafta")
+        site_name = r.get("Üretim Yeri")
+        sid = name_to_id.get(site_name)
+        if not wk or sid is None:
+            continue
+        # Ayni site x hafta icin birden fazla row olabilir (bolum
+        # kirilimli); tonaji ilk kez ekliyoruz cunku Yari Mamul Tonaji
+        # bolum bazli degil, submission bazli.
+        by_site = weekly_site.setdefault(wk, {})
+        if sid not in by_site:
+            ton = r.get("Gerçekleşen Tonaj")
+            if ton is None:
+                continue
+            try:
+                by_site[sid] = float(ton)
+            except (TypeError, ValueError):
+                continue
+    # Manuel aggregate'leri de ekle
+    for m in manual_aggs:
+        wk = m.get("Hafta") or m.get("week_iso")
+        sid = m.get("site_id")
+        ton = m.get("Gerçekleşen Tonaj") or m.get("tonnage_total")
+        if not wk or sid is None or ton is None:
+            continue
+        by_site = weekly_site.setdefault(wk, {})
+        if sid not in by_site:
+            try:
+                by_site[sid] = float(ton)
+            except (TypeError, ValueError):
+                pass
+
+    # Sorted week list — hedefte ya da veride gecen tum haftalari
+    # union alarak sabit sütun sırası olustur.
+    all_weeks = sorted(
+        set(targets_by_week_site.keys()) | set(weekly_site.keys())
+    )
+    if not all_weeks:
+        return
+
+    # Hedef girilmis tum siteleri topla (herhangi bir haftada geceni)
+    all_site_ids: set[int] = set()
+    for by_site in targets_by_week_site.values():
+        all_site_ids.update(by_site.keys())
+    # Kod sirasina göre sirala
+    sorted_sites = sorted(
+        all_site_ids,
+        key=lambda sid: site_labels.get(sid, ("", ""))[0],
+    )
+
+    # ===== Data area (hidden cols AA+) =====
+    DATA_COL = 27  # AA
+    ws.cell(row=1, column=DATA_COL, value="Hafta")
+    for j, wk in enumerate(all_weeks):
+        ws.cell(row=2 + j, column=DATA_COL, value=_short_week(wk))
+
+    site_data_cols: dict[int, tuple[int, int]] = {}  # sid -> (tcol, acol)
+    next_col = DATA_COL + 1
+    for sid in sorted_sites:
+        tcol = next_col
+        acol = next_col + 1
+        site_data_cols[sid] = (tcol, acol)
+        code, name = site_labels.get(sid, ("?", "?"))
+        ws.cell(row=1, column=tcol, value=f"[{code}] {name} Hedef")
+        ws.cell(row=1, column=acol, value=f"[{code}] {name} Gerçek")
+        for j, wk in enumerate(all_weeks):
+            # Hedef
+            tval = targets_by_week_site.get(wk, {}).get(sid)
+            if tval is not None:
+                c = ws.cell(row=2 + j, column=tcol, value=float(tval))
+                c.number_format = "[$-tr-TR]#,##0"
+            # Gerceklesen
+            aval = weekly_site.get(wk, {}).get(sid)
+            if aval is not None:
+                c = ws.cell(row=2 + j, column=acol, value=float(aval))
+                c.number_format = "[$-tr-TR]#,##0"
+        next_col += 2
+
+    data_end_row = 1 + len(all_weeks)
+
+    # ===== Site bloklari =====
+    BLOCK_HEIGHT = 20  # banner + 16 sat chart + biraz pay
+    current_row = 3
+
+    for sid in sorted_sites:
+        tcol, acol = site_data_cols[sid]
+        code, name = site_labels.get(sid, ("?", "?"))
+        block_label = f"[{code}] {name}"
+
+        # Banner
+        ws.merge_cells(
+            start_row=current_row, start_column=1,
+            end_row=current_row, end_column=24,
+        )
+        bnr = ws.cell(row=current_row, column=1, value=block_label)
+        bnr.font = Font(bold=True, color="FFFFFF", size=12)
+        bnr.fill = PatternFill("solid", fgColor="1F3A8A")
+        bnr.alignment = Alignment(
+            horizontal="left", vertical="center", indent=1,
+        )
+        ws.row_dimensions[current_row].height = 22
+
+        cats_ref = Reference(
+            ws, min_col=DATA_COL, min_row=2, max_row=data_end_row,
+        )
+        actual_ref = Reference(
+            ws, min_col=acol, min_row=1,
+            max_col=acol, max_row=data_end_row,
+        )
+        tgt_ref = Reference(
+            ws, min_col=tcol, min_row=1,
+            max_col=tcol, max_row=data_end_row,
+        )
+
+        # ---- SOL: Hedef vs Gerceklesen (bar + line overlay) ----
+        ch1 = BarChart()
+        ch1.type = "col"
+        ch1.style = 2
+        ch1.title = _make_chart_title(f"{block_label} — Hedef vs Gerçekleşen")
+        ch1.y_axis.title = _horizontal_axis_title("Tonaj (t)")
+        ch1.x_axis.title = _end_x_axis_title("Hafta")
+        ch1.add_data(actual_ref, titles_from_data=True)
+        ch1.set_categories(cats_ref)
+        for s in ch1.series:
+            s.graphicalProperties = GraphicalProperties(solidFill="EA580C")
+        ch1.dataLabels = _value_only_labels(
+            "outEnd", "[$-tr-TR]#,##0",
+        )
+        ch1.y_axis.numFmt = "[$-tr-TR]#,##0"
+        ch1.y_axis.scaling.min = 0
+        ch1.height = 8
+        ch1.width = 15
+        ch1.legend.position = "b"
+        ch1.legend.overlay = False
+        # KRITIK: hidden cols'da veri okunsun.
+        ch1.visible_cells_only = False
+        ch1.display_blanks = "span"
+        _apply_chart_frame(ch1)
+
+        # Line overlay (hedef)
+        line = LineChart()
+        line.add_data(tgt_ref, titles_from_data=True)
+        line.set_categories(cats_ref)  # KRITIK: overlay'de kategori
+        for s in line.series:
+            marker = Marker(symbol="circle", size=6)
+            marker_gp = GraphicalProperties(solidFill="FFFFFF")
+            marker_gp.line = LineProperties(solidFill="1F3A8A", w=15000)
+            marker.graphicalProperties = marker_gp
+            s.marker = marker
+            gp = GraphicalProperties()
+            gp.line = LineProperties(solidFill="1F3A8A", w=28000)
+            s.graphicalProperties = gp
+            # Series-level dLbls'i explicit — bos DataLabelList()
+            # kacinilmalidir, Excel default'a duser (seri adi yazilir).
+            s.dLbls = DataLabelList(
+                showVal=False, showLegendKey=False, showCatName=False,
+                showSerName=False, showPercent=False, showBubbleSize=False,
+            )
+        ch1 += line
+        ws.add_chart(ch1, f"A{current_row + 1}")
+
+        # ---- SAG: Trend (aylik gerceklesen tonaj, line) ----
+        ch2 = LineChart()
+        ch2.style = 2
+        ch2.title = _make_chart_title(f"{block_label} — Haftalık Trend")
+        ch2.y_axis.title = _horizontal_axis_title("Tonaj (t)")
+        ch2.x_axis.title = _end_x_axis_title("Hafta")
+        ch2.add_data(actual_ref, titles_from_data=True)
+        ch2.set_categories(cats_ref)
+        for s in ch2.series:
+            marker = Marker(symbol="circle", size=7)
+            marker_gp = GraphicalProperties(solidFill="FFFFFF")
+            marker_gp.line = LineProperties(solidFill="1F3A8A", w=15000)
+            marker.graphicalProperties = marker_gp
+            s.marker = marker
+            gp = GraphicalProperties()
+            gp.line = LineProperties(solidFill="1F3A8A", w=28000)
+            s.graphicalProperties = gp
+            s.dLbls = DataLabelList(
+                showVal=True, showLegendKey=False, showCatName=False,
+                showSerName=False, showPercent=False, showBubbleSize=False,
+            )
+        ch2.dataLabels = _value_only_labels(
+            "t", "[$-tr-TR]#,##0",
+            txPr=_bold_large_label_props(size_pt=10, color="1F172A"),
+        )
+        ch2.y_axis.numFmt = "[$-tr-TR]#,##0"
+        ch2.y_axis.scaling.min = 0
+        ch2.height = 8
+        ch2.width = 15
+        ch2.legend = None
+        ch2.visible_cells_only = False
+        ch2.display_blanks = "span"
+        _apply_chart_frame(ch2)
+        ws.add_chart(ch2, f"M{current_row + 1}")
+
+        current_row += BLOCK_HEIGHT
+
+    # Data cols'u gizle — kullaniciya sadece grafikler gorunsun.
+    # visible_cells_only=False oldugu icin chart'lar bundan etkilenmez.
+    for c in range(DATA_COL, next_col):
+        ws.column_dimensions[get_column_letter(c)].hidden = True
+
+
 def build_week_excel(
     rows: list[dict[str, Any]],
     week_iso: str,
     week_human: str,
     all_weeks_rows: list[dict[str, Any]] | None = None,
     manual_aggs: list[dict[str, Any]] | None = None,
+    targets_by_week_site: dict[str, dict[int, float]] | None = None,
+    site_labels: dict[int, tuple[str, str]] | None = None,
 ) -> bytes:
     """Return an .xlsx byte string for the selected week.
 
@@ -3727,6 +4006,13 @@ def build_week_excel(
     _build_dolu_yuk_ozeti_sheet(wb, all_weeks_rows or [], manual_aggs or [])
     _build_yari_mamul_tonaj_ozeti_sheet(
         wb, all_weeks_rows or [], manual_aggs or [],
+    )
+    # Hedef vs Gerçekleşen — hedef tanimliysa siter bazli comparison
+    # + trend grafikleri. Hedef yoksa placeholder mesaj yazan bos
+    # sheet olusur; bu, hedef girildikten sonra otomatik dolar.
+    _build_hedef_vs_gerceklesen_sheet(
+        wb, all_weeks_rows or [], manual_aggs or [],
+        targets_by_week_site, site_labels,
     )
     _build_uretim_yeri_karsilastirma_sheet(
         wb, all_weeks_rows or [], manual_aggs or []
@@ -3892,10 +4178,14 @@ def _fix_drawing_xml(content: bytes) -> bytes:
         prefix = m.group(1)
         cx = m.group(2)
         cy = m.group(3)
+        # xmlns:a inline — wsDr default namespace spreadsheetDrawing,
+        # a: prefix drawingml burada declare edilmezse Excel drawing'i
+        # sessizce siliyor (chart yerine bos alan).
+        _ns_a = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"'
         return (
             f'{prefix}<xfrm>'
-            f'<a:off x="0" y="0"/>'
-            f'<a:ext cx="{cx}" cy="{cy}"/>'
+            f'<a:off {_ns_a} x="0" y="0"/>'
+            f'<a:ext {_ns_a} cx="{cx}" cy="{cy}"/>'
             f'</xfrm>'
         )
 

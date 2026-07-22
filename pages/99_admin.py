@@ -49,6 +49,8 @@ from utils.excel_export import build_all_weeks_excel, build_week_excel
 from utils.site_targets import (
     create_new_period as create_target_period,
     delete_target as delete_site_target,
+    get_all_site_labels,
+    get_targets_by_week_site,
     latest_targets_by_site,
     list_all_targets,
 )
@@ -1680,6 +1682,15 @@ if _is_active("excel"):
         # Geçmiş (sistem öncesi) haftalar için elle girilmiş üretim yeri
         # toplamları; grafiklere folded ediliyor.
         manual_aggs = get_manual_site_aggregates()
+        # Hedef vs Gerçekleşen sheet'i için: her hafta için o haftanın
+        # Pazartesi'sinde geçerli hedefleri topla.
+        _weeks_in_export = sorted({
+            r["Hafta"] for r in all_weeks_rows
+            if r.get("Hafta")
+        })
+        with get_session() as _s:
+            excel_targets = get_targets_by_week_site(_s, _weeks_in_export)
+            excel_site_labels = get_all_site_labels(_s)
         c1, c2 = st.columns(2)
         if export_rows:
             week_bytes = build_week_excel(
@@ -1688,6 +1699,8 @@ if _is_active("excel"):
                 format_week_human(excel_week),
                 all_weeks_rows=all_weeks_rows,
                 manual_aggs=manual_aggs,
+                targets_by_week_site=excel_targets,
+                site_labels=excel_site_labels,
             )
             c1.download_button(
                 "Seçili Haftayı İndir",

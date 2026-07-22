@@ -158,6 +158,33 @@ def create_new_period(
     return created
 
 
+def get_targets_by_week_site(
+    session: Session, week_isos: Sequence[str],
+) -> dict[str, dict[int, float]]:
+    """Excel export için: {week_iso: {site_id: hedef_ton}}.
+
+    Her hafta için o haftanın Pazartesi'sinde geçerli hedefleri toplar.
+    Bir haftada bir site için hedef yoksa o (week, site) çifti sonuçta yer
+    almaz — chart tarafı None olarak yorumlar.
+    """
+    result: dict[str, dict[int, float]] = {}
+    for wk in week_isos:
+        raw = get_weekly_targets_for_week(session, wk)
+        if raw:
+            result[wk] = {sid: float(v) for sid, v in raw.items()}
+    return result
+
+
+def get_all_site_labels(session: Session) -> dict[int, tuple[str, str]]:
+    """{site_id: (code, name)} — aktif tüm üretim yerleri."""
+    from db.models import ProductionSite
+    stmt = select(ProductionSite).where(ProductionSite.is_active.is_(True))
+    return {
+        row.id: (row.code, row.name)
+        for row in session.scalars(stmt)
+    }
+
+
 def delete_target(session: Session, target_id: int) -> None:
     """Bir hedef kaydını sil (audit sonrası). Önceki dönemin
     ``effective_to``'su bu işlemle otomatik açılmaz — admin dilerse
