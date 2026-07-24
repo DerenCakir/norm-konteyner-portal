@@ -463,7 +463,7 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
     _FIELD_META = [
         ("empty",  "Boş",              1.0,  fields_cfg.show_empty),
         ("wip",    "Proseste",         1.1,  fields_cfg.show_wip),
-        ("full",   "Dolu (toplam)",    1.0,  fields_cfg.show_full),
+        ("full",   "Dolu",             1.0,  fields_cfg.show_full),
         ("kanban", "Kanban",           1.2,  fields_cfg.show_kanban),
         ("scrap",  "Hurdaya Ayrılacak", 1.4, fields_cfg.show_scrap),
     ]
