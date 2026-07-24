@@ -31,6 +31,7 @@ from db.models import (
     LateWindowOverride,
     ManualSiteAggregate,
     ProductionSite,
+    SiteCountConfig,
     SiteTonnageTarget,
     SubmissionSchedule,
     User,
@@ -53,6 +54,10 @@ from utils.site_targets import (
     get_targets_by_week_site,
     latest_targets_by_site,
     list_all_targets,
+)
+from utils.site_count_config import (
+    get_count_fields_config,
+    upsert_count_fields_config,
 )
 from utils.performance import page_timer
 from utils.ui import (
@@ -115,6 +120,7 @@ _TAB_KEYS = [
     ("departments",  "Bölümler"),
     ("colors",       "Renkler"),
     ("targets",      "Tonaj Hedefleri"),
+    ("count_fields", "Sayım Alanları"),
     ("schedule",     "Sayım Takvimi"),
     ("late",         "Geç Giriş"),
     ("closed",       "Sayım Kapat"),
@@ -1211,6 +1217,128 @@ if _is_active("targets"):
                         st.rerun()
                     except Exception as exc:
                         st.error(f"Hata: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# TAB — SAYIM ALANLARI (üretim yerine göre form alan yapılandırması)
+# ---------------------------------------------------------------------------
+if _is_active("count_fields"):
+    st.subheader("Sayım Alanları")
+    st.caption(
+        "Üretim yerine göre sayım giriş formunda hangi alanların "
+        "gösterileceği. Kapatılan alan formda gözükmez ve sayım "
+        "0 olarak kaydedilir. Tonaj kapatılırsa o site tonaj girmez."
+    )
+
+    _FIELD_KEYS = [
+        ("show_empty",   "Boş"),
+        ("show_wip",     "Proseste"),
+        ("show_full",    "Dolu"),
+        ("show_kanban",  "Kanban"),
+        ("show_scrap",   "Hurda"),
+        ("show_tonnage", "Tonaj"),
+    ]
+
+    with get_session() as _s:
+        _sites = list(_s.execute(
+            select(ProductionSite)
+            .where(ProductionSite.is_active.is_(True))
+            .order_by(ProductionSite.code)
+        ).scalars())
+        _rows_view = []
+        for site in _sites:
+            cfg = get_count_fields_config(_s, site.id)
+            _rows_view.append({
+                "site_id": site.id,
+                "code": site.code,
+                "name": site.name,
+                "show_empty":   cfg.show_empty,
+                "show_wip":     cfg.show_wip,
+                "show_full":    cfg.show_full,
+                "show_kanban":  cfg.show_kanban,
+                "show_scrap":   cfg.show_scrap,
+                "show_tonnage": cfg.show_tonnage,
+            })
+
+    st.markdown("#### Şu Anki Ayarlar")
+    st.dataframe(
+        pd.DataFrame([
+            {
+                "Kod": r["code"],
+                "Üretim Yeri": r["name"],
+                **{
+                    lbl: ("✓" if r[key] else "—")
+                    for key, lbl in _FIELD_KEYS
+                },
+            }
+            for r in _rows_view
+        ]),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+    st.divider()
+    st.markdown("#### Ayarı Değiştir")
+
+    with st.form("count_fields_form", clear_on_submit=False):
+        site_options = {
+            f"[{r['code']}] {r['name']}": r["site_id"]
+            for r in _rows_view
+        }
+        selected_site_label = st.selectbox(
+            "Üretim Yeri", list(site_options.keys()),
+        )
+        selected_site_id = site_options[selected_site_label]
+        current = next(
+            r for r in _rows_view if r["site_id"] == selected_site_id
+        )
+
+        cols = st.columns(3)
+        _picks: dict[str, bool] = {}
+        for i, (key, lbl) in enumerate(_FIELD_KEYS):
+            col = cols[i % 3]
+            with col:
+                _picks[key] = st.checkbox(
+                    lbl, value=current[key], key=f"cfg_{key}",
+                )
+        submitted = st.form_submit_button(
+            "Kaydet", use_container_width=True, type="primary",
+        )
+
+    if submitted:
+        try:
+            with get_session() as _s:
+                row = upsert_count_fields_config(
+                    _s, selected_site_id,
+                    show_empty=_picks["show_empty"],
+                    show_wip=_picks["show_wip"],
+                    show_full=_picks["show_full"],
+                    show_kanban=_picks["show_kanban"],
+                    show_scrap=_picks["show_scrap"],
+                    show_tonnage=_picks["show_tonnage"],
+                    updated_by=admin_id,
+                )
+                _s.add(AuditLog(
+                    user_id=admin_id,
+                    action="site_count_config_update",
+                    entity_type="site_count_config",
+                    entity_id=selected_site_id,
+                    old_value={
+                        k: current[k] for k, _ in _FIELD_KEYS
+                    },
+                    new_value={
+                        "site_label": selected_site_label,
+                        **{k: _picks[k] for k, _ in _FIELD_KEYS},
+                    },
+                ))
+            clear_cached_queries()
+            queue_toast(
+                f"{selected_site_label} sayım alanları güncellendi.",
+                icon="✅",
+            )
+            st.rerun()
+        except Exception as exc:
+            st.error(f"Hata: {exc}")
 
 
 # ---------------------------------------------------------------------------

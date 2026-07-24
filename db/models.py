@@ -19,6 +19,7 @@ from typing import Optional
 
 from sqlalchemy import (
     JSON,
+    Boolean,
     CheckConstraint,
     Date,
     ForeignKey,
@@ -518,6 +519,58 @@ class SiteTonnageTarget(Base):
             f"<SiteTonnageTarget site_id={self.production_site_id} "
             f"target={self.weekly_target_ton} "
             f"from={self.effective_from} to={self.effective_to}>"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 8e. SITE COUNT CONFIG (üretim yerine göre sayım giriş ekranı alanları)
+# ---------------------------------------------------------------------------
+class SiteCountConfig(Base):
+    """Üretim yerine göre sayım giriş ekranında hangi alanlar gösterilir.
+
+    Kayıt yoksa varsayılan olarak hepsi True (mevcut form davranışına
+    geri düşer). Iş kuralı: bazı tesisler sadece Boş+Proseste girer,
+    Norm Holding sadece Boş+Dolu+Tonaj.
+    """
+
+    __tablename__ = "site_count_config"
+
+    site_id: Mapped[int] = mapped_column(
+        ForeignKey("production_sites.id"), primary_key=True,
+    )
+    show_empty: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true",
+    )
+    show_wip: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true",
+    )
+    show_full: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true",
+    )
+    show_kanban: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true",
+    )
+    show_scrap: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true",
+    )
+    show_tonnage: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true",
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now(), nullable=False,
+    )
+    updated_by: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"),
+    )
+
+    site: Mapped["ProductionSite"] = relationship()
+
+    def __repr__(self) -> str:
+        return (
+            f"<SiteCountConfig site_id={self.site_id} "
+            f"empty={self.show_empty} wip={self.show_wip} "
+            f"full={self.show_full} kanban={self.show_kanban} "
+            f"scrap={self.show_scrap} tonnage={self.show_tonnage}>"
         )
 
 

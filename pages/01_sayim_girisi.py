@@ -44,6 +44,7 @@ from utils.auth import (
     user_can_submit_for,
 )
 from utils.cached_queries import clear_cached_queries
+from utils.site_count_config import get_count_fields_config
 from utils.performance import page_timer
 from utils.ui import (
     empty_state,
@@ -157,6 +158,8 @@ with get_session() as s:
     selected_dept = s.get(Department, selected_dept_id)
     selected_site = s.get(ProductionSite, selected_dept.production_site_id)
     target_tonnage = float(selected_dept.weekly_tonnage_target) if selected_dept.weekly_tonnage_target else None
+    # Uretim yerine gore hangi sayim alanlari gorunecek?
+    fields_cfg = get_count_fields_config(s, selected_site.id)
 
 # ---------------------------------------------------------------------------
 # Status kontrolü
@@ -359,14 +362,19 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
         formatted = f"{float(v):.2f}".rstrip("0").rstrip(".")
         return formatted.replace(".", ",") if formatted else "0"
 
-    tonnage_input_str = st.text_input(
-        "Yarı mamül tonajı (toplam) — ton",
-        value=_format_tr_tonnage(default_tonnage),
-        disabled=not can_submit,
-        key=f"sayim_tonnage_{form_scope}",
-        placeholder="örn. 1.234,56",
-        help="Ondalık ayırıcı olarak virgül kullan (örn. 1,5).",
-    )
+    # Tonaj alanı config'e gore gosterilir (site show_tonnage=False ise
+    # form'da hic olmaz; submit'te None gider).
+    if fields_cfg.show_tonnage:
+        tonnage_input_str = st.text_input(
+            "Yarı mamül tonajı (toplam) — ton",
+            value=_format_tr_tonnage(default_tonnage),
+            disabled=not can_submit,
+            key=f"sayim_tonnage_{form_scope}",
+            placeholder="örn. 1.234,56",
+            help="Ondalık ayırıcı olarak virgül kullan (örn. 1,5).",
+        )
+    else:
+        tonnage_input_str = ""
 
     def _parse_tr_tonnage(text: str) -> float | None:
         if text is None:
@@ -398,9 +406,20 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
 
     tonnage = _parse_tr_tonnage(tonnage_input_str)
 
-    # Renk × Boş / Dolu / Kanban / Hurda tablosu
+    # Renk grid caption — sadece Kanban veya Hurda gorunuyorsa detayli
+    # aciklama gostermek anlamli. Aksi halde ust bir 'sayilari girin'
+    # notu yeter.
     st.markdown('<div style="height:0.5rem"></div>', unsafe_allow_html=True)
-    st.markdown(
+    _show_detailed_caption = fields_cfg.show_kanban or fields_cfg.show_scrap
+    if not _show_detailed_caption:
+        st.markdown(
+            '<div class="color-table-caption">'
+            'Her renk için görünen alanlardaki sayıları girin.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+    if _show_detailed_caption:
+     st.markdown(
         '<div class="color-table-caption">'
         'Her renk için <strong>boş</strong>, <strong>dolu</strong>, '
         '<strong>doluların kaçı</strong> kanban ve '
@@ -439,73 +458,67 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
     color_inputs: dict[int, dict[str, int]] = {}
     color_warnings: list[str] = []
 
-    h1, h2, h3, h4, h5, h6 = st.columns([2, 1, 1.1, 1, 1.2, 1.4])
-    h1.markdown('<div class="color-table-head">Renk</div>', unsafe_allow_html=True)
-    h2.markdown('<div class="color-table-head">Boş</div>', unsafe_allow_html=True)
-    h3.markdown('<div class="color-table-head">Proseste</div>', unsafe_allow_html=True)
-    h4.markdown('<div class="color-table-head">Dolu (toplam)</div>', unsafe_allow_html=True)
-    h5.markdown('<div class="color-table-head">Kanban</div>', unsafe_allow_html=True)
-    h6.markdown('<div class="color-table-head">Hurdaya Ayrılacak</div>', unsafe_allow_html=True)
+    # Site config'ine gore gorunecek alanlarin sirasi + basliklari.
+    # Renk sutunu her zaman ilk sutun.
+    _FIELD_META = [
+        ("empty",  "Boş",              1.0,  fields_cfg.show_empty),
+        ("wip",    "Proseste",         1.1,  fields_cfg.show_wip),
+        ("full",   "Dolu (toplam)",    1.0,  fields_cfg.show_full),
+        ("kanban", "Kanban",           1.2,  fields_cfg.show_kanban),
+        ("scrap",  "Hurdaya Ayrılacak", 1.4, fields_cfg.show_scrap),
+    ]
+    _visible_fields = [(k, lbl, w) for k, lbl, w, on in _FIELD_META if on]
+
+    if _visible_fields:
+        # 1. sutun = Renk (genislik 2), diger sutunlar visible field'lar.
+        _col_widths = [2.0] + [w for _k, _lbl, w in _visible_fields]
+        _headers = st.columns(_col_widths)
+        _headers[0].markdown(
+            '<div class="color-table-head">Renk</div>',
+            unsafe_allow_html=True,
+        )
+        for i, (_k, lbl, _w) in enumerate(_visible_fields, start=1):
+            _headers[i].markdown(
+                f'<div class="color-table-head">{lbl}</div>',
+                unsafe_allow_html=True,
+            )
 
     for color in active_colors:
         prev = existing_details.get(color.id)
-        # value=None → kutu boş açılır; kullanıcı tıklayıp rakam yazmaya
-        # başladığında baştaki sıfırla uğraşmaz. Mevcut kayıt varsa o
-        # sayı prefill olur.
-        prev_empty = prev.empty_count if prev is not None else None
-        prev_full = prev.full_count if prev is not None else None
-        prev_kanban = prev.kanban_count if prev is not None else None
-        prev_scrap = prev.scrap_count if prev is not None else None
-        prev_wip = prev.wip_count if prev is not None else None
+        prev_by_field = {
+            "empty":  prev.empty_count if prev is not None else None,
+            "wip":    prev.wip_count if prev is not None else None,
+            "full":   prev.full_count if prev is not None else None,
+            "kanban": prev.kanban_count if prev is not None else None,
+            "scrap":  prev.scrap_count if prev is not None else None,
+        }
 
-        c1, c2, c3, c4, c5, c6 = st.columns([2, 1, 1.1, 1, 1.2, 1.4])
-        c1.markdown(
-            f'<div style="padding-top:0.7rem; font-weight:500;">{color.name}</div>',
+        # Site'ta hicbir renk alani acik degilse renk gridini
+        # tamamen atla (tonaj-only site senaryosu).
+        if not _visible_fields:
+            color_inputs[color.id] = {
+                "empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0,
+            }
+            continue
+
+        _cols = st.columns(_col_widths)
+        _cols[0].markdown(
+            f'<div style="padding-top:0.7rem; font-weight:500;">'
+            f'{color.name}</div>',
             unsafe_allow_html=True,
         )
-        empty_v = c2.number_input(
-            f"{color.name} — Boş",
-            key=f"sayim_empty_{form_scope}_{color.id}",
-            value=prev_empty, min_value=0, step=1,
-            label_visibility="collapsed", disabled=not can_submit,
-            placeholder="0",
-        )
-        wip_v = c3.number_input(
-            f"{color.name} — Proseste",
-            key=f"sayim_wip_{form_scope}_{color.id}",
-            value=prev_wip, min_value=0, step=1,
-            label_visibility="collapsed", disabled=not can_submit,
-            placeholder="0",
-        )
-        full_v = c4.number_input(
-            f"{color.name} — Dolu",
-            key=f"sayim_full_{form_scope}_{color.id}",
-            value=prev_full, min_value=0, step=1,
-            label_visibility="collapsed", disabled=not can_submit,
-            placeholder="0",
-        )
-        kanban_v = c5.number_input(
-            f"{color.name} — Kanban",
-            key=f"sayim_kanban_{form_scope}_{color.id}",
-            value=prev_kanban, min_value=0, step=1,
-            label_visibility="collapsed", disabled=not can_submit,
-            placeholder="0",
-        )
-        scrap_v = c6.number_input(
-            f"{color.name} — Hurdaya Ayrılacak",
-            key=f"sayim_scrap_{form_scope}_{color.id}",
-            value=prev_scrap, min_value=0, step=1,
-            label_visibility="collapsed", disabled=not can_submit,
-            placeholder="0",
-        )
-        # Boş bırakılan kutuyu 0 olarak değerlendir.
-        color_inputs[color.id] = {
-            "empty": int(empty_v) if empty_v is not None else 0,
-            "wip": int(wip_v) if wip_v is not None else 0,
-            "full": int(full_v) if full_v is not None else 0,
-            "kanban": int(kanban_v) if kanban_v is not None else 0,
-            "scrap": int(scrap_v) if scrap_v is not None else 0,
-        }
+        vals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0}
+        for i, (fkey, lbl, _w) in enumerate(_visible_fields, start=1):
+            v = _cols[i].number_input(
+                f"{color.name} — {lbl}",
+                key=f"sayim_{fkey}_{form_scope}_{color.id}",
+                value=prev_by_field[fkey], min_value=0, step=1,
+                label_visibility="collapsed", disabled=not can_submit,
+                placeholder="0",
+            )
+            vals[fkey] = int(v) if v is not None else 0
+        # Gizli alanlar 0 kayit olur (DB non-negative constraint tatmin).
+        color_inputs[color.id] = vals
 
     submit_label = "Güncelle" if existing is not None else "Kaydet"
     submit_clicked = st.form_submit_button(
