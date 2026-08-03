@@ -1380,31 +1380,50 @@ if _is_active("tonaj_upload"):
                 _totals_kg[_code_str] = _totals_kg.get(_code_str, 0.0) + _stok_kg
                 _row_count += 1
 
-            # Kod -> site eslesmesi
+            # Kod -> site eslesmesi + tonaj-portal-girisi kontrolu
             with get_session() as _s_up:
                 _sites_up = list(_s_up.execute(
                     select(ProductionSite).where(
                         ProductionSite.is_active.is_(True)
                     )
                 ).scalars())
+                # Hangi siteler tonaji portal formundan giriyor?
+                # (show_tonnage=True). Onlari upload'dan cikartip
+                # cift sayimi engelleyecegiz.
+                _portal_tonaj_site_ids: set[int] = set()
+                for _s_it in _sites_up:
+                    _cfg_it = get_count_fields_config(_s_up, _s_it.id)
+                    if _cfg_it.show_tonnage:
+                        _portal_tonaj_site_ids.add(_s_it.id)
             _code_to_site = {s.code: (s.id, s.name) for s in _sites_up}
 
             # Preview satirlari
             _preview = []
             _matched_count = 0
             _unmatched_codes = []
+            _portal_conflict = []  # portalden tonaj giren siteler
             for _code, _kg_sum in sorted(_totals_kg.items()):
                 _ton = _kg_sum / 1000.0
                 if _code in _code_to_site:
                     _sid, _sname = _code_to_site[_code]
-                    _preview.append({
-                        "Kod": _code,
-                        "Üretim Yeri": _sname,
-                        "Toplam (kg)": round(_kg_sum, 3),
-                        "Ton": round(_ton, 3),
-                        "Durum": "✓ Eşleşti",
-                    })
-                    _matched_count += 1
+                    if _sid in _portal_tonaj_site_ids:
+                        _preview.append({
+                            "Kod": _code,
+                            "Üretim Yeri": _sname,
+                            "Toplam (kg)": round(_kg_sum, 3),
+                            "Ton": round(_ton, 3),
+                            "Durum": "⛔ Atlandı (portal girişi)",
+                        })
+                        _portal_conflict.append(_sname)
+                    else:
+                        _preview.append({
+                            "Kod": _code,
+                            "Üretim Yeri": _sname,
+                            "Toplam (kg)": round(_kg_sum, 3),
+                            "Ton": round(_ton, 3),
+                            "Durum": "✓ Eşleşti",
+                        })
+                        _matched_count += 1
                 else:
                     _preview.append({
                         "Kod": _code,
@@ -1418,8 +1437,16 @@ if _is_active("tonaj_upload"):
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Satır Okundu", _row_count)
             m2.metric("Farklı Kod", len(_totals_kg))
-            m3.metric("Eşleşen Site", _matched_count)
+            m3.metric("Yazılacak Site", _matched_count)
             m4.metric("Eşleşmeyen Kod", len(_unmatched_codes))
+
+            if _portal_conflict:
+                st.warning(
+                    f"⛔ {len(_portal_conflict)} site portal üzerinden "
+                    f"tonaj giriyor, Excel'den yazılmayacak (çift "
+                    f"sayımı engellemek için): "
+                    f"**{', '.join(_portal_conflict)}**"
+                )
 
             if _bad_rows:
                 with st.expander(
