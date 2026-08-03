@@ -403,14 +403,16 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
 
     headers = [
         "Hafta", "Üretim Yeri", "Bölüm", "Renk",
-        "Boş", "Proseste", "Dolu", "Dolu İçindeki Kanban", "Hurdaya Ayrılacak",
+        "Boş", "Proseste", "Dolu", "Dolu İçindeki Kanban",
+        "Hurdaya Ayrılacak", "Rondela",
         "Toplam Konteyner", "Durum",
         "Giren Kullanıcı", "Sayım Tarihi", "Sayım Saati", "Gönderim Zamanı",
     ]
     ws.append(headers)
     _style_header_row(ws, len(headers))
 
-    totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0, "bdh": 0}
+    totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0,
+              "scrap": 0, "rondela": 0, "bdh": 0}
 
     for idx, row in enumerate(rows, start=2):
         is_late = row.get("Durum") == "late_submitted"
@@ -422,13 +424,15 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
         dolu_v = int(row.get("Dolu") or 0)
         kanban_v = int(row.get("Kanban") or 0)
         hurda_v = int(row.get("Hurda") or 0)
-        bdh_v = bos_v + wip_v + dolu_v + hurda_v
+        rondela_v = int(row.get("Rondela") or 0)
+        bdh_v = bos_v + wip_v + dolu_v + hurda_v + rondela_v
 
         values = [
             row.get("Hafta", ""),
             row.get("Üretim Yeri", ""), row.get("Bölüm", ""), row.get("Renk", ""),
             row.get("Boş"), row.get("Proseste"),
             row.get("Dolu"), row.get("Kanban"), row.get("Hurda"),
+            row.get("Rondela"),
             bdh_v,
             _STATUS_LABEL.get(row.get("Durum"), row.get("Durum", "")),
             row.get("Giren Kullanıcı", ""),
@@ -441,6 +445,7 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
         totals["full"] += dolu_v
         totals["kanban"] += kanban_v
         totals["scrap"] += hurda_v
+        totals["rondela"] += rondela_v
         totals["bdh"] += bdh_v
 
         for col_idx in range(1, len(values) + 1):
@@ -448,11 +453,11 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
             cell.border = _BORDER
             if fill:
                 cell.fill = fill
-            # Sayısal sütunlar: 5=Boş, 6=WIP, 7=Dolu, 8=Kanban, 9=Hurda, 10=Toplam
-            if col_idx in (5, 6, 7, 8, 9, 10):
+            # Sayisal: 5=Boş, 6=WIP, 7=Dolu, 8=Kanban, 9=Hurda, 10=Rondela, 11=Toplam
+            if col_idx in (5, 6, 7, 8, 9, 10, 11):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 11:  # Durum
+            elif col_idx == 12:  # Durum
                 cell.alignment = _CENTER
                 if is_late:
                     cell.font = Font(bold=True, color="92400E")
@@ -466,7 +471,8 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
         ws.append([
             "TOPLAM", "", "", "",
             totals["empty"], totals["wip"], totals["full"],
-            totals["kanban"], totals["scrap"], totals["bdh"],
+            totals["kanban"], totals["scrap"], totals["rondela"],
+            totals["bdh"],
             "", "", "", "", "",
         ])
         for col_idx in range(1, len(headers) + 1):
@@ -474,7 +480,7 @@ def _build_renk_kirilim_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
             cell.fill = _TOTAL_FILL
             cell.font = _TOTAL_FONT
             cell.border = _BORDER
-            if col_idx in (5, 6, 7, 8, 9, 10):
+            if col_idx in (5, 6, 7, 8, 9, 10, 11):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
             elif col_idx == 1:
@@ -498,6 +504,7 @@ def _build_uretim_yeri_kirilim_sheet(
     headers = [
         "Üretim Yeri", "Bölüm",
         "Boş", "Proseste", "Dolu", "Dolu İçindeki Kanban", "Hurdaya ayrılacak",
+        "Rondela",
         "Toplam Konteyner", "Toplam Tonaj",
         "Durum", "Giren Kullanıcı", "Sayım Gönderim Zamanı",
     ]
@@ -508,7 +515,8 @@ def _build_uretim_yeri_kirilim_sheet(
     for row in rows:
         key = (row.get("Üretim Yeri", ""), row.get("Bölüm", ""))
         agg = aggregates.setdefault(key, {
-            "empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0,
+            "empty": 0, "wip": 0, "full": 0, "kanban": 0,
+            "scrap": 0, "rondela": 0,
             "tonnage": row.get("Gerçekleşen Tonaj"),
             "status": row.get("Durum"),
             "user": row.get("Giren Kullanıcı", ""),
@@ -519,8 +527,10 @@ def _build_uretim_yeri_kirilim_sheet(
         agg["full"] += int(row.get("Dolu") or 0)
         agg["kanban"] += int(row.get("Kanban") or 0)
         agg["scrap"] += int(row.get("Hurda") or 0)
+        agg["rondela"] = agg.get("rondela", 0) + int(row.get("Rondela") or 0)
 
-    totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0, "bdh": 0, "tonnage": 0.0}
+    totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0,
+              "scrap": 0, "rondela": 0, "bdh": 0, "tonnage": 0.0}
 
     for idx, ((site, dept), agg) in enumerate(
         sorted(
@@ -534,11 +544,13 @@ def _build_uretim_yeri_kirilim_sheet(
         bdh = (
             int(agg["empty"] or 0) + int(agg["wip"] or 0)
             + int(agg["full"] or 0) + int(agg["scrap"] or 0)
+            + int(agg.get("rondela") or 0)
         )
         ton = agg["tonnage"]
         values = [
             site, dept,
             agg["empty"], agg["wip"], agg["full"], agg["kanban"], agg["scrap"],
+            agg.get("rondela", 0),
             bdh, ton,
             _STATUS_LABEL.get(agg["status"], agg["status"] or ""),
             agg["user"],
@@ -550,6 +562,7 @@ def _build_uretim_yeri_kirilim_sheet(
         totals["full"] += int(agg["full"] or 0)
         totals["kanban"] += int(agg["kanban"] or 0)
         totals["scrap"] += int(agg["scrap"] or 0)
+        totals["rondela"] += int(agg.get("rondela") or 0)
         totals["bdh"] += bdh
         if ton is not None:
             try:
@@ -562,11 +575,12 @@ def _build_uretim_yeri_kirilim_sheet(
             cell.border = _BORDER
             if fill:
                 cell.fill = fill
-            # Sayısal: 3=Boş, 4=WIP, 5=Dolu, 6=Kanban, 7=Hurda, 8=Toplam, 9=Tonaj
-            if col_idx in (3, 4, 5, 6, 7, 8, 9):
+            # 3=Boş, 4=WIP, 5=Dolu, 6=Kanban, 7=Hurda, 8=Rondela,
+            # 9=Toplam, 10=Tonaj
+            if col_idx in (3, 4, 5, 6, 7, 8, 9, 10):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 10:  # Durum
+            elif col_idx == 11:  # Durum
                 cell.alignment = _CENTER
                 if is_late:
                     cell.font = Font(bold=True, color="92400E")
@@ -578,7 +592,7 @@ def _build_uretim_yeri_kirilim_sheet(
         ws.append([
             "TOPLAM", "",
             totals["empty"], totals["wip"], totals["full"],
-            totals["kanban"], totals["scrap"],
+            totals["kanban"], totals["scrap"], totals["rondela"],
             totals["bdh"], totals["tonnage"],
             "", "", "",
         ])
@@ -587,7 +601,7 @@ def _build_uretim_yeri_kirilim_sheet(
             cell.fill = _TOTAL_FILL
             cell.font = _TOTAL_FONT
             cell.border = _BORDER
-            if col_idx in (3, 4, 5, 6, 7, 8, 9):
+            if col_idx in (3, 4, 5, 6, 7, 8, 9, 10):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
             elif col_idx == 1:
@@ -624,6 +638,7 @@ def _build_uretim_yeri_ozeti_sheet(
     headers = [
         "Üretim Yeri",
         "Boş", "Proseste", "Dolu", "Dolu içindeki Kanban", "Hurdaya ayrılacak",
+        "Rondela",
         "Toplam Konteyner", "Toplam (%)",
         "Hedef Tonaj",
         "Toplam Tonaj",
@@ -639,13 +654,15 @@ def _build_uretim_yeri_ozeti_sheet(
     site_aggs: dict[str, dict[str, Any]] = {}
     for (site, _dept), agg in dept_aggs.items():
         s = site_aggs.setdefault(site, {
-            "empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0, "tonnage": 0.0,
+            "empty": 0, "wip": 0, "full": 0, "kanban": 0,
+            "scrap": 0, "rondela": 0, "tonnage": 0.0,
         })
         s["empty"] += int(agg["empty"] or 0)
         s["wip"] += int(agg.get("wip") or 0)
         s["full"] += int(agg["full"] or 0)
         s["kanban"] += int(agg["kanban"] or 0)
         s["scrap"] += int(agg["scrap"] or 0)
+        s["rondela"] = s.get("rondela", 0) + int(agg.get("rondela") or 0)
         if agg["tonnage"] is not None:
             try:
                 s["tonnage"] += float(agg["tonnage"])
@@ -657,7 +674,8 @@ def _build_uretim_yeri_ozeti_sheet(
         for s in site_aggs.values()
     )
 
-    totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0, "bdh": 0, "tonnage": 0.0}
+    totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0,
+              "scrap": 0, "rondela": 0, "bdh": 0, "tonnage": 0.0}
     for idx, (site, s) in enumerate(
         sorted(site_aggs.items(), key=lambda kv: _site_sort_key(kv[0])),
         start=2,
@@ -675,6 +693,7 @@ def _build_uretim_yeri_ozeti_sheet(
         values = [
             site,
             s["empty"], s["wip"], s["full"], s["kanban"], s["scrap"],
+            s.get("rondela", 0),
             bdh, pct,
             hedef_ton,
             s["tonnage"],
@@ -687,6 +706,7 @@ def _build_uretim_yeri_ozeti_sheet(
         totals["full"] += s["full"]
         totals["kanban"] += s["kanban"]
         totals["scrap"] += s["scrap"]
+        totals["rondela"] += s.get("rondela", 0)
         totals["bdh"] += bdh
         totals["tonnage"] += s["tonnage"]
 
@@ -695,22 +715,21 @@ def _build_uretim_yeri_ozeti_sheet(
             cell.border = _BORDER
             if zebra:
                 cell.fill = zebra
-            # Sayısal: 2=Boş, 3=WIP, 4=Dolu, 5=Kanban, 6=Hurda, 7=Toplam
-            if col_idx in (2, 3, 4, 5, 6, 7):
+            # 2=Boş 3=WIP 4=Dolu 5=Kanban 6=Hurda 7=Rondela 8=Toplam
+            if col_idx in (2, 3, 4, 5, 6, 7, 8):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 8:  # Toplam %
+            elif col_idx == 9:  # Toplam %
                 cell.alignment = _RIGHT
                 cell.number_format = "0.0%"
-            elif col_idx == 9:  # Hedef Tonaj
+            elif col_idx == 10:  # Hedef Tonaj
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 10:  # Toplam Tonaj (gerceklesen)
+            elif col_idx == 11:  # Toplam Tonaj
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 11:  # Sapma %
+            elif col_idx == 12:  # Sapma %
                 cell.alignment = _RIGHT
-                # Isaretli yuzde, pozitif yesil/negatif kirmizi
                 if sapma is not None and sapma != 0:
                     cell.number_format = "\"+\"0.0%;\"-\"0.0%"
                     cell.font = Font(
@@ -719,7 +738,7 @@ def _build_uretim_yeri_ozeti_sheet(
                     )
                 else:
                     cell.number_format = "0.0%"
-            elif col_idx == 12:  # ton/konteyner
+            elif col_idx == 13:  # ton/konteyner
                 cell.alignment = _RIGHT
                 cell.number_format = "0.00"
             else:
@@ -740,7 +759,7 @@ def _build_uretim_yeri_ozeti_sheet(
         ws.append([
             "TOPLAM",
             totals["empty"], totals["wip"], totals["full"],
-            totals["kanban"], totals["scrap"],
+            totals["kanban"], totals["scrap"], totals["rondela"],
             totals["bdh"], 1.0,
             total_hedef,
             totals["tonnage"],
@@ -752,17 +771,16 @@ def _build_uretim_yeri_ozeti_sheet(
             cell.fill = _TOTAL_FILL
             cell.font = _TOTAL_FONT
             cell.border = _BORDER
-            if col_idx in (2, 3, 4, 5, 6, 7, 9, 10):
+            if col_idx in (2, 3, 4, 5, 6, 7, 8, 10, 11):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 8:
+            elif col_idx == 9:
                 cell.alignment = _RIGHT
                 cell.number_format = "0.0%"
-            elif col_idx == 11:  # Sapma %
+            elif col_idx == 12:  # Sapma %
                 cell.alignment = _RIGHT
                 if total_sapma is not None and total_sapma != 0:
                     cell.number_format = "\"+\"0.0%;\"-\"0.0%"
-                    # TOPLAM satirinda _TOTAL_FONT bold; sadece renk ver
                     cell.font = Font(
                         bold=True,
                         color=(
@@ -771,7 +789,7 @@ def _build_uretim_yeri_ozeti_sheet(
                     )
                 else:
                     cell.number_format = "0.0%"
-            elif col_idx == 12:
+            elif col_idx == 13:
                 cell.alignment = _RIGHT
                 cell.number_format = "0.00"
             elif col_idx == 1:
@@ -795,7 +813,7 @@ def _build_renk_ozeti_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
     ws = wb.create_sheet("Renk Özeti")
     headers = [
         "Renk", "Boş", "Proseste", "Dolu", "Dolu içindeki Kanban",
-        "Hurdaya ayrılacak", "Toplam Konteyner",
+        "Hurdaya ayrılacak", "Rondela", "Toplam Konteyner",
     ]
     ws.append(headers)
     _style_header_row(ws, len(headers), wrap_text=True, row_height=42)
@@ -805,7 +823,10 @@ def _build_renk_ozeti_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
     for row in rows:
         color = row.get("Renk", "") or ""
         if color not in color_aggs:
-            color_aggs[color] = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0}
+            color_aggs[color] = {
+                "empty": 0, "wip": 0, "full": 0,
+                "kanban": 0, "scrap": 0, "rondela": 0,
+            }
             color_order.append(color)
         c = color_aggs[color]
         c["empty"] += int(row.get("Boş") or 0)
@@ -813,18 +834,24 @@ def _build_renk_ozeti_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
         c["full"] += int(row.get("Dolu") or 0)
         c["kanban"] += int(row.get("Kanban") or 0)
         c["scrap"] += int(row.get("Hurda") or 0)
+        c["rondela"] = c.get("rondela", 0) + int(row.get("Rondela") or 0)
 
-    totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0, "bdh": 0}
+    totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0,
+              "scrap": 0, "rondela": 0, "bdh": 0}
     for idx, color in enumerate(color_order, start=2):
         c = color_aggs[color]
         bdh = c["empty"] + c["wip"] + c["full"] + c["scrap"] + c.get("rondela", 0)
-        values = [color, c["empty"], c["wip"], c["full"], c["kanban"], c["scrap"], bdh]
+        values = [
+            color, c["empty"], c["wip"], c["full"], c["kanban"],
+            c["scrap"], c.get("rondela", 0), bdh,
+        ]
         ws.append(values)
         totals["empty"] += c["empty"]
         totals["wip"] += c["wip"]
         totals["full"] += c["full"]
         totals["kanban"] += c["kanban"]
         totals["scrap"] += c["scrap"]
+        totals["rondela"] += c.get("rondela", 0)
         totals["bdh"] += bdh
 
         zebra = _ZEBRA_FILL if idx % 2 == 0 else None
@@ -844,7 +871,7 @@ def _build_renk_ozeti_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
         ws.append([
             "TOPLAM",
             totals["empty"], totals["wip"], totals["full"], totals["kanban"],
-            totals["scrap"], totals["bdh"],
+            totals["scrap"], totals["rondela"], totals["bdh"],
         ])
         for col_idx in range(1, len(headers) + 1):
             cell = ws.cell(row=total_row_idx, column=col_idx)
@@ -2970,6 +2997,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
     sub_headers = [
         "Üretim Yeri", "Boş", "Proseste", "Dolu", "Dolu içindeki Kanban",
         "Hurdaya ayrılacak",
+        "Rondela",
         "Toplam Konteyner", "Toplam (%)",
         "Hedef Tonaj",
         "Toplam Tonaj",
@@ -3023,7 +3051,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
             for s in sites_in_week.values()
         )
         totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0,
-                  "bdh": 0, "tonnage": 0.0, "hedef": 0.0}
+                  "rondela": 0, "bdh": 0, "tonnage": 0.0, "hedef": 0.0}
         _week_tgts = targets_by_week_site.get(w, {})
 
         for r_offset, (site, agg) in enumerate(
@@ -3046,6 +3074,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
             values = [
                 site,
                 agg["empty"], wip_v, agg["full"], agg["kanban"], agg["scrap"],
+                agg.get("rondela", 0),
                 bdh, pct,
                 hedef,
                 agg["tonnage"],
@@ -3057,10 +3086,10 @@ def _build_uretim_yeri_karsilastirma_sheet(
                 cell.border = _BORDER
                 if j == 0:
                     cell.alignment = _LEFT
-                elif j == 7:  # Toplam (%)
+                elif j == 8:  # Toplam (%)
                     cell.alignment = _RIGHT
                     cell.number_format = "0.0%"
-                elif j == 10:  # Sapma (%)
+                elif j == 11:  # Sapma (%)
                     cell.alignment = _RIGHT
                     if sapma is not None and sapma != 0:
                         cell.number_format = "\"+\"0.0%;\"-\"0.0%"
@@ -3070,7 +3099,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
                         )
                     else:
                         cell.number_format = "0.0%"
-                elif j == 11:  # Dolu Konteyner Başına Yük
+                elif j == 12:  # Dolu Konteyner Başına Yük
                     cell.alignment = _RIGHT
                     cell.number_format = "0.00"
                 else:
@@ -3082,6 +3111,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
             totals["full"] += agg["full"]
             totals["kanban"] += agg["kanban"]
             totals["scrap"] += agg["scrap"]
+            totals["rondela"] += agg.get("rondela", 0)
             totals["bdh"] += bdh
             totals["tonnage"] += agg["tonnage"]
             if hedef:
@@ -3096,7 +3126,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
         total_values = [
             "TOPLAM",
             totals["empty"], totals["wip"], totals["full"],
-            totals["kanban"], totals["scrap"],
+            totals["kanban"], totals["scrap"], totals["rondela"],
             totals["bdh"], 1.0,
             total_hedef,
             totals["tonnage"],
@@ -3110,10 +3140,10 @@ def _build_uretim_yeri_karsilastirma_sheet(
             cell.border = _BORDER
             if j == 0:
                 cell.alignment = _RIGHT
-            elif j == 7:
+            elif j == 8:  # Toplam %
                 cell.alignment = _RIGHT
                 cell.number_format = "0.0%"
-            elif j == 10:  # Sapma (%)
+            elif j == 11:  # Sapma (%)
                 cell.alignment = _RIGHT
                 if total_sapma is not None and total_sapma != 0:
                     cell.number_format = "\"+\"0.0%;\"-\"0.0%"
@@ -3123,7 +3153,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
                     )
                 else:
                     cell.number_format = "0.0%"
-            elif j == 11:
+            elif j == 12:  # ton/konteyner
                 cell.alignment = _RIGHT
                 cell.number_format = "0.00"
             else:
