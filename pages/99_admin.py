@@ -1729,6 +1729,7 @@ if _is_active("count_fields"):
                 "show_full":    cfg.show_full,
                 "show_kanban":  cfg.show_kanban,
                 "show_scrap":   cfg.show_scrap,
+                "show_rondela": cfg.show_rondela,
                 "show_tonnage": cfg.show_tonnage,
             })
 
