@@ -3569,8 +3569,24 @@ def _build_dolu_konteyner_ozeti_sheet(
 
     Son sütun: 'Bir Önceki Haftaya Göre Artış' — (Wson - Wönce)/Wönce.
     Chart yok, sadece tablo — pipeline'in kirilma riskini sifirlar.
+
+    **W31 ve sonrasi:** dolu konteyner adedi bazi sitelerde Excel'den
+    tonaj/oran hesabıyla belirlendiği için amber tonda (FEF3C7) fill
+    ile işaretlenir — kullanıcı hesaplama yönteminin farklı olduğunu
+    görsel olarak ayırır.
     """
     ws = wb.create_sheet("Dolu Konteyner Sayısı Özeti")
+    _COMPUTED_FILL = PatternFill("solid", fgColor="FEF3C7")  # amber-100
+
+    def _week_num(week_iso: str) -> int:
+        # '2026-W31' -> 31
+        try:
+            return int(week_iso.split("-W")[-1])
+        except (ValueError, IndexError):
+            return 0
+
+    def _is_computed_week(week_iso: str) -> bool:
+        return _week_num(week_iso) >= 31
 
     if not all_rows and not manual_aggs:
         ws["A1"] = "Henüz veri yok."
@@ -3609,6 +3625,15 @@ def _build_dolu_konteyner_ozeti_sheet(
         ws, len(headers),
         wrap_text=True, row_height=(42 if show_delta else 26),
     )
+    # W31+ hafta baslik hucrelerine amber fill (hesaplanmis oldugunu
+    # belirtmek icin, mevcut header rengini korumak icin sadece bir alt
+    # cizgi olarak font italik yapiyoruz).
+    for j, w in enumerate(weeks, start=2):  # start=2 = ilk hafta col
+        if _is_computed_week(w):
+            hc = ws.cell(row=1, column=j)
+            hc.font = Font(
+                bold=True, color="FFFFFF", italic=True, size=11,
+            )
 
     totals_by_week: dict[str, int] = {w: 0 for w in weeks}
 
@@ -3637,7 +3662,16 @@ def _build_dolu_konteyner_ozeti_sheet(
         for col_idx in range(1, len(row_vals) + 1):
             cell = ws.cell(row=idx, column=col_idx)
             cell.border = _BORDER
-            if zebra:
+            # Hafta sutunlari icin (col_idx 2..1+len(weeks)) W31+ ise
+            # amber fill (hesaplanmis olduguna dair isaret)
+            is_week_col = 2 <= col_idx <= (1 + len(weeks))
+            if is_week_col:
+                week_here = weeks[col_idx - 2]
+                if _is_computed_week(week_here):
+                    cell.fill = _COMPUTED_FILL
+                elif zebra:
+                    cell.fill = zebra
+            elif zebra:
                 cell.fill = zebra
             if col_idx == 1:
                 cell.alignment = _LEFT
@@ -3669,9 +3703,16 @@ def _build_dolu_konteyner_ozeti_sheet(
 
     for col_idx in range(1, len(total_vals) + 1):
         cell = ws.cell(row=total_row_idx, column=col_idx)
-        cell.fill = _TOTAL_FILL
         cell.font = _TOTAL_FONT
         cell.border = _BORDER
+        # TOPLAM: hafta sutunlarinda W31+ ise amber, digerlerinde
+        # standart _TOTAL_FILL
+        is_week_col = 2 <= col_idx <= (1 + len(weeks))
+        if is_week_col:
+            week_here = weeks[col_idx - 2]
+            cell.fill = _COMPUTED_FILL if _is_computed_week(week_here) else _TOTAL_FILL
+        else:
+            cell.fill = _TOTAL_FILL
         if col_idx == 1:
             cell.alignment = _RIGHT
         else:
@@ -3684,6 +3725,17 @@ def _build_dolu_konteyner_ozeti_sheet(
                     bold=True,
                     color="047857" if tot_delta > 0 else "BE123C",
                 )
+
+    # Alt aciklama satiri
+    note_row = ws.max_row + 2
+    ws.cell(
+        row=note_row, column=1,
+        value=(
+            "⚠ Sarı renkli sütunlar (W31 ve sonrası): dolu adet bazı "
+            "sitelerde Excel'den tonaj/oran hesabıyla belirlenir. "
+            "Diğer haftalar doğrudan sayımdan gelir."
+        ),
+    ).font = Font(italic=True, size=9, color="92400E")
 
     ws.freeze_panes = None
     _autofit(ws, headers)
