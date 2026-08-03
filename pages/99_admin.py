@@ -120,6 +120,7 @@ _TAB_KEYS = [
     ("departments",  "Bölümler"),
     ("colors",       "Renkler"),
     ("targets",      "Tonaj Hedefleri"),
+    ("tonaj_upload", "Tonaj Yükle"),
     ("count_fields", "Sayım Alanları"),
     ("schedule",     "Sayım Takvimi"),
     ("late",         "Geç Giriş"),
@@ -1222,6 +1223,219 @@ if _is_active("targets"):
 # ---------------------------------------------------------------------------
 # TAB — SAYIM ALANLARI (üretim yerine göre form alan yapılandırması)
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# TAB — TONAJ YÜKLE (haftalık yarı mamul stok Excel'i)
+# ---------------------------------------------------------------------------
+if _is_active("tonaj_upload"):
+    st.subheader("Tonaj Yükle")
+    st.caption(
+        "Haftalık yarı mamul stok tonajını Excel'den yükle. Excel "
+        "**2 sütunlu** olmalı: **Üretim yeri** (kod), **Stok Miktarı "
+        "(kg)**. Aynı üretim yerinin tüm depolarının stokları "
+        "toplanır, kg → ton çevrilir, seçili haftaya kaydedilir. "
+        "Aynı haftaya tekrar yükleme yapılırsa önceki veriler "
+        "silinip yenisi yazılır."
+    )
+
+    from datetime import date as _date_up, timedelta as _td_up
+    import io as _io_up
+
+    def _upload_next_monday(d: _date_up) -> _date_up:
+        days = (7 - d.weekday()) % 7 or 7
+        return d + _td_up(days=days)
+
+    def _upload_date_to_week_iso(d: _date_up) -> str:
+        y, w, _ = d.isocalendar()
+        return f"{y}-W{w:02d}"
+
+    col_a, col_b = st.columns([1, 2])
+    with col_a:
+        _upload_week_date = st.date_input(
+            "Hafta (o haftanın Pazartesi'sini seç)",
+            value=_upload_next_monday(_date_up.today()) - _td_up(days=7),
+            key="tonaj_upload_week_pick",
+        )
+        if _upload_week_date.weekday() != 0:
+            st.warning(
+                f"Pazartesi seç lütfen — bugün "
+                f"{_upload_week_date.strftime('%A')}."
+            )
+        upload_week_iso = _upload_date_to_week_iso(_upload_week_date)
+        st.caption(f"ISO hafta: **{upload_week_iso}**")
+
+    with col_b:
+        uploaded_file = st.file_uploader(
+            "Excel dosyası (.xlsx)",
+            type=["xlsx"],
+            key="tonaj_upload_file",
+        )
+
+    if uploaded_file is not None:
+        try:
+            from openpyxl import load_workbook as _lw_up
+            _wb_up = _lw_up(_io_up.BytesIO(uploaded_file.read()), data_only=True)
+            _ws_up = _wb_up.active
+
+            # Basliktan sonraki satirlari oku
+            _totals_kg: dict[str, float] = {}
+            _row_count = 0
+            _bad_rows: list[tuple[int, str]] = []
+            for _r_idx, _row in enumerate(
+                _ws_up.iter_rows(min_row=2, values_only=True),
+                start=2,
+            ):
+                if _row is None or len(_row) < 2:
+                    continue
+                _code_raw = _row[0]
+                _stok_raw = _row[1]
+                if _code_raw is None and _stok_raw is None:
+                    continue
+                # Kod string'e cevir (2401 int gelirse '2401' str)
+                _code_str = str(_code_raw).strip() if _code_raw is not None else ""
+                if not _code_str:
+                    _bad_rows.append((_r_idx, "Üretim yeri kodu boş"))
+                    continue
+                # Stok: float
+                try:
+                    _stok_kg = float(_stok_raw) if _stok_raw is not None else 0.0
+                except (TypeError, ValueError):
+                    _bad_rows.append((_r_idx, f"Stok sayı değil: {_stok_raw!r}"))
+                    continue
+                _totals_kg[_code_str] = _totals_kg.get(_code_str, 0.0) + _stok_kg
+                _row_count += 1
+
+            # Kod -> site eslesmesi
+            with get_session() as _s_up:
+                _sites_up = list(_s_up.execute(
+                    select(ProductionSite).where(
+                        ProductionSite.is_active.is_(True)
+                    )
+                ).scalars())
+            _code_to_site = {s.code: (s.id, s.name) for s in _sites_up}
+
+            # Preview satirlari
+            _preview = []
+            _matched_count = 0
+            _unmatched_codes = []
+            for _code, _kg_sum in sorted(_totals_kg.items()):
+                _ton = _kg_sum / 1000.0
+                if _code in _code_to_site:
+                    _sid, _sname = _code_to_site[_code]
+                    _preview.append({
+                        "Kod": _code,
+                        "Üretim Yeri": _sname,
+                        "Toplam (kg)": round(_kg_sum, 3),
+                        "Ton": round(_ton, 3),
+                        "Durum": "✓ Eşleşti",
+                    })
+                    _matched_count += 1
+                else:
+                    _preview.append({
+                        "Kod": _code,
+                        "Üretim Yeri": "—",
+                        "Toplam (kg)": round(_kg_sum, 3),
+                        "Ton": round(_ton, 3),
+                        "Durum": "⚠ Eşleşmedi",
+                    })
+                    _unmatched_codes.append(_code)
+
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Satır Okundu", _row_count)
+            m2.metric("Farklı Kod", len(_totals_kg))
+            m3.metric("Eşleşen Site", _matched_count)
+            m4.metric("Eşleşmeyen Kod", len(_unmatched_codes))
+
+            if _bad_rows:
+                with st.expander(
+                    f"⚠ {len(_bad_rows)} satır atlandı (format hatası)",
+                    expanded=False,
+                ):
+                    for _rn, _msg in _bad_rows[:50]:
+                        st.text(f"Satır {_rn}: {_msg}")
+
+            st.markdown("#### Önizleme")
+            st.dataframe(
+                pd.DataFrame(_preview),
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Toplam (kg)": st.column_config.NumberColumn(format="%.2f"),
+                    "Ton": st.column_config.NumberColumn(format="%.3f"),
+                },
+            )
+
+            _valid_writes = [p for p in _preview if p["Durum"].startswith("✓")]
+            if not _valid_writes:
+                st.error("Kaydedilecek eşleşen satır yok.")
+            else:
+                st.info(
+                    f"**{upload_week_iso}** haftasına **{len(_valid_writes)} "
+                    f"üretim yeri** için tonaj yazılacak. "
+                    f"Aynı haftada mevcut kayıtlar **silinip yenisi yazılır**."
+                )
+                if st.button(
+                    "Kaydet", type="primary", use_container_width=True,
+                    key="tonaj_upload_save",
+                ):
+                    try:
+                        with get_session() as _s_up:
+                            # Onceki uploadi bu hafta icin sil (upsert
+                            # semantik icin)
+                            _s_up.execute(
+                                delete(ManualSiteAggregate)
+                                .where(
+                                    ManualSiteAggregate.week_iso == upload_week_iso,
+                                    ManualSiteAggregate.site_id.in_(
+                                        [
+                                            _code_to_site[p["Kod"]][0]
+                                            for p in _valid_writes
+                                        ]
+                                    ),
+                                )
+                            )
+                            _s_up.flush()
+                            # Yeni tonajlari yaz
+                            for p in _valid_writes:
+                                _sid, _ = _code_to_site[p["Kod"]]
+                                _row_up = ManualSiteAggregate(
+                                    week_iso=upload_week_iso,
+                                    site_id=_sid,
+                                    empty_total=0,
+                                    full_total=0,
+                                    tonnage_total=Decimal(str(p["Ton"])),
+                                    created_by=admin_id,
+                                )
+                                _s_up.add(_row_up)
+                            _s_up.add(AuditLog(
+                                user_id=admin_id,
+                                action="tonaj_upload",
+                                entity_type="manual_site_aggregates",
+                                new_value={
+                                    "week_iso": upload_week_iso,
+                                    "site_count": len(_valid_writes),
+                                    "total_ton": round(sum(
+                                        p["Ton"] for p in _valid_writes
+                                    ), 3),
+                                    "sites": {
+                                        p["Kod"]: p["Ton"]
+                                        for p in _valid_writes
+                                    },
+                                },
+                            ))
+                        clear_cached_queries()
+                        queue_toast(
+                            f"{upload_week_iso}: {len(_valid_writes)} site "
+                            f"tonajı kaydedildi.",
+                            icon="✅",
+                        )
+                        st.rerun()
+                    except Exception as exc:
+                        st.error(f"Kaydetme hatası: {exc}")
+
+        except Exception as exc:
+            st.error(f"Excel okunamadı: {exc}")
+
+
 if _is_active("count_fields"):
     st.subheader("Sayım Alanları")
     st.caption(
