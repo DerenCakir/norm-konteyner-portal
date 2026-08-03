@@ -223,6 +223,7 @@ total_full = int(df_week["full_count"].sum())
 total_kanban = int(df_week["kanban_count"].sum())
 total_scrap = int(df_week["scrap_count"].sum()) if "scrap_count" in df_week.columns else 0
 total_wip = int(df_week["wip_count"].sum()) if "wip_count" in df_week.columns else 0
+total_rondela = int(df_week["rondela_count"].sum()) if "rondela_count" in df_week.columns else 0
 
 # Tonaj — submission başına bir kez (renkler aynı tonajı tekrar etmesin)
 sub_unique = df_week.drop_duplicates(subset=["submission_id"])
@@ -236,9 +237,9 @@ total_dept_count = get_active_department_count()
 missing_count = total_dept_count - submitted_dept_count
 
 st.markdown(f"#### Seçili Hafta: {format_week_human(selected_week)}")
-# Yeni "Toplam Konteyner" tanımı: Boş + WIP + Dolu + Hurda. Kanban
+# Toplam Konteyner = Boş + WIP + Dolu + Hurda + Rondela.
 # hâlâ Dolu'nun alt kümesi olduğu için toplama dahil değil.
-total_containers = total_empty + total_wip + total_full + total_scrap
+total_containers = total_empty + total_wip + total_full + total_scrap + total_rondela
 completion_pct = (submitted_dept_count / total_dept_count * 100) if total_dept_count else 0
 kanban_rate = (total_kanban / total_full * 100) if total_full else 0
 
@@ -262,7 +263,7 @@ _dolu_kanban_sub = (
 _dolu_kanban_delta = f"%{_fmt_tr_decimal(kanban_rate)}"
 
 primary_cards = [
-    kpi_card("Toplam Konteyner", _fmt_tr(total_containers), sub="Boş + WIP + Dolu + Hurda"),
+    kpi_card("Toplam Konteyner", _fmt_tr(total_containers), sub="Boş + WIP + Dolu + Hurda + Rondela"),
     kpi_card("Boş Konteyner", _fmt_tr(total_empty), sub="Kullanılabilir kasa"),
     kpi_card("Proseste Konteyner", _fmt_tr(total_wip), sub="İşlem görmekte / yarı işlenmiş"),
     kpi_card(
@@ -309,16 +310,23 @@ if "wip_count" in df_week.columns:
     _site_agg_kwargs["Proseste"] = ("wip_count", "sum")
 if "scrap_count" in df_week.columns:
     _site_agg_kwargs["Hurdaya_Ayrılacak"] = ("scrap_count", "sum")
+if "rondela_count" in df_week.columns:
+    _site_agg_kwargs["Rondela"] = ("rondela_count", "sum")
 site_signal = df_week.groupby("site").agg(**_site_agg_kwargs).reset_index()
 if not site_signal.empty:
-    # Toplam Konteyner = B + WIP + D + H (yeni tanım).
+    # Toplam Konteyner = B + WIP + D + H + R.
     _wip_series = site_signal["Proseste"] if "Proseste" in site_signal.columns else 0
     _scrap_series = (
         site_signal["Hurdaya_Ayrılacak"]
         if "Hurdaya_Ayrılacak" in site_signal.columns else 0
     )
+    _rondela_series = (
+        site_signal["Rondela"]
+        if "Rondela" in site_signal.columns else 0
+    )
     site_signal["Toplam Konteyner"] = (
-        site_signal["Boş"] + _wip_series + site_signal["Dolu"] + _scrap_series
+        site_signal["Boş"] + _wip_series + site_signal["Dolu"]
+        + _scrap_series + _rondela_series
     )
     site_signal["Kanban Oranı (%)"] = (
         site_signal["Kanban"] / site_signal["Dolu"].replace(0, pd.NA) * 100
@@ -558,6 +566,8 @@ if "wip_count" in df_week.columns:
     _dept_agg_kwargs["wip"] = ("wip_count", "sum")
 if "scrap_count" in df_week.columns:
     _dept_agg_kwargs["hurda"] = ("scrap_count", "sum")
+if "rondela_count" in df_week.columns:
+    _dept_agg_kwargs["rondela"] = ("rondela_count", "sum")
 
 dept_summary = (
     df_week.groupby(["site", "department", "department_id", "weekly_tonnage_target"], dropna=False)
@@ -576,10 +586,11 @@ dept_summary["sapma"] = dept_summary["actual"] - dept_summary["target"]
 # Bölüm Özeti — kırmızı satır boyaması KALDIRILDI (talep). Sapma sütunu
 # zaten +/- işaretiyle aşımı gösteriyor; satır boyama görsel kirlilik.
 
-# Toplam Konteyner = B + WIP + D + H (yeni tanım).
+# Toplam Konteyner = B + WIP + D + H + R.
 dept_summary["toplam_bdh"] = (
     dept_summary["boş"] + dept_summary.get("wip", 0)
     + dept_summary["dolu"] + dept_summary.get("hurda", 0)
+    + dept_summary.get("rondela", 0)
 )
 
 # Bölüm bazında ortalama dolu konteyner ağırlığı (kg)

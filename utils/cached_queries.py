@@ -204,6 +204,7 @@ def get_week_count_details(week_iso: str) -> list[dict[str, int]]:
             "kanban_count": detail.kanban_count,
             "scrap_count": detail.scrap_count,
             "wip_count": detail.wip_count,
+            "rondela_count": detail.rondela_count,
         }
         for sub, detail in rows
     ]
@@ -259,6 +260,7 @@ def get_analysis_rows(week_isos: tuple[str, ...]) -> list[dict[str, Any]]:
                 CountDetail.kanban_count,
                 CountDetail.scrap_count,
                 CountDetail.wip_count,
+                CountDetail.rondela_count,
                 Color.sort_order.label("color_sort_order"),
                 Department.name.label("department"),
                 Department.weekly_tonnage_target,
@@ -288,6 +290,7 @@ def get_analysis_rows(week_isos: tuple[str, ...]) -> list[dict[str, Any]]:
             "kanban_count": row.kanban_count,
             "scrap_count": row.scrap_count,
             "wip_count": row.wip_count,
+            "rondela_count": row.rondela_count,
             "department": row.department,
             "weekly_tonnage_target": (
                 float(row.weekly_tonnage_target)

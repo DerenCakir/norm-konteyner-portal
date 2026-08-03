@@ -650,6 +650,7 @@ if submit_clicked and can_submit:
                             "kanban": detail.kanban_count,
                             "scrap": detail.scrap_count,
                             "wip": detail.wip_count,
+                            "rondela": detail.rondela_count,
                         }
                         for detail in sub.details
                     },
