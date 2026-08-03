@@ -618,29 +618,36 @@ def _build_uretim_yeri_ozeti_sheet(
     dept_aggs: dict[tuple[str, str], dict[str, Any]],
     week_targets: dict[int, float] | None = None,
     site_labels: dict[int, tuple[str, str]] | None = None,
+    ratios_by_site_id: dict[int, float] | None = None,
 ) -> None:
     """Sheet 3: per-site aggregate with percentage and ton/dolu KPI.
 
-    ``week_targets`` (site_id → weekly target tonnage) + ``site_labels``
-    (site_id → (code, name)) verilirse iki yeni sütun eklenir:
-    'Hedef Tonaj' (Toplam Tonaj'ın solu) ve 'Sapma (%)' (sağı).
-    Sapma = (gerçekleşen - hedef) / hedef.
+    ``week_targets`` + ``site_labels`` verilirse 'Hedef Tonaj' + 'Sapma%'
+    sütunları eklenir. ``ratios_by_site_id`` verilirse ayrıca 'Hedef
+    Konteyner' sütunu (= ceil(hedef_tonaj/oran)) eklenir.
     """
+    import math as _math
     ws = wb.create_sheet("Üretim Yeri Özeti")
-    # site adi -> hedef ton haritasi (adla eslesme cok daha kolay)
     site_labels = site_labels or {}
+    ratios_by_site_id = ratios_by_site_id or {}
     target_by_name: dict[str, float] = {}
+    ratio_by_name: dict[str, float] = {}
     if week_targets:
         for sid, tgt in week_targets.items():
             _, name = site_labels.get(sid, (None, None))
             if name:
                 target_by_name[name] = float(tgt)
+    for sid, r in ratios_by_site_id.items():
+        _, name = site_labels.get(sid, (None, None))
+        if name and r and r > 0:
+            ratio_by_name[name] = float(r)
     headers = [
         "Üretim Yeri",
         "Boş", "Proseste", "Dolu", "Dolu içindeki Kanban", "Hurdaya ayrılacak",
         "Rondela",
         "Toplam Konteyner", "Toplam (%)",
         "Hedef Tonaj",
+        "Hedef Konteyner",
         "Toplam Tonaj",
         "Sapma (%)",
         "Dolu Konteyner Başına Yük (ton/konteyner)",
@@ -689,6 +696,11 @@ def _build_uretim_yeri_ozeti_sheet(
         sapma = None
         if hedef_ton and hedef_ton > 0:
             sapma = (s["tonnage"] - hedef_ton) / hedef_ton  # fraction
+        # Hedef konteyner = ceil(hedef_ton / oran); oran yoksa None
+        hedef_kont = None
+        _r = ratio_by_name.get(site)
+        if hedef_ton and _r and _r > 0:
+            hedef_kont = int(_math.ceil(float(hedef_ton) / float(_r)))
 
         values = [
             site,
@@ -696,6 +708,7 @@ def _build_uretim_yeri_ozeti_sheet(
             s.get("rondela", 0),
             bdh, pct,
             hedef_ton,
+            hedef_kont,
             s["tonnage"],
             sapma,
             ton_per,
@@ -716,19 +729,18 @@ def _build_uretim_yeri_ozeti_sheet(
             if zebra:
                 cell.fill = zebra
             # 2=Boş 3=WIP 4=Dolu 5=Kanban 6=Hurda 7=Rondela 8=Toplam
+            # 10=Hedef Tonaj 11=Hedef Konteyner 12=Toplam Tonaj
+            # 13=Sapma% 14=ton/kont
             if col_idx in (2, 3, 4, 5, 6, 7, 8):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
             elif col_idx == 9:  # Toplam %
                 cell.alignment = _RIGHT
                 cell.number_format = "0.0%"
-            elif col_idx == 10:  # Hedef Tonaj
+            elif col_idx in (10, 11, 12):  # Hedef Tonaj, Hedef Kont, Toplam Tonaj
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 11:  # Toplam Tonaj
-                cell.alignment = _RIGHT
-                cell.number_format = "#,##0"
-            elif col_idx == 12:  # Sapma %
+            elif col_idx == 13:  # Sapma %
                 cell.alignment = _RIGHT
                 if sapma is not None and sapma != 0:
                     cell.number_format = "\"+\"0.0%;\"-\"0.0%"
@@ -738,7 +750,7 @@ def _build_uretim_yeri_ozeti_sheet(
                     )
                 else:
                     cell.number_format = "0.0%"
-            elif col_idx == 13:  # ton/konteyner
+            elif col_idx == 14:  # ton/konteyner
                 cell.alignment = _RIGHT
                 cell.number_format = "0.00"
             else:
@@ -756,12 +768,27 @@ def _build_uretim_yeri_ozeti_sheet(
         total_sapma = None
         if total_hedef and total_hedef > 0:
             total_sapma = (totals["tonnage"] - total_hedef) / total_hedef
+        # Toplam Hedef Konteyner = sum over sites where both hedef +
+        # ratio mevcut ise ceil(hedef/ratio)
+        total_hedef_kont = None
+        _tk_sum = 0
+        _any_hk = False
+        for site_n in site_aggs:
+            _ht = target_by_name.get(site_n)
+            _rt = ratio_by_name.get(site_n)
+            if _ht and _rt and _rt > 0:
+                _tk_sum += int(_math.ceil(float(_ht) / float(_rt)))
+                _any_hk = True
+        if _any_hk:
+            total_hedef_kont = _tk_sum
+
         ws.append([
             "TOPLAM",
             totals["empty"], totals["wip"], totals["full"],
             totals["kanban"], totals["scrap"], totals["rondela"],
             totals["bdh"], 1.0,
             total_hedef,
+            total_hedef_kont,
             totals["tonnage"],
             total_sapma,
             ton_per_total,
@@ -771,13 +798,13 @@ def _build_uretim_yeri_ozeti_sheet(
             cell.fill = _TOTAL_FILL
             cell.font = _TOTAL_FONT
             cell.border = _BORDER
-            if col_idx in (2, 3, 4, 5, 6, 7, 8, 10, 11):
+            if col_idx in (2, 3, 4, 5, 6, 7, 8, 10, 11, 12):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
             elif col_idx == 9:
                 cell.alignment = _RIGHT
                 cell.number_format = "0.0%"
-            elif col_idx == 12:  # Sapma %
+            elif col_idx == 13:  # Sapma %
                 cell.alignment = _RIGHT
                 if total_sapma is not None and total_sapma != 0:
                     cell.number_format = "\"+\"0.0%;\"-\"0.0%"
@@ -789,7 +816,7 @@ def _build_uretim_yeri_ozeti_sheet(
                     )
                 else:
                     cell.number_format = "0.0%"
-            elif col_idx == 13:
+            elif col_idx == 14:  # ton/konteyner
                 cell.alignment = _RIGHT
                 cell.number_format = "0.00"
             elif col_idx == 1:
@@ -1367,6 +1394,7 @@ def _build_ozet_charts_sheet(
     manual_aggs: list[dict[str, Any]] | None = None,
     targets_by_week_site: dict[str, dict[int, float]] | None = None,
     site_labels: dict[int, tuple[str, str]] | None = None,
+    ratios_by_site_id: dict[int, float] | None = None,
 ) -> None:
     """Sheet 5 (ÖZET): four charts only.
 
@@ -2139,10 +2167,21 @@ def _build_ozet_charts_sheet(
     #   (t5_col=~27) alanlarından uzakta, çakışmasın.
     # ================================================================
     t_full_col = 40
+    t_full_target_col = 44  # hedef dolu konteyner (chart overlay icin)
+    import math as _math_ovl
     data_ws.cell(row=1, column=t_full_col, value="Hafta")
     data_ws.cell(
         row=1, column=t_full_col + 1, value="Toplam Dolu Konteyner",
     )
+    data_ws.cell(
+        row=1, column=t_full_target_col, value="Toplam Hedef Konteyner",
+    )
+    # Site adi -> id (ratio + target lookup)
+    _sc_labels = site_labels or {}
+    _sc_ratios = ratios_by_site_id or {}
+    _sc_targets = targets_by_week_site or {}
+    _name_to_id_ovl = {n: sid for sid, (_c, n) in _sc_labels.items()}
+    _has_hedef_kont_series = False
     for i, w in enumerate(full_weeks):
         wt = weekly_totals[w]
         data_ws.cell(row=2 + i, column=t_full_col, value=_short_week(w))
@@ -2151,6 +2190,21 @@ def _build_ozet_charts_sheet(
             value=int(wt.get("full", 0)),
         )
         cell.number_format = "[$-tr-TR]#,##0"
+        # Toplam hedef konteyner: sum(ceil(hedef_ton/oran)) tum siteler icin
+        _wk_targets = _sc_targets.get(w, {})
+        _total_hk = 0
+        _has_any = False
+        for _sid, _tgt in _wk_targets.items():
+            _r = _sc_ratios.get(_sid)
+            if _r and _r > 0 and _tgt and _tgt > 0:
+                _total_hk += int(_math_ovl.ceil(float(_tgt) / float(_r)))
+                _has_any = True
+        if _has_any:
+            c_hk = data_ws.cell(
+                row=2 + i, column=t_full_target_col, value=_total_hk,
+            )
+            c_hk.number_format = "[$-tr-TR]#,##0"
+            _has_hedef_kont_series = True
     t_full_last = 1 + len(full_weeks)
 
     chart_full_trend = LineChart()
@@ -2191,9 +2245,44 @@ def _build_ozet_charts_sheet(
         # Dolu ↔ lacivert — chart 1 stack'inde Dolu segmenti ile uyumlu.
         gp.line = LineProperties(solidFill="1F3A8A", w=22000)
         series.graphicalProperties = gp
-    chart_full_trend.legend = None
     chart_full_trend.height = 10
     chart_full_trend.width = 38
+    # Hedef konteyner line overlay — turuncu kesikli, marker beyaz+turuncu
+    if _has_hedef_kont_series:
+        from openpyxl.chart import LineChart as _LC_hk
+        from openpyxl.chart.marker import Marker as _M_hk
+        from openpyxl.chart.label import DataLabelList as _DL_hk
+        _hk_line = _LC_hk()
+        _hk_line.add_data(
+            Reference(
+                data_ws, min_col=t_full_target_col, min_row=1,
+                max_col=t_full_target_col, max_row=t_full_last,
+            ),
+            titles_from_data=True,
+        )
+        _hk_line.set_categories(cats_ref_full)
+        _HK_C = "FDBA74"
+        for _s in _hk_line.series:
+            _mk = _M_hk(symbol="circle", size=6)
+            _mg = GraphicalProperties(solidFill="FFFFFF")
+            _mg.line = LineProperties(solidFill=_HK_C, w=15000)
+            _mk.graphicalProperties = _mg
+            _s.marker = _mk
+            _gp = GraphicalProperties()
+            _gp.line = LineProperties(
+                solidFill=_HK_C, w=28000, prstDash="dash",
+            )
+            _s.graphicalProperties = _gp
+            _s.dLbls = _DL_hk(
+                showVal=False, showLegendKey=False, showCatName=False,
+                showSerName=False, showPercent=False, showBubbleSize=False,
+            )
+        chart_full_trend += _hk_line
+        chart_full_trend.visible_cells_only = False
+        chart_full_trend.legend.position = "b"
+        chart_full_trend.legend.overlay = False
+    else:
+        chart_full_trend.legend = None
     _apply_chart_frame(chart_full_trend)
     chart_full_trend_anchor_row = 97
     ws.add_chart(chart_full_trend, f"A{chart_full_trend_anchor_row}")
@@ -2962,6 +3051,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
     manual_aggs: list[dict[str, Any]] | None = None,
     targets_by_week_site: dict[str, dict[int, float]] | None = None,
     site_labels: dict[int, tuple[str, str]] | None = None,
+    ratios_by_site_id: dict[int, float] | None = None,
 ) -> None:
     """Sheet 6: per-week ``Üretim Yeri Özeti`` tables stacked vertically.
 
@@ -2972,11 +3062,13 @@ def _build_uretim_yeri_karsilastirma_sheet(
     ``targets_by_week_site`` verilirse her tablo Toplam Tonaj'in solunda
     'Hedef Tonaj', sagında 'Sapma (%)' sütunlariyla genisler.
     """
+    import math as _math
     ws = wb.create_sheet("Üretim Yeri Karşılaştırma")
     # Site adi -> id (hedef lookup icin)
     site_labels = site_labels or {}
     name_to_id = {name: sid for sid, (_c, name) in site_labels.items()}
     targets_by_week_site = targets_by_week_site or {}
+    ratios_by_site_id = ratios_by_site_id or {}
     ws["A1"] = "Üretim Yeri Özeti — Haftalık Karşılaştırma"
     ws["A1"].font = Font(bold=True, size=14, color="1F3A8A")
 
@@ -3000,6 +3092,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
         "Rondela",
         "Toplam Konteyner", "Toplam (%)",
         "Hedef Tonaj",
+        "Hedef Konteyner",
         "Toplam Tonaj",
         "Sapma (%)",
         "Dolu Konteyner Başına Yük",
@@ -3051,7 +3144,9 @@ def _build_uretim_yeri_karsilastirma_sheet(
             for s in sites_in_week.values()
         )
         totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0,
-                  "rondela": 0, "bdh": 0, "tonnage": 0.0, "hedef": 0.0}
+                  "rondela": 0, "bdh": 0, "tonnage": 0.0,
+                  "hedef": 0.0, "hedef_kont": 0}
+        _any_hk_wk = False
         _week_tgts = targets_by_week_site.get(w, {})
 
         for r_offset, (site, agg) in enumerate(
@@ -3070,6 +3165,13 @@ def _build_uretim_yeri_karsilastirma_sheet(
             sapma = None
             if hedef and hedef > 0:
                 sapma = (agg["tonnage"] - hedef) / hedef
+            # Hedef konteyner
+            hedef_kont = None
+            _r_here = ratios_by_site_id.get(sid) if sid is not None else None
+            if hedef and _r_here and _r_here > 0:
+                hedef_kont = int(_math.ceil(float(hedef) / float(_r_here)))
+                _any_hk_wk = True
+                totals["hedef_kont"] += hedef_kont
 
             values = [
                 site,
@@ -3077,6 +3179,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
                 agg.get("rondela", 0),
                 bdh, pct,
                 hedef,
+                hedef_kont,
                 agg["tonnage"],
                 sapma,
                 ton_per,
@@ -3089,7 +3192,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
                 elif j == 8:  # Toplam (%)
                     cell.alignment = _RIGHT
                     cell.number_format = "0.0%"
-                elif j == 11:  # Sapma (%)
+                elif j == 12:  # Sapma (%)
                     cell.alignment = _RIGHT
                     if sapma is not None and sapma != 0:
                         cell.number_format = "\"+\"0.0%;\"-\"0.0%"
@@ -3099,7 +3202,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
                         )
                     else:
                         cell.number_format = "0.0%"
-                elif j == 12:  # Dolu Konteyner Başına Yük
+                elif j == 13:  # Dolu Konteyner Başına Yük
                     cell.alignment = _RIGHT
                     cell.number_format = "0.00"
                 else:
@@ -3123,12 +3226,16 @@ def _build_uretim_yeri_karsilastirma_sheet(
         total_sapma = None
         if total_hedef and total_hedef > 0:
             total_sapma = (totals["tonnage"] - total_hedef) / total_hedef
+        total_hedef_kont = (
+            totals["hedef_kont"] if _any_hk_wk else None
+        )
         total_values = [
             "TOPLAM",
             totals["empty"], totals["wip"], totals["full"],
             totals["kanban"], totals["scrap"], totals["rondela"],
             totals["bdh"], 1.0,
             total_hedef,
+            total_hedef_kont,
             totals["tonnage"],
             total_sapma,
             ton_per_total,
@@ -3143,7 +3250,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
             elif j == 8:  # Toplam %
                 cell.alignment = _RIGHT
                 cell.number_format = "0.0%"
-            elif j == 11:  # Sapma (%)
+            elif j == 12:  # Sapma (%)
                 cell.alignment = _RIGHT
                 if total_sapma is not None and total_sapma != 0:
                     cell.number_format = "\"+\"0.0%;\"-\"0.0%"
@@ -3153,7 +3260,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
                     )
                 else:
                     cell.number_format = "0.0%"
-            elif j == 12:  # ton/konteyner
+            elif j == 13:  # ton/konteyner
                 cell.alignment = _RIGHT
                 cell.number_format = "0.00"
             else:
@@ -4619,6 +4726,7 @@ def build_week_excel(
     manual_aggs: list[dict[str, Any]] | None = None,
     targets_by_week_site: dict[str, dict[int, float]] | None = None,
     site_labels: dict[int, tuple[str, str]] | None = None,
+    ratios_by_site_id: dict[int, float] | None = None,
 ) -> bytes:
     """Return an .xlsx byte string for the selected week.
 
@@ -4656,6 +4764,7 @@ def build_week_excel(
         wb, dept_aggs,
         week_targets=_selected_week_targets,
         site_labels=site_labels,
+        ratios_by_site_id=ratios_by_site_id,
     )
     _build_renk_ozeti_sheet(wb, rows)
     _build_dolu_yuk_ozeti_sheet(wb, all_weeks_rows or [], manual_aggs or [])
@@ -4674,6 +4783,7 @@ def build_week_excel(
         wb, all_weeks_rows or [], manual_aggs or [],
         targets_by_week_site=targets_by_week_site,
         site_labels=site_labels,
+        ratios_by_site_id=ratios_by_site_id,
     )
     # Pivot için ham veri — kullanıcı analiz sayfalarında olmayan
     # soruları buradan cevaplayabilir.
@@ -4685,6 +4795,7 @@ def build_week_excel(
         wb, all_weeks_rows or [], manual_aggs or [],
         targets_by_week_site=targets_by_week_site,
         site_labels=site_labels,
+        ratios_by_site_id=ratios_by_site_id,
     )
 
     # Analiz sayfasını 0. sıraya, Ana Data Sayfası'nı 1. sıraya taşı.

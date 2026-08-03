@@ -1603,13 +1603,30 @@ if _is_active("tonaj_upload"):
                         st.text(f"Satır {_rn}: {_msg}")
 
             st.markdown("#### Önizleme")
+            # Streamlit NumberColumn locale-agnostic nokta kullanıyor.
+            # Virgül için Toplam(kg) ve Ton'u TR-format string'e
+            # çevirip TextColumn ile göster; internal _preview
+            # listesinde float değerler save akışında kullanılır.
+            def _fmt_tr_num(v: float, dec: int) -> str:
+                s = f"{v:,.{dec}f}"
+                # 1,234.567 -> 1.234,567
+                return s.replace(",", "X").replace(".", ",").replace("X", ".")
+            _df_preview = pd.DataFrame(_preview).copy()
+            if "Toplam (kg)" in _df_preview.columns:
+                _df_preview["Toplam (kg)"] = _df_preview["Toplam (kg)"].apply(
+                    lambda v: _fmt_tr_num(float(v), 2)
+                )
+            if "Ton" in _df_preview.columns:
+                _df_preview["Ton"] = _df_preview["Ton"].apply(
+                    lambda v: _fmt_tr_num(float(v), 3)
+                )
             st.dataframe(
-                pd.DataFrame(_preview),
+                _df_preview,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "Toplam (kg)": st.column_config.NumberColumn(format="%.2f"),
-                    "Ton": st.column_config.NumberColumn(format="%.3f"),
+                    "Toplam (kg)": st.column_config.TextColumn(),
+                    "Ton": st.column_config.TextColumn(),
                 },
             )
 
@@ -2305,6 +2322,11 @@ if _is_active("excel"):
         with get_session() as _s:
             excel_targets = get_targets_by_week_site(_s, _weeks_in_export)
             excel_site_labels = get_all_site_labels(_s)
+            # Site oranlari: hedef konteyner adet hesabi icin (Excel'de
+            # 'Hedef Konteyner' sutunu + grafik hedef cizgisi).
+            excel_ratios = {
+                sid: float(r) for sid, r in get_ratios_all(_s).items()
+            }
         c1, c2 = st.columns(2)
         if export_rows:
             week_bytes = build_week_excel(
@@ -2315,6 +2337,7 @@ if _is_active("excel"):
                 manual_aggs=manual_aggs,
                 targets_by_week_site=excel_targets,
                 site_labels=excel_site_labels,
+                ratios_by_site_id=excel_ratios,
             )
             c1.download_button(
                 "Seçili Haftayı İndir",
