@@ -178,19 +178,25 @@ CREATE INDEX idx_departments_site ON departments(production_site_id);
 CREATE INDEX idx_departments_active ON departments(is_active);
 CREATE INDEX idx_colors_active ON colors(is_active);
 
--- SEED DATA: ÜRETİM YERLERİ (11 adet)
-INSERT INTO production_sites (code, name) VALUES
-('2003', 'Norm Holding'),
-('2101', 'Norm Cıvata Salihli'),
-('2201', 'Norm Somun İzmir'),
-('2202', 'Norm Somun Salihli'),
-('2301', 'MS Vida'),
-('2401', 'Sıcak Dövme'),
-('2501', 'Norm Cıvata İzmir'),
-('3001', 'Uysal İzmir'),
-('3003', 'Uysal Salihli'),
-('3201', 'Sac Şekillendirme'),
-('3501', 'Nedu');
+-- SEED DATA: ÜRETİM YERLERİ (12 aktif + 1 pasif Norm Holding)
+--   • Norm Holding artık pasif; alt bölümleri Yol ve Lojistik
+--     Merkezleri üretim yerlerine bölündü.
+--   • Norm Holding satırı kalır (is_active=FALSE) çünkü geçmiş
+--     count_submissions kayıtlarının FK bütünlüğü için gerekli.
+INSERT INTO production_sites (code, name, is_active) VALUES
+('2003', 'Norm Holding',        FALSE),
+('2004', 'Yol',                 TRUE),
+('2005', 'Lojistik Merkezleri', TRUE),
+('2101', 'Norm Cıvata Salihli', TRUE),
+('2201', 'Norm Somun İzmir',    TRUE),
+('2202', 'Norm Somun Salihli',  TRUE),
+('2301', 'MS Vida',             TRUE),
+('2401', 'Sıcak Dövme',         TRUE),
+('2501', 'Norm Cıvata İzmir',   TRUE),
+('3001', 'Uysal İzmir',         TRUE),
+('3003', 'Uysal Salihli',       TRUE),
+('3201', 'Sac Şekillendirme',   TRUE),
+('3501', 'Nedu',                TRUE);
 
 -- SEED DATA: BÖLÜMLER (42 adet)
 INSERT INTO departments (production_site_id, name) VALUES
@@ -208,9 +214,9 @@ INSERT INTO departments (production_site_id, name) VALUES
 ((SELECT id FROM production_sites WHERE code='3501'), 'Nedu'),
 ((SELECT id FROM production_sites WHERE code='2401'), 'Sıcak Dövme'),
 ((SELECT id FROM production_sites WHERE code='3201'), 'Saç Şekillendirme'),
-((SELECT id FROM production_sites WHERE code='2003'), 'İzmir Lm'),
-((SELECT id FROM production_sites WHERE code='2003'), 'Salihli Lm'),
-((SELECT id FROM production_sites WHERE code='2003'), 'Yol'),
+((SELECT id FROM production_sites WHERE code='2005'), 'İzmir Lm'),
+((SELECT id FROM production_sites WHERE code='2005'), 'Salihli Lm'),
+((SELECT id FROM production_sites WHERE code='2004'), 'Yol'),
 ((SELECT id FROM production_sites WHERE code='2101'), 'HAKSAN'),
 ((SELECT id FROM production_sites WHERE code='2201'), 'CAN CNC'),
 ((SELECT id FROM production_sites WHERE code='2201'), 'İZKALIP'),

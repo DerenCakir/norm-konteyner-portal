@@ -1044,6 +1044,10 @@ _SITE_ORDER = [
     "Nedu",
     "Sac Şekillendirme",
     "Sıcak Dövme",
+    "Yol",
+    "Lojistik Merkezleri",
+    # Norm Holding artık pasif, gerekirse eski Norm Holding verileri
+    # is_active=False site'ye baglı kalır (analiz görünmez).
     "Norm Holding",
 ]
 
