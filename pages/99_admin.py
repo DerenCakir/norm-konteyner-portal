@@ -1323,12 +1323,47 @@ if _is_active("tonaj_upload"):
         expanded=False,
     ):
         st.caption(
-            "Sayım formunda 'Dolu' alanı KAPALI olan siteler için "
-            "**Dolu Konteyner Adeti** hesaplanır: `ceil(tonaj / oran)`. "
-            "Boş bıraktığın site için hesap yapılmaz. Oranı "
-            "değiştirdiğinde o siteye ait tüm geçmiş haftaların dolu "
-            "adedi yeni orana göre otomatik güncellenir."
+            "**Bu oran nedir?** Sayım formunda 'Dolu' alanı kapalı "
+            "olan siteler için dolu konteyner adedi hesaplanır: "
+            "`ceil(tonaj / oran)`. Örnek: oran 0,48 t/konteyner, "
+            "haftalık tonaj 24 t → 24/0,48 = 50 konteyner."
+            "\n\n**Boş bıraktığın site** (0,00) → hesap yapılmaz, "
+            "Excel'den yüklediğinde dolu adet 0 yazılır."
+            "\n\n**Oranı değiştirdiğinde** sadece BUNDAN SONRA "
+            "yükleyeceğin haftalar yeni orana göre hesaplanır — "
+            "geçmiş haftalara dokunulmaz. Bir haftayı yeniden "
+            "hesaplatmak istersen o haftayı Excel'den tekrar yükle."
+            "\n\n**Etkilenen alanlar:** Dolu Konteyner Sayısı Özeti "
+            "sheet + Grafikler'deki dolu chart'ları + Üretim Yeri "
+            "Karşılaştırma + Üretim Yeri Özeti."
         )
+
+        # TR ondaliki parse (0,48 veya 0.48 kabul)
+        def _parse_tr_number(text: str) -> float | None:
+            if text is None: return None
+            t = text.strip().replace(" ", "")
+            if not t: return None
+            # Son , veya . ondalik ayraci say
+            last_c = t.rfind(",")
+            last_d = t.rfind(".")
+            dpos = max(last_c, last_d)
+            if dpos == -1:
+                norm = t
+            else:
+                int_p = t[:dpos].replace(".", "").replace(",", "")
+                dec_p = t[dpos + 1:]
+                norm = f"{int_p}.{dec_p}" if dec_p else int_p
+            try:
+                v = float(norm)
+                return v if v >= 0 else None
+            except ValueError:
+                return None
+
+        def _fmt_tr(v: float) -> str:
+            if not v or v == 0:
+                return "0,00"
+            return f"{v:.2f}".replace(".", ",")
+
         with get_session() as _s_ratio:
             _sites_ratio = list(_s_ratio.execute(
                 select(ProductionSite)
@@ -1348,7 +1383,7 @@ if _is_active("tonaj_upload"):
             ]
 
         with st.form("edit_ratio_form", clear_on_submit=False):
-            _new_ratios: dict[int, float] = {}
+            _new_ratios_raw: dict[int, str] = {}
             for sv in _sites_ratio_view:
                 c1_r, c2_r = st.columns([2, 1])
                 c1_r.markdown(
@@ -1356,12 +1391,13 @@ if _is_active("tonaj_upload"):
                     f"[{sv['code']}] {sv['name']}</div>",
                     unsafe_allow_html=True,
                 )
-                _new_ratios[sv["id"]] = c2_r.number_input(
+                _new_ratios_raw[sv["id"]] = c2_r.text_input(
                     "Oran (t/konteyner)",
-                    value=float(sv["ratio"]),
-                    min_value=0.0, step=0.01, format="%.4f",
+                    value=_fmt_tr(sv["ratio"]),
                     key=f"ratio_edit_{sv['id']}",
                     label_visibility="collapsed",
+                    placeholder="örn. 0,48",
+                    help="Virgül veya nokta ondalık ayracı kabul edilir.",
                 )
             _save_ratios = st.form_submit_button(
                 "Oranları Kaydet", type="secondary",
@@ -1370,16 +1406,25 @@ if _is_active("tonaj_upload"):
         if _save_ratios:
             try:
                 _ratio_changes = []
+                _parse_errors: list[str] = []
                 with get_session() as _s_ratio:
                     for sv in _sites_ratio_view:
-                        _new_v = _new_ratios[sv["id"]]
+                        _txt = _new_ratios_raw[sv["id"]]
+                        _new_v = _parse_tr_number(_txt)
+                        if _txt.strip() and _new_v is None:
+                            _parse_errors.append(
+                                f"{sv['name']}: '{_txt}' geçerli sayı değil"
+                            )
+                            continue
                         _cur_v = sv["ratio"]
-                        if _new_v > 0 and abs(_new_v - _cur_v) > 1e-6:
+                        if _new_v and _new_v > 0 and abs(_new_v - _cur_v) > 1e-6:
+                            # recompute_existing=False -> gecmis
+                            # haftalari dokunma (kullanici istegi)
                             upsert_ratio(
                                 _s_ratio, sv["id"],
                                 Decimal(str(_new_v)),
                                 updated_by=admin_id,
-                                recompute_existing=True,
+                                recompute_existing=False,
                             )
                             _ratio_changes.append(
                                 (sv["name"], _cur_v, _new_v)
@@ -1397,13 +1442,16 @@ if _is_active("tonaj_upload"):
                             },
                         ))
                 clear_cached_queries()
+                if _parse_errors:
+                    for e in _parse_errors:
+                        st.error(e)
                 if _ratio_changes:
                     queue_toast(
-                        f"{len(_ratio_changes)} oran güncellendi + "
-                        f"geçmiş haftaların dolu adedi yeniden hesaplandı.",
+                        f"{len(_ratio_changes)} oran güncellendi. "
+                        f"Bundan sonraki Excel yüklemelerinde geçerli.",
                         icon="✅",
                     )
-                else:
+                elif not _parse_errors:
                     queue_toast("Değişiklik yok.", icon="ℹ")
                 st.rerun()
             except Exception as _exc:
