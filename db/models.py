@@ -525,6 +525,45 @@ class SiteTonnageTarget(Base):
 # ---------------------------------------------------------------------------
 # 8e. SITE COUNT CONFIG (üretim yerine göre sayım giriş ekranı alanları)
 # ---------------------------------------------------------------------------
+class SiteContainerRatio(Base):
+    """Üretim yeri × dolu konteyner başına tonaj oranı (t/konteyner).
+
+    Sayım formunda 'Dolu' alanı kapalı olan siteler için tonaj/oran
+    ile dolu konteyner adedi otomatik hesaplanır (yukarı yuvarlanır).
+    Oran değiştirilirse mevcut hesaplanmış haftalar da yeniden
+    hesaplanıp güncellenir.
+    """
+
+    __tablename__ = "site_container_ratio"
+    __table_args__ = (
+        CheckConstraint(
+            "ratio_ton_per_container > 0",
+            name="site_container_ratio_positive",
+        ),
+    )
+
+    site_id: Mapped[int] = mapped_column(
+        ForeignKey("production_sites.id"), primary_key=True,
+    )
+    ratio_ton_per_container: Mapped[Decimal] = mapped_column(
+        Numeric(10, 4), nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        server_default=func.now(), onupdate=func.now(), nullable=False,
+    )
+    updated_by: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id"),
+    )
+
+    site: Mapped["ProductionSite"] = relationship()
+
+    def __repr__(self) -> str:
+        return (
+            f"<SiteContainerRatio site_id={self.site_id} "
+            f"ratio={self.ratio_ton_per_container}>"
+        )
+
+
 class SiteCountConfig(Base):
     """Üretim yerine göre sayım giriş ekranında hangi alanlar gösterilir.
 

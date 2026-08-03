@@ -31,6 +31,7 @@ from db.models import (
     LateWindowOverride,
     ManualSiteAggregate,
     ProductionSite,
+    SiteContainerRatio,
     SiteCountConfig,
     SiteTonnageTarget,
     SubmissionSchedule,
@@ -58,6 +59,11 @@ from utils.site_targets import (
 from utils.site_count_config import (
     get_count_fields_config,
     upsert_count_fields_config,
+)
+from utils.site_container_ratio import (
+    compute_full_from_tonnage,
+    get_ratios_all,
+    upsert_ratio,
 )
 from utils.performance import page_timer
 from utils.ui import (
@@ -1311,6 +1317,98 @@ if _is_active("tonaj_upload"):
             except Exception as _exc:
                 st.error(f"Hata: {_exc}")
 
+    # ---- Dolu Konteyner Basina Tonaj Oranlari expander ----
+    with st.expander(
+        "📐 Dolu Konteyner Başına Tonaj Oranları (t/konteyner)",
+        expanded=False,
+    ):
+        st.caption(
+            "Sayım formunda 'Dolu' alanı KAPALI olan siteler için "
+            "**Dolu Konteyner Adeti** hesaplanır: `ceil(tonaj / oran)`. "
+            "Boş bıraktığın site için hesap yapılmaz. Oranı "
+            "değiştirdiğinde o siteye ait tüm geçmiş haftaların dolu "
+            "adedi yeni orana göre otomatik güncellenir."
+        )
+        with get_session() as _s_ratio:
+            _sites_ratio = list(_s_ratio.execute(
+                select(ProductionSite)
+                .where(ProductionSite.is_active.is_(True))
+                .order_by(ProductionSite.code)
+            ).scalars())
+            _current_ratios = get_ratios_all(_s_ratio)
+            _sites_ratio_view = [
+                {
+                    "id": s.id, "code": s.code, "name": s.name,
+                    "ratio": (
+                        float(_current_ratios[s.id])
+                        if s.id in _current_ratios else 0.0
+                    ),
+                }
+                for s in _sites_ratio
+            ]
+
+        with st.form("edit_ratio_form", clear_on_submit=False):
+            _new_ratios: dict[int, float] = {}
+            for sv in _sites_ratio_view:
+                c1_r, c2_r = st.columns([2, 1])
+                c1_r.markdown(
+                    f"<div style='padding-top:0.6rem'>"
+                    f"[{sv['code']}] {sv['name']}</div>",
+                    unsafe_allow_html=True,
+                )
+                _new_ratios[sv["id"]] = c2_r.number_input(
+                    "Oran (t/konteyner)",
+                    value=float(sv["ratio"]),
+                    min_value=0.0, step=0.01, format="%.4f",
+                    key=f"ratio_edit_{sv['id']}",
+                    label_visibility="collapsed",
+                )
+            _save_ratios = st.form_submit_button(
+                "Oranları Kaydet", type="secondary",
+                use_container_width=True,
+            )
+        if _save_ratios:
+            try:
+                _ratio_changes = []
+                with get_session() as _s_ratio:
+                    for sv in _sites_ratio_view:
+                        _new_v = _new_ratios[sv["id"]]
+                        _cur_v = sv["ratio"]
+                        if _new_v > 0 and abs(_new_v - _cur_v) > 1e-6:
+                            upsert_ratio(
+                                _s_ratio, sv["id"],
+                                Decimal(str(_new_v)),
+                                updated_by=admin_id,
+                                recompute_existing=True,
+                            )
+                            _ratio_changes.append(
+                                (sv["name"], _cur_v, _new_v)
+                            )
+                    if _ratio_changes:
+                        _s_ratio.add(AuditLog(
+                            user_id=admin_id,
+                            action="site_container_ratio_update",
+                            entity_type="site_container_ratio",
+                            new_value={
+                                "changes": [
+                                    {"site": n, "old": o, "new": nv}
+                                    for n, o, nv in _ratio_changes
+                                ],
+                            },
+                        ))
+                clear_cached_queries()
+                if _ratio_changes:
+                    queue_toast(
+                        f"{len(_ratio_changes)} oran güncellendi + "
+                        f"geçmiş haftaların dolu adedi yeniden hesaplandı.",
+                        icon="✅",
+                    )
+                else:
+                    queue_toast("Değişiklik yok.", icon="ℹ")
+                st.rerun()
+            except Exception as _exc:
+                st.error(f"Hata: {_exc}")
+
     st.divider()
 
     from datetime import date as _date_up, timedelta as _td_up
@@ -1497,14 +1595,22 @@ if _is_active("tonaj_upload"):
                                 )
                             )
                             _s_up.flush()
-                            # Yeni tonajlari yaz
+                            # Yeni tonajlari yaz + dolu adedini oran
+                            # varsa hesapla (ceil(ton/ratio))
+                            _ratios_now = get_ratios_all(_s_up)
                             for p in _valid_writes:
                                 _sid, _ = _code_to_site[p["Kod"]]
+                                _r = _ratios_now.get(_sid)
+                                _full_calc = compute_full_from_tonnage(
+                                    p["Ton"], _r,
+                                )
                                 _row_up = ManualSiteAggregate(
                                     week_iso=upload_week_iso,
                                     site_id=_sid,
                                     empty_total=0,
-                                    full_total=0,
+                                    full_total=(
+                                        _full_calc if _full_calc is not None else 0
+                                    ),
                                     tonnage_total=Decimal(str(p["Ton"])),
                                     created_by=admin_id,
                                 )
