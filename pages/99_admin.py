@@ -1237,6 +1237,82 @@ if _is_active("tonaj_upload"):
         "silinip yenisi yazılır."
     )
 
+    # ---- Kod duzenleme expander'i ----
+    with st.expander(
+        "🔧 Üretim Yeri Kodlarını Düzenle (Excel'deki kodlarla eşleşmiyorsa)",
+        expanded=False,
+    ):
+        st.caption(
+            "Excel'den gelen 'Üretim yeri' sütununun buradaki kod ile "
+            "birebir eşleşmesi gerekir. Yanlışsa aşağıdan düzelt, "
+            "kaydet, sonra Excel'i tekrar yükle."
+        )
+        with get_session() as _s_code:
+            _sites_edit = list(_s_code.execute(
+                select(ProductionSite)
+                .order_by(ProductionSite.name)
+            ).scalars())
+            _sites_view = [
+                {"id": s.id, "code": s.code, "name": s.name}
+                for s in _sites_edit
+            ]
+
+        with st.form("edit_site_codes_form", clear_on_submit=False):
+            _new_codes: dict[int, str] = {}
+            for sv in _sites_view:
+                c1_e, c2_e = st.columns([2, 1])
+                c1_e.markdown(
+                    f"<div style='padding-top:0.6rem'>{sv['name']}</div>",
+                    unsafe_allow_html=True,
+                )
+                _new_codes[sv["id"]] = c2_e.text_input(
+                    "Kod",
+                    value=sv["code"],
+                    key=f"site_code_edit_{sv['id']}",
+                    label_visibility="collapsed",
+                )
+            _save_codes = st.form_submit_button(
+                "Kodları Kaydet", type="secondary",
+                use_container_width=True,
+            )
+        if _save_codes:
+            try:
+                _changes = []
+                with get_session() as _s_code:
+                    for sv in _sites_view:
+                        _entered = (_new_codes[sv["id"]] or "").strip()
+                        if not _entered:
+                            continue
+                        if _entered != sv["code"]:
+                            _row = _s_code.get(ProductionSite, sv["id"])
+                            _old = _row.code
+                            _row.code = _entered
+                            _changes.append((sv["name"], _old, _entered))
+                    if _changes:
+                        _s_code.add(AuditLog(
+                            user_id=admin_id,
+                            action="site_code_update",
+                            entity_type="production_sites",
+                            new_value={
+                                "changes": [
+                                    {"site": n, "old": o, "new": n2}
+                                    for n, o, n2 in _changes
+                                ],
+                            },
+                        ))
+                clear_cached_queries()
+                if _changes:
+                    queue_toast(
+                        f"{len(_changes)} kod güncellendi.", icon="✅",
+                    )
+                else:
+                    queue_toast("Değişiklik yok.", icon="ℹ")
+                st.rerun()
+            except Exception as _exc:
+                st.error(f"Hata: {_exc}")
+
+    st.divider()
+
     from datetime import date as _date_up, timedelta as _td_up
     import io as _io_up
 
