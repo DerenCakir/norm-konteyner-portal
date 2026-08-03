@@ -1707,6 +1707,7 @@ if _is_active("count_fields"):
         ("show_full",    "Dolu"),
         ("show_kanban",  "Kanban"),
         ("show_scrap",   "Hurda"),
+        ("show_rondela", "Rondela"),
         ("show_tonnage", "Tonaj"),
     ]
 
@@ -1798,6 +1799,7 @@ if _is_active("count_fields"):
                     show_full=_picks["show_full"],
                     show_kanban=_picks["show_kanban"],
                     show_scrap=_picks["show_scrap"],
+                    show_rondela=_picks["show_rondela"],
                     show_tonnage=_picks["show_tonnage"],
                     updated_by=admin_id,
                 )

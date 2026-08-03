@@ -243,7 +243,7 @@ class CountDetail(Base):
         CheckConstraint(
             "empty_count >= 0 AND full_count >= 0 "
             "AND kanban_count >= 0 AND scrap_count >= 0 "
-            "AND wip_count >= 0",
+            "AND wip_count >= 0 AND rondela_count >= 0",
             name="non_negative",
         ),
         CheckConstraint("kanban_count <= full_count", name="kanban_le_full"),
@@ -261,8 +261,11 @@ class CountDetail(Base):
     kanban_count: Mapped[int] = mapped_column(default=0, server_default="0")
     scrap_count: Mapped[int] = mapped_column(default=0, server_default="0")
     # WIP: Work In Progress. Process içindeki / yarı işlenmiş konteynerler.
-    # Boş ve Dolu'dan ayrı bir kategori. Toplam Konteyner = B + WIP + D + H.
+    # Boş ve Dolu'dan ayrı bir kategori.
     wip_count: Mapped[int] = mapped_column(default=0, server_default="0")
+    # Rondela: bazı sitelerde ayrı sayılıyor; TOPLAM konteyner sayısına
+    # eklenir (B + WIP + D + H + R).
+    rondela_count: Mapped[int] = mapped_column(default=0, server_default="0")
 
     submission: Mapped["CountSubmission"] = relationship(back_populates="details")
     color: Mapped["Color"] = relationship(back_populates="details")
@@ -590,6 +593,9 @@ class SiteCountConfig(Base):
         Boolean, nullable=False, default=True, server_default="true",
     )
     show_scrap: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true",
+    )
+    show_rondela: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True, server_default="true",
     )
     show_tonnage: Mapped[bool] = mapped_column(

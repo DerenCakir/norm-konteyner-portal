@@ -461,11 +461,12 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
     # Site config'ine gore gorunecek alanlarin sirasi + basliklari.
     # Renk sutunu her zaman ilk sutun.
     _FIELD_META = [
-        ("empty",  "Boş",              1.0,  fields_cfg.show_empty),
-        ("wip",    "Proseste",         1.1,  fields_cfg.show_wip),
-        ("full",   "Dolu",             1.0,  fields_cfg.show_full),
-        ("kanban", "Kanban",           1.2,  fields_cfg.show_kanban),
-        ("scrap",  "Hurdaya Ayrılacak", 1.4, fields_cfg.show_scrap),
+        ("empty",   "Boş",              1.0,  fields_cfg.show_empty),
+        ("wip",     "Proseste",         1.1,  fields_cfg.show_wip),
+        ("full",    "Dolu",             1.0,  fields_cfg.show_full),
+        ("kanban",  "Kanban",           1.2,  fields_cfg.show_kanban),
+        ("scrap",   "Hurdaya Ayrılacak", 1.4, fields_cfg.show_scrap),
+        ("rondela", "Rondela",          1.1,  fields_cfg.show_rondela),
     ]
     _visible_fields = [(k, lbl, w) for k, lbl, w, on in _FIELD_META if on]
 
@@ -486,18 +487,20 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
     for color in active_colors:
         prev = existing_details.get(color.id)
         prev_by_field = {
-            "empty":  prev.empty_count if prev is not None else None,
-            "wip":    prev.wip_count if prev is not None else None,
-            "full":   prev.full_count if prev is not None else None,
-            "kanban": prev.kanban_count if prev is not None else None,
-            "scrap":  prev.scrap_count if prev is not None else None,
+            "empty":   prev.empty_count if prev is not None else None,
+            "wip":     prev.wip_count if prev is not None else None,
+            "full":    prev.full_count if prev is not None else None,
+            "kanban":  prev.kanban_count if prev is not None else None,
+            "scrap":   prev.scrap_count if prev is not None else None,
+            "rondela": prev.rondela_count if prev is not None else None,
         }
 
         # Site'ta hicbir renk alani acik degilse renk gridini
         # tamamen atla (tonaj-only site senaryosu).
         if not _visible_fields:
             color_inputs[color.id] = {
-                "empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0,
+                "empty": 0, "wip": 0, "full": 0,
+                "kanban": 0, "scrap": 0, "rondela": 0,
             }
             continue
 
@@ -507,7 +510,10 @@ with st.form(f"submission_form_{form_scope}", clear_on_submit=False):
             f'{color.name}</div>',
             unsafe_allow_html=True,
         )
-        vals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0}
+        vals = {
+            "empty": 0, "wip": 0, "full": 0,
+            "kanban": 0, "scrap": 0, "rondela": 0,
+        }
         for i, (fkey, lbl, _w) in enumerate(_visible_fields, start=1):
             v = _cols[i].number_input(
                 f"{color.name} — {lbl}",
@@ -586,6 +592,7 @@ if submit_clicked and can_submit:
                     and existing_details[cid].kanban_count == vals["kanban"]
                     and existing_details[cid].scrap_count == vals["scrap"]
                     and existing_details[cid].wip_count == vals["wip"]
+                    and existing_details[cid].rondela_count == vals["rondela"]
                 )
                 for cid, vals in color_inputs.items()
             ) and len(existing_details) == len(color_inputs)
@@ -696,6 +703,7 @@ if submit_clicked and can_submit:
                         "kanban_count": vals["kanban"],
                         "scrap_count": vals["scrap"],
                         "wip_count": vals["wip"],
+                        "rondela_count": vals["rondela"],
                     }
                     for cid, vals in color_inputs.items()
                 ],

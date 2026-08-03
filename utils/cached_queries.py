@@ -330,6 +330,7 @@ def get_all_weeks_export_rows() -> list[dict[str, Any]]:
                 CountDetail.kanban_count,
                 CountDetail.scrap_count,
                 CountDetail.wip_count,
+                CountDetail.rondela_count,
             )
             .join(Department, Department.id == CountSubmission.department_id)
             .join(ProductionSite, ProductionSite.id == Department.production_site_id)
@@ -356,6 +357,7 @@ def get_all_weeks_export_rows() -> list[dict[str, Any]]:
             "Kanban": row.kanban_count,
             "Hurda": row.scrap_count,
             "Proseste": row.wip_count,
+            "Rondela": row.rondela_count,
             "Gerçekleşen Tonaj": (
                 float(row.actual_tonnage) if row.actual_tonnage is not None else None
             ),
@@ -393,6 +395,7 @@ def get_week_export_rows(week_iso: str) -> list[dict[str, Any]]:
                 CountDetail.kanban_count,
                 CountDetail.scrap_count,
                 CountDetail.wip_count,
+                CountDetail.rondela_count,
             )
             .join(Department, Department.id == CountSubmission.department_id)
             .join(ProductionSite, ProductionSite.id == Department.production_site_id)
@@ -414,6 +417,7 @@ def get_week_export_rows(week_iso: str) -> list[dict[str, Any]]:
             "Kanban": row.kanban_count,
             "Hurda": row.scrap_count,
             "Proseste": row.wip_count,
+            "Rondela": row.rondela_count,
             "Gerçekleşen Tonaj": (
                 float(row.actual_tonnage) if row.actual_tonnage is not None else None
             ),

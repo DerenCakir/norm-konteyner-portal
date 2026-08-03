@@ -200,8 +200,11 @@ def _compute_week_kpis(rows: list[dict[str, Any]]) -> dict[str, Any]:
     total_full = sum(int(r.get("Dolu") or 0) for r in rows)
     total_kanban = sum(int(r.get("Kanban") or 0) for r in rows)
     total_scrap = sum(int(r.get("Hurda") or 0) for r in rows)
-    # Yeni Toplam Konteyner tanımı: Boş + WIP + Dolu + Hurda.
-    total_containers = total_empty + total_wip + total_full + total_scrap
+    total_rondela = sum(int(r.get("Rondela") or 0) for r in rows)
+    # Toplam Konteyner = Boş + WIP + Dolu + Hurda + Rondela.
+    total_containers = (
+        total_empty + total_wip + total_full + total_scrap + total_rondela
+    )
 
     # Tonnage: once per submission_id (color rows share the submission tonnage).
     seen_subs: set[int] = set()
@@ -246,6 +249,7 @@ def _compute_week_kpis(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "full": total_full,
         "kanban": total_kanban,
         "scrap": total_scrap,
+        "rondela": total_rondela,
         "total_containers": total_containers,
         "tonnage": total_tonnage,
         "avg_kg_per_full": avg_kg_per_full,
@@ -649,7 +653,8 @@ def _build_uretim_yeri_ozeti_sheet(
                 pass
 
     grand_total_bdh = sum(
-        s["empty"] + s["wip"] + s["full"] + s["scrap"] for s in site_aggs.values()
+        s["empty"] + s["wip"] + s["full"] + s["scrap"] + s.get("rondela", 0)
+        for s in site_aggs.values()
     )
 
     totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0, "bdh": 0, "tonnage": 0.0}
@@ -658,7 +663,7 @@ def _build_uretim_yeri_ozeti_sheet(
         start=2,
     ):
         zebra = _ZEBRA_FILL if idx % 2 == 0 else None
-        bdh = s["empty"] + s["wip"] + s["full"] + s["scrap"]
+        bdh = s["empty"] + s["wip"] + s["full"] + s["scrap"] + s.get("rondela", 0)
         pct = (bdh / grand_total_bdh) if grand_total_bdh else 0  # stored as fraction
         ton_per = (s["tonnage"] / s["full"]) if s["full"] else 0
         # Hedef ve sapma — hedef yoksa hucreler bos (None) kalir.
@@ -812,7 +817,7 @@ def _build_renk_ozeti_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
     totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0, "bdh": 0}
     for idx, color in enumerate(color_order, start=2):
         c = color_aggs[color]
-        bdh = c["empty"] + c["wip"] + c["full"] + c["scrap"]
+        bdh = c["empty"] + c["wip"] + c["full"] + c["scrap"] + c.get("rondela", 0)
         values = [color, c["empty"], c["wip"], c["full"], c["kanban"], c["scrap"], bdh]
         ws.append(values)
         totals["empty"] += c["empty"]
@@ -913,29 +918,32 @@ def _aggregate_all_weeks(
         full_v = int(r.get("Dolu") or 0)
         kanban_v = int(r.get("Kanban") or 0)
         scrap_v = int(r.get("Hurda") or 0)
-        # Toplam Konteyner = Boş + WIP + Dolu + Hurda (yeni tanım).
-        bdh_v = empty_v + wip_v + full_v + scrap_v
+        rondela_v = int(r.get("Rondela") or 0)
+        # Toplam Konteyner = Boş + WIP + Dolu + Hurda + Rondela.
+        bdh_v = empty_v + wip_v + full_v + scrap_v + rondela_v
 
         wt = weekly_totals.setdefault(week, {
             "empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0,
-            "bdh": 0, "tonnage": 0.0,
+            "rondela": 0, "bdh": 0, "tonnage": 0.0,
         })
         wt["empty"] += empty_v
         wt["wip"] += wip_v
         wt["full"] += full_v
         wt["kanban"] += kanban_v
         wt["scrap"] += scrap_v
+        wt["rondela"] = wt.get("rondela", 0) + rondela_v
         wt["bdh"] += bdh_v
 
         ws_agg = weekly_site.setdefault(week, {}).setdefault(site, {
             "empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0,
-            "bdh": 0, "tonnage": 0.0,
+            "rondela": 0, "bdh": 0, "tonnage": 0.0,
         })
         ws_agg["empty"] += empty_v
         ws_agg["wip"] += wip_v
         ws_agg["full"] += full_v
         ws_agg["kanban"] += kanban_v
         ws_agg["scrap"] += scrap_v
+        ws_agg["rondela"] = ws_agg.get("rondela", 0) + rondela_v
         ws_agg["bdh"] += bdh_v
 
         if color and color not in seen_colors:
@@ -3007,7 +3015,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
 
         sites_in_week = weekly_site[w]
         grand_total_bdh = sum(
-            s["empty"] + s.get("wip", 0) + s["full"] + s["scrap"]
+            s["empty"] + s.get("wip", 0) + s["full"] + s["scrap"] + s.get("rondela", 0)
             for s in sites_in_week.values()
         )
         totals = {"empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0,
@@ -3022,7 +3030,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
             start=header_row + 1,
         ):
             wip_v = agg.get("wip", 0)
-            bdh = agg["empty"] + wip_v + agg["full"] + agg["scrap"]
+            bdh = agg["empty"] + wip_v + agg["full"] + agg["scrap"] + agg.get("rondela", 0)
             pct = (bdh / grand_total_bdh) if grand_total_bdh else 0
             ton_per = (agg["tonnage"] / agg["full"]) if agg["full"] else 0
             sid = name_to_id.get(site)

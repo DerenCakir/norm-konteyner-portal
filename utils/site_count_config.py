@@ -24,6 +24,7 @@ class CountFieldsConfig:
     show_full: bool = True
     show_kanban: bool = True
     show_scrap: bool = True
+    show_rondela: bool = True
     show_tonnage: bool = True
 
     @property
@@ -31,7 +32,7 @@ class CountFieldsConfig:
         """En az bir renk alanı açık mı? (grid'i çizmek için)"""
         return any([
             self.show_empty, self.show_wip, self.show_full,
-            self.show_kanban, self.show_scrap,
+            self.show_kanban, self.show_scrap, self.show_rondela,
         ])
 
     @property
@@ -43,6 +44,7 @@ class CountFieldsConfig:
         if self.show_full: out.append("full")
         if self.show_kanban: out.append("kanban")
         if self.show_scrap: out.append("scrap")
+        if self.show_rondela: out.append("rondela")
         return out
 
 
@@ -62,6 +64,7 @@ def get_count_fields_config(
         show_full=row.show_full,
         show_kanban=row.show_kanban,
         show_scrap=row.show_scrap,
+        show_rondela=row.show_rondela,
         show_tonnage=row.show_tonnage,
     )
 
@@ -75,6 +78,7 @@ def upsert_count_fields_config(
     show_full: bool,
     show_kanban: bool,
     show_scrap: bool,
+    show_rondela: bool,
     show_tonnage: bool,
     updated_by: int,
 ) -> SiteCountConfig:
@@ -85,6 +89,7 @@ def upsert_count_fields_config(
             site_id=site_id,
             show_empty=show_empty, show_wip=show_wip, show_full=show_full,
             show_kanban=show_kanban, show_scrap=show_scrap,
+            show_rondela=show_rondela,
             show_tonnage=show_tonnage,
             updated_by=updated_by,
         )
@@ -95,6 +100,7 @@ def upsert_count_fields_config(
         row.show_full = show_full
         row.show_kanban = show_kanban
         row.show_scrap = show_scrap
+        row.show_rondela = show_rondela
         row.show_tonnage = show_tonnage
         row.updated_by = updated_by
     session.flush()
