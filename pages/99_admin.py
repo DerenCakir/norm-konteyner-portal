@@ -1280,27 +1280,35 @@ if _is_active("count_fields"):
     st.divider()
     st.markdown("#### Ayarı Değiştir")
 
-    with st.form("count_fields_form", clear_on_submit=False):
-        site_options = {
-            f"[{r['code']}] {r['name']}": r["site_id"]
-            for r in _rows_view
-        }
-        selected_site_label = st.selectbox(
-            "Üretim Yeri", list(site_options.keys()),
-        )
-        selected_site_id = site_options[selected_site_label]
-        current = next(
-            r for r in _rows_view if r["site_id"] == selected_site_id
-        )
+    # KRITIK: selectbox form DISINDA — form icindeki widget'lar Submit'e
+    # kadar Python degiskenini guncellemez, boylece site degisince
+    # checkboxlar eski site'nin config'iyle kalirdi. Disarida
+    # selectbox degisimi rerun tetikler, formu yeni site'yle yeniden
+    # cizeriz.
+    site_options = {
+        f"[{r['code']}] {r['name']}": r["site_id"]
+        for r in _rows_view
+    }
+    selected_site_label = st.selectbox(
+        "Üretim Yeri", list(site_options.keys()),
+        key="cfg_site_pick",
+    )
+    selected_site_id = site_options[selected_site_label]
+    current = next(
+        r for r in _rows_view if r["site_id"] == selected_site_id
+    )
 
+    with st.form(
+        f"count_fields_form_{selected_site_id}",
+        clear_on_submit=False,
+    ):
         cols = st.columns(3)
         _picks: dict[str, bool] = {}
         for i, (key, lbl) in enumerate(_FIELD_KEYS):
             col = cols[i % 3]
             with col:
-                # KRITIK: key'e site_id ekli, aksi halde Streamlit
-                # onceki site'nin widget state'ini tutar ve value
-                # parametresi ignore edilir -> checkboxlar guncellenmez.
+                # Key'e site_id ekli — her site icin ayri widget
+                # instance; DB'den gelen value dogru yansir.
                 _picks[key] = st.checkbox(
                     lbl, value=current[key],
                     key=f"cfg_{key}_{selected_site_id}",
