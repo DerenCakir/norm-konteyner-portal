@@ -533,8 +533,10 @@ if submit_clicked and can_submit:
     # Frontend validation
     errors: list[str] = []
 
-    # Tonaj zorunlu — boş bırakılırsa kayıt yapılmaz.
-    if tonnage is None:
+    # Tonaj zorunlu — SADECE site config'de tonaj alanı acikken.
+    # Kapali site (show_tonnage=False) icin bos brakma dogal, uyari
+    # cikmamali.
+    if fields_cfg.show_tonnage and tonnage is None:
         errors.append(
             "**Yarı mamül tonajı (toplam)** alanı boş — kaydetmeden önce doldurmalısın."
         )
@@ -551,7 +553,7 @@ if submit_clicked and can_submit:
     if errors:
         for e in errors:
             st.error(e)
-        if tonnage is None:
+        if fields_cfg.show_tonnage and tonnage is None:
             st.toast("Tonaj alanı zorunlu — lütfen değer giriniz.", icon="⚠️")
     else:
         # Tarih/saat müdahaleye kapalı; her kayıt/güncellemede şu anki

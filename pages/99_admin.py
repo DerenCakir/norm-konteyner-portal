@@ -1298,8 +1298,12 @@ if _is_active("count_fields"):
         for i, (key, lbl) in enumerate(_FIELD_KEYS):
             col = cols[i % 3]
             with col:
+                # KRITIK: key'e site_id ekli, aksi halde Streamlit
+                # onceki site'nin widget state'ini tutar ve value
+                # parametresi ignore edilir -> checkboxlar guncellenmez.
                 _picks[key] = st.checkbox(
-                    lbl, value=current[key], key=f"cfg_{key}",
+                    lbl, value=current[key],
+                    key=f"cfg_{key}_{selected_site_id}",
                 )
         submitted = st.form_submit_button(
             "Kaydet", use_container_width=True, type="primary",
