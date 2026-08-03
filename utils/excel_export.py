@@ -3518,6 +3518,135 @@ def _build_dolu_yuk_ozeti_sheet(
         ws.column_dimensions[get_column_letter(c)].width = 8
 
 
+def _build_dolu_konteyner_ozeti_sheet(
+    wb: Workbook,
+    all_rows: list[dict[str, Any]],
+    manual_aggs: list[dict[str, Any]] | None = None,
+) -> None:
+    """Basit tablo: üretim yeri × hafta × dolu konteyner adedi.
+
+    Son sütun: 'Bir Önceki Haftaya Göre Artış' — (Wson - Wönce)/Wönce.
+    Chart yok, sadece tablo — pipeline'in kirilma riskini sifirlar.
+    """
+    ws = wb.create_sheet("Dolu Konteyner Sayısı Özeti")
+
+    if not all_rows and not manual_aggs:
+        ws["A1"] = "Henüz veri yok."
+        ws["A1"].font = Font(italic=True, color="64748B")
+        return
+
+    _, weekly_site, _, _, manual_only_weeks = _aggregate_all_weeks(
+        all_rows, manual_aggs,
+    )
+    weeks = sorted(weekly_site.keys())  # manual weeks dahil
+    all_sites = sorted(
+        {s for sd in weekly_site.values() for s in sd.keys()},
+        key=_site_sort_key,
+    )
+
+    if not weeks or not all_sites:
+        ws["A1"] = "Henüz dolu konteyner verisi yok."
+        ws["A1"].font = Font(italic=True, color="64748B")
+        return
+
+    # Son sütun sadece 2+ hafta varsa
+    show_delta = len(weeks) >= 2
+    latest_wk = weeks[-1] if weeks else None
+    prev_wk = weeks[-2] if len(weeks) >= 2 else None
+
+    if show_delta:
+        headers = (
+            ["Üretim Yeri"]
+            + [_short_week(w) for w in weeks]
+            + ["Bir Önceki Haftaya Göre Artış"]
+        )
+    else:
+        headers = ["Üretim Yeri"] + [_short_week(w) for w in weeks]
+    ws.append(headers)
+    _style_header_row(
+        ws, len(headers),
+        wrap_text=True, row_height=(42 if show_delta else 26),
+    )
+
+    totals_by_week: dict[str, int] = {w: 0 for w in weeks}
+
+    for idx, site in enumerate(all_sites, start=2):
+        row_vals: list[Any] = [site]
+        latest_full = 0
+        prev_full = 0
+        for w in weeks:
+            sd = weekly_site.get(w, {}).get(site)
+            full_v = int(sd.get("full", 0)) if sd else 0
+            row_vals.append(full_v if full_v else None)
+            totals_by_week[w] = totals_by_week.get(w, 0) + full_v
+            if w == latest_wk:
+                latest_full = full_v
+            if w == prev_wk:
+                prev_full = full_v
+
+        delta_val: float | None = None
+        if show_delta and prev_full > 0:
+            delta_val = (latest_full - prev_full) / prev_full
+        if show_delta:
+            row_vals.append(delta_val)
+
+        ws.append(row_vals)
+        zebra = _ZEBRA_FILL if idx % 2 == 0 else None
+        for col_idx in range(1, len(row_vals) + 1):
+            cell = ws.cell(row=idx, column=col_idx)
+            cell.border = _BORDER
+            if zebra:
+                cell.fill = zebra
+            if col_idx == 1:
+                cell.alignment = _LEFT
+            else:
+                cell.alignment = _RIGHT
+                cell.number_format = "#,##0"
+                if show_delta and col_idx == len(row_vals) \
+                        and delta_val is not None and delta_val != 0:
+                    cell.number_format = "\"+\"0.0%;\"-\"0.0%"
+                    cell.font = Font(
+                        bold=True,
+                        color="047857" if delta_val > 0 else "BE123C",
+                    )
+
+    # TOPLAM satiri
+    total_row_idx = ws.max_row + 1
+    total_vals: list[Any] = ["TOPLAM"] + [
+        totals_by_week[w] if totals_by_week[w] else None
+        for w in weeks
+    ]
+    tot_delta: float | None = None
+    if show_delta:
+        _lat_tot = totals_by_week.get(latest_wk, 0)
+        _pre_tot = totals_by_week.get(prev_wk, 0)
+        if _pre_tot > 0:
+            tot_delta = (_lat_tot - _pre_tot) / _pre_tot
+        total_vals.append(tot_delta)
+    ws.append(total_vals)
+
+    for col_idx in range(1, len(total_vals) + 1):
+        cell = ws.cell(row=total_row_idx, column=col_idx)
+        cell.fill = _TOTAL_FILL
+        cell.font = _TOTAL_FONT
+        cell.border = _BORDER
+        if col_idx == 1:
+            cell.alignment = _RIGHT
+        else:
+            cell.alignment = _RIGHT
+            cell.number_format = "#,##0"
+            if show_delta and col_idx == len(total_vals) \
+                    and tot_delta is not None and tot_delta != 0:
+                cell.number_format = "\"+\"0.0%;\"-\"0.0%"
+                cell.font = Font(
+                    bold=True,
+                    color="047857" if tot_delta > 0 else "BE123C",
+                )
+
+    ws.freeze_panes = None
+    _autofit(ws, headers)
+
+
 def _build_yari_mamul_tonaj_ozeti_sheet(
     wb: Workbook,
     all_rows: list[dict[str, Any]],
@@ -4442,6 +4571,10 @@ def build_week_excel(
         wb, all_weeks_rows or [], manual_aggs or [],
         targets_by_week_site=targets_by_week_site,
         site_labels=site_labels,
+    )
+    # Basit tablo — chart yok, pipeline riski minimum.
+    _build_dolu_konteyner_ozeti_sheet(
+        wb, all_weeks_rows or [], manual_aggs or [],
     )
     _build_uretim_yeri_karsilastirma_sheet(
         wb, all_weeks_rows or [], manual_aggs or [],
