@@ -53,16 +53,23 @@ def clear_cached_queries() -> None:
     get_active_department_count.clear()
     get_week_export_rows.clear()
     get_all_weeks_export_rows.clear()
-    get_manual_site_aggregates.clear()
+    # get_manual_site_aggregates artik cache'siz -- her cagride
+    # DB'den taze okur, invalidation gerekmez.
 
 
-@st.cache_data(ttl=CACHE_TTL_SECONDS, show_spinner=False)
 def get_manual_site_aggregates() -> list[dict[str, Any]]:
     """Return per-(week × site) manual aggregate rows.
 
     Defensive against a missing ``manual_site_aggregates`` table — if
     the migration hasn't been applied yet the function returns an
     empty list so downstream Excel / chart code keeps working.
+
+    NOT CACHED: kullanici tonaj yukledigi anda Excel'de dogru
+    yansımasi icin her sorguda DB'den taze okunur. Sorgu kucuk
+    (11 site x N hafta, <100 satir tipik), performans etkisi yok.
+    Onceki cache'lenmis versiyon 'ratio degistirilip yeniden
+    upload' senaryosunda stale kalıp Excel'de eski dolu adet
+    gosteriyordu.
     """
     try:
         with get_session() as s:
