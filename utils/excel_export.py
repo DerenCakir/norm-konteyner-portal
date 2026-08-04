@@ -958,6 +958,23 @@ def _aggregate_all_weeks(
 
     tonnage_seen: set[tuple[str, str, str]] = set()
 
+    # BUG FIX (double counting): Eger bir (site, week) icin
+    # manual_site_aggregates satiri varsa (yani admin Excel'den tonaj
+    # yukladi), ONE kaynak olarak KABUL edilir. count_submissions'da
+    # olsa dahi actual_tonnage ve full_count o (site, week) icin
+    # SUM'a katilmaz -- manual_aggs authoritative.
+    # Ornegin MS Vida: portal formundan eski uygulamada tonaj girilmis,
+    # sonra show_tonnage=False yapildi, ama eski cs.actual_tonnage veri
+    # kaldı. Excel upload manual_aggs'e yeni tonaj yazdı. Aggregation
+    # ikisini toplayip 2x gosteriyordu.
+    _manual_override_pairs: set[tuple[str, str]] = set()
+    if manual_aggs:
+        for _m in manual_aggs:
+            _w = _m.get("week_iso") or ""
+            _s = _m.get("site") or ""
+            if _w and _s:
+                _manual_override_pairs.add((_w, _s))
+
     for r in all_rows:
         week = r.get("Hafta") or ""
         site = r.get("Üretim Yeri") or ""
@@ -976,17 +993,28 @@ def _aggregate_all_weeks(
         # Toplam Konteyner = Boş + WIP + Dolu + Hurda + Rondela.
         bdh_v = empty_v + wip_v + full_v + scrap_v + rondela_v
 
+        # Manual override kontrolu: bu (site, week) manual_aggs'te
+        # varsa full ve tonaj DAHIL ETMIYORUZ (double count engeli).
+        # Diger alanlar (empty, wip, kanban, scrap, rondela)
+        # count_submissions'da anlamli olmaya devam eder.
+        _has_manual_here = (week, site) in _manual_override_pairs
+        _full_add = 0 if _has_manual_here else full_v
+        _tonnage_include = not _has_manual_here
+
         wt = weekly_totals.setdefault(week, {
             "empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0,
             "rondela": 0, "bdh": 0, "tonnage": 0.0,
         })
         wt["empty"] += empty_v
         wt["wip"] += wip_v
-        wt["full"] += full_v
+        wt["full"] += _full_add
         wt["kanban"] += kanban_v
         wt["scrap"] += scrap_v
         wt["rondela"] = wt.get("rondela", 0) + rondela_v
-        wt["bdh"] += bdh_v
+        # bdh haric full: manual varsa cs.full skip, ama bdh_v hesabı
+        # yukarida full_v ile yapildi -> _bdh_add ile duzelt
+        _bdh_add = empty_v + wip_v + _full_add + scrap_v + rondela_v
+        wt["bdh"] += _bdh_add
 
         ws_agg = weekly_site.setdefault(week, {}).setdefault(site, {
             "empty": 0, "wip": 0, "full": 0, "kanban": 0, "scrap": 0,
@@ -994,20 +1022,20 @@ def _aggregate_all_weeks(
         })
         ws_agg["empty"] += empty_v
         ws_agg["wip"] += wip_v
-        ws_agg["full"] += full_v
+        ws_agg["full"] += _full_add
         ws_agg["kanban"] += kanban_v
         ws_agg["scrap"] += scrap_v
         ws_agg["rondela"] = ws_agg.get("rondela", 0) + rondela_v
-        ws_agg["bdh"] += bdh_v
+        ws_agg["bdh"] += _bdh_add
 
         if color and color not in seen_colors:
             seen_colors.add(color)
             color_order.append(color)
         wc = weekly_color.setdefault(week, {})
-        wc[color] = wc.get(color, 0) + bdh_v
+        wc[color] = wc.get(color, 0) + _bdh_add
 
         key = (week, site, dept)
-        if key not in tonnage_seen:
+        if key not in tonnage_seen and _tonnage_include:
             tonnage_seen.add(key)
             t = r.get("Gerçekleşen Tonaj")
             if t is not None:
