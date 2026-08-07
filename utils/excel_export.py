@@ -503,7 +503,7 @@ def _build_uretim_yeri_kirilim_sheet(
 
     headers = [
         "Üretim Yeri", "Bölüm",
-        "Boş", "Proseste", "Dolu", "Dolu İçindeki Kanban", "Hurdaya ayrılacak",
+        "Boş", "Proseste", "Dolu",
         "Rondela",
         "Toplam Konteyner", "Toplam Tonaj",
         "Durum", "Giren Kullanıcı", "Sayım Gönderim Zamanı",
@@ -549,7 +549,7 @@ def _build_uretim_yeri_kirilim_sheet(
         ton = agg["tonnage"]
         values = [
             site, dept,
-            agg["empty"], agg["wip"], agg["full"], agg["kanban"], agg["scrap"],
+            agg["empty"], agg["wip"], agg["full"],
             agg.get("rondela", 0),
             bdh, ton,
             _STATUS_LABEL.get(agg["status"], agg["status"] or ""),
@@ -575,12 +575,11 @@ def _build_uretim_yeri_kirilim_sheet(
             cell.border = _BORDER
             if fill:
                 cell.fill = fill
-            # 3=Boş, 4=WIP, 5=Dolu, 6=Kanban, 7=Hurda, 8=Rondela,
-            # 9=Toplam, 10=Tonaj
-            if col_idx in (3, 4, 5, 6, 7, 8, 9, 10):
+            # 3=Boş, 4=WIP, 5=Dolu, 6=Rondela, 7=Toplam, 8=Tonaj
+            if col_idx in (3, 4, 5, 6, 7, 8):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 11:  # Durum
+            elif col_idx == 9:  # Durum
                 cell.alignment = _CENTER
                 if is_late:
                     cell.font = Font(bold=True, color="92400E")
@@ -592,7 +591,7 @@ def _build_uretim_yeri_kirilim_sheet(
         ws.append([
             "TOPLAM", "",
             totals["empty"], totals["wip"], totals["full"],
-            totals["kanban"], totals["scrap"], totals["rondela"],
+            totals["rondela"],
             totals["bdh"], totals["tonnage"],
             "", "", "",
         ])
@@ -601,7 +600,7 @@ def _build_uretim_yeri_kirilim_sheet(
             cell.fill = _TOTAL_FILL
             cell.font = _TOTAL_FONT
             cell.border = _BORDER
-            if col_idx in (3, 4, 5, 6, 7, 8, 9, 10):
+            if col_idx in (3, 4, 5, 6, 7, 8):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
             elif col_idx == 1:
@@ -643,7 +642,7 @@ def _build_uretim_yeri_ozeti_sheet(
             ratio_by_name[name] = float(r)
     headers = [
         "Üretim Yeri",
-        "Boş", "Proseste", "Dolu", "Dolu içindeki Kanban", "Hurdaya ayrılacak",
+        "Boş", "Proseste", "Dolu",
         "Rondela",
         "Toplam Konteyner", "Toplam (%)",
         "Hedef Tonaj",
@@ -653,9 +652,9 @@ def _build_uretim_yeri_ozeti_sheet(
         "Dolu Konteyner Başına Yük (ton/konteyner)",
     ]
     ws.append(headers)
-    # Uzun başlıklar (Dolu içindeki Kanban, Hurdaya ayrılacak, Toplam
-    # Konteyner, Dolu Konteyner Başına Yük …) tek satıra sığmıyor —
-    # wrap_text + yükseltilmiş satır yüksekliği ile iki satıra kırılıyor.
+    # Uzun başlıklar (Toplam Konteyner, Hedef Konteyner, Dolu Konteyner
+    # Başına Yük …) tek satıra sığmıyor — wrap_text + yükseltilmiş
+    # satır yüksekliği ile iki satıra kırılıyor.
     _style_header_row(ws, len(headers), wrap_text=True, row_height=42)
 
     site_aggs: dict[str, dict[str, Any]] = {}
@@ -704,7 +703,7 @@ def _build_uretim_yeri_ozeti_sheet(
 
         values = [
             site,
-            s["empty"], s["wip"], s["full"], s["kanban"], s["scrap"],
+            s["empty"], s["wip"], s["full"],
             s.get("rondela", 0),
             bdh, pct,
             hedef_ton,
@@ -728,19 +727,19 @@ def _build_uretim_yeri_ozeti_sheet(
             cell.border = _BORDER
             if zebra:
                 cell.fill = zebra
-            # 2=Boş 3=WIP 4=Dolu 5=Kanban 6=Hurda 7=Rondela 8=Toplam
-            # 10=Hedef Tonaj 11=Hedef Konteyner 12=Toplam Tonaj
-            # 13=Sapma% 14=ton/kont
-            if col_idx in (2, 3, 4, 5, 6, 7, 8):
+            # 2=Boş 3=WIP 4=Dolu 5=Rondela 6=Toplam Konteyner
+            # 7=Toplam % 8=Hedef Tonaj 9=Hedef Konteyner
+            # 10=Toplam Tonaj 11=Sapma% 12=ton/kont
+            if col_idx in (2, 3, 4, 5, 6):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 9:  # Toplam %
+            elif col_idx == 7:  # Toplam %
                 cell.alignment = _RIGHT
                 cell.number_format = "0.0%"
-            elif col_idx in (10, 11, 12):  # Hedef Tonaj, Hedef Kont, Toplam Tonaj
+            elif col_idx in (8, 9, 10):  # Hedef Tonaj, Hedef Kont, Toplam Tonaj
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 13:  # Sapma %
+            elif col_idx == 11:  # Sapma %
                 cell.alignment = _RIGHT
                 if sapma is not None and sapma != 0:
                     cell.number_format = "\"+\"0.0%;\"-\"0.0%"
@@ -750,7 +749,7 @@ def _build_uretim_yeri_ozeti_sheet(
                     )
                 else:
                     cell.number_format = "0.0%"
-            elif col_idx == 14:  # ton/konteyner
+            elif col_idx == 12:  # ton/konteyner
                 cell.alignment = _RIGHT
                 cell.number_format = "0.00"
             else:
@@ -785,7 +784,7 @@ def _build_uretim_yeri_ozeti_sheet(
         ws.append([
             "TOPLAM",
             totals["empty"], totals["wip"], totals["full"],
-            totals["kanban"], totals["scrap"], totals["rondela"],
+            totals["rondela"],
             totals["bdh"], 1.0,
             total_hedef,
             total_hedef_kont,
@@ -798,13 +797,13 @@ def _build_uretim_yeri_ozeti_sheet(
             cell.fill = _TOTAL_FILL
             cell.font = _TOTAL_FONT
             cell.border = _BORDER
-            if col_idx in (2, 3, 4, 5, 6, 7, 8, 10, 11, 12):
+            if col_idx in (2, 3, 4, 5, 6, 8, 9, 10):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 9:
+            elif col_idx == 7:
                 cell.alignment = _RIGHT
                 cell.number_format = "0.0%"
-            elif col_idx == 13:  # Sapma %
+            elif col_idx == 11:  # Sapma %
                 cell.alignment = _RIGHT
                 if total_sapma is not None and total_sapma != 0:
                     cell.number_format = "\"+\"0.0%;\"-\"0.0%"
@@ -816,7 +815,7 @@ def _build_uretim_yeri_ozeti_sheet(
                     )
                 else:
                     cell.number_format = "0.0%"
-            elif col_idx == 14:  # ton/konteyner
+            elif col_idx == 12:  # ton/konteyner
                 cell.alignment = _RIGHT
                 cell.number_format = "0.00"
             elif col_idx == 1:
@@ -829,10 +828,12 @@ def _build_uretim_yeri_ozeti_sheet(
     # _autofit header uzunluğuna göre 40+'a fişlemesin diye
     # küçültüyoruz — başlık iki satıra kırılıyor, hücre değerleri
     # zaten kısa.
-    ws.column_dimensions["E"].width = 13
+    # F=Toplam Konteyner, H=Hedef Tonaj, I=Hedef Konteyner,
+    # L=Dolu Konteyner Başına Yük.
     ws.column_dimensions["F"].width = 13
-    ws.column_dimensions["G"].width = 13
-    ws.column_dimensions["J"].width = 14
+    ws.column_dimensions["H"].width = 13
+    ws.column_dimensions["I"].width = 13
+    ws.column_dimensions["L"].width = 14
 
 
 def _build_renk_ozeti_sheet(wb: Workbook, rows: list[dict[str, Any]]) -> None:
