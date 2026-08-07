@@ -3523,6 +3523,7 @@ def _build_ana_data_sheet(
         "Hafta", "Hafta Aralığı", "Ay", "Yıl",
         "Üretim Yeri", "Bölüm", "Renk",
         "Boş", "Proseste", "Dolu", "Kanban", "Hurdaya Ayrılacak",
+        "Rondela",
         "Toplam Konteyner",
         "Durum", "Giren Kullanıcı",
         "Sayım Tarihi", "Sayım Saati", "Gönderim Zamanı",
@@ -3545,7 +3546,10 @@ def _build_ana_data_sheet(
         wip_v = int(row.get("Proseste") or 0)
         dolu_v = int(row.get("Dolu") or 0)
         hurda_v = int(row.get("Hurda") or 0)
-        bdh_v = bos_v + wip_v + dolu_v + hurda_v
+        rondela_v = int(row.get("Rondela") or 0)
+        # Rondela fiziksel konteyner sayimina dahil (diger sheetlerde de
+        # boyle) — kullanicinin M1 sikayetini gideren duzeltme.
+        bdh_v = bos_v + wip_v + dolu_v + hurda_v + rondela_v
 
         values = [
             week_iso, hafta_araligi, ay, yil if yil else "",
@@ -3553,6 +3557,7 @@ def _build_ana_data_sheet(
             row.get("Renk", ""),
             row.get("Boş"), row.get("Proseste"),
             row.get("Dolu"), row.get("Kanban"), row.get("Hurda"),
+            row.get("Rondela"),
             bdh_v,
             _STATUS_LABEL.get(row.get("Durum"), row.get("Durum", "")),
             row.get("Giren Kullanıcı", ""),
@@ -3566,11 +3571,12 @@ def _build_ana_data_sheet(
             cell.border = _BORDER
             if fill:
                 cell.fill = fill
-            # 8=Boş, 9=WIP, 10=Dolu, 11=Kanban, 12=Hurda, 13=Toplam
-            if col_idx in (8, 9, 10, 11, 12, 13):
+            # 8=Boş, 9=WIP, 10=Dolu, 11=Kanban, 12=Hurda, 13=Rondela,
+            # 14=Toplam
+            if col_idx in (8, 9, 10, 11, 12, 13, 14):
                 cell.alignment = _RIGHT
                 cell.number_format = "#,##0"
-            elif col_idx == 14:  # Durum
+            elif col_idx == 15:  # Durum
                 cell.alignment = _CENTER
                 if is_late:
                     cell.font = Font(bold=True, color="92400E")
