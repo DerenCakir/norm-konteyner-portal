@@ -3592,10 +3592,10 @@ def _build_dolu_yuk_ozeti_sheet(
 ) -> None:
     """Per-site weekly ton/Dolu Konteyner; weeks shown side by side.
 
-    Satırlar üretim yerleri, sütunlar haftalar (yeniden eskiye), her
+    Satırlar üretim yerleri, sütunlar haftalar (eskiden yeniye), her
     hücre o tesisin o haftaki ``tonaj / dolu konteyner`` oranını gösterir.
-    Son sütun tesis için tüm-hafta ağırlıklı ortalaması; alt satır
-    haftalık ağırlıklı ortalamaları + genel ortalamayı verir.
+    Alt satır haftalık ağırlıklı ortalamayı verir. (Ortalama sütunu
+    M10 ile kaldırıldı.)
     """
     ws = wb.create_sheet("Dolu Konteyner Başına Yük Özeti")
 
@@ -3624,24 +3624,20 @@ def _build_dolu_yuk_ozeti_sheet(
         ws["A1"].font = Font(italic=True, color="64748B")
         return
 
-    headers = ["Üretim Yeri"] + [_short_week(w) for w in weeks] + ["Ortalama"]
+    headers = ["Üretim Yeri"] + [_short_week(w) for w in weeks]
     ws.append(headers)
     _style_header_row(ws, len(headers))
 
     for idx, site in enumerate(all_sites, start=2):
         row_vals: list[Any] = [site]
-        sum_ton, sum_full = 0.0, 0
         for w in weeks:
             sd = weekly_site.get(w, {}).get(site)
             full_v = int(sd.get("full", 0)) if sd else 0
             ton_v = float(sd.get("tonnage", 0.0)) if sd else 0.0
             if full_v:
                 row_vals.append(ton_v / full_v)
-                sum_ton += ton_v
-                sum_full += full_v
             else:
                 row_vals.append(None)
-        row_vals.append((sum_ton / sum_full) if sum_full else None)
         ws.append(row_vals)
 
         zebra = _ZEBRA_FILL if idx % 2 == 0 else None
@@ -3656,10 +3652,10 @@ def _build_dolu_yuk_ozeti_sheet(
                 cell.alignment = _RIGHT
                 cell.number_format = "0.00"
 
-    # TOPLAM satırı — haftalık ve genel ağırlıklı ortalama.
+    # TOPLAM satırı — haftalık ağırlıklı ortalama (Ortalama sütunu M10
+    # ile kaldırıldı).
     total_row_idx = ws.max_row + 1
     total_vals: list[Any] = ["TOPLAM"]
-    all_ton, all_full = 0.0, 0
     for w in weeks:
         week_ton, week_full = 0.0, 0
         for site in all_sites:
@@ -3668,9 +3664,6 @@ def _build_dolu_yuk_ozeti_sheet(
                 week_ton += float(sd.get("tonnage", 0.0))
                 week_full += int(sd.get("full", 0))
         total_vals.append((week_ton / week_full) if week_full else None)
-        all_ton += week_ton
-        all_full += week_full
-    total_vals.append((all_ton / all_full) if all_full else None)
     ws.append(total_vals)
 
     for col_idx in range(1, len(total_vals) + 1):
@@ -3690,7 +3683,7 @@ def _build_dolu_yuk_ozeti_sheet(
     ws.freeze_panes = None
     _autofit(ws, headers)
     ws.column_dimensions["A"].width = 22
-    n_cols = 1 + len(weeks) + 1
+    n_cols = 1 + len(weeks)
     for c in range(2, n_cols + 1):
         ws.column_dimensions[get_column_letter(c)].width = 8
 
