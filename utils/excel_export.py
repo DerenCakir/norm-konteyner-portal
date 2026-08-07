@@ -1536,14 +1536,17 @@ def _build_ozet_charts_sheet(
     # ================================================================
     # Chart 1 — Clustered column: weekly total split by category
     #   X = weeks
-    #   Series order: Boş, Dolu, Dolu İçindeki Kanban, Hurda (matches
+    #   Series order: Boş, Proseste, Dolu, Hurda, Rondela (matches
     #   the per-week tables elsewhere in the workbook)
     # ================================================================
-    # Yeni 'Toplam Konteyner' tanımı: Boş + WIP + Dolu + Hurda. Kanban
-    # hâlâ Dolu'nun alt kümesi olduğu için bu grafikte ayrı bir
-    # kategori değil — 4 ayrık kategori stackleniyor.
+    # 'Toplam Konteyner' tanımı: Boş + WIP + Dolu + Hurda + Rondela
+    # (M2 ile Rondela eklendi). Kanban hâlâ Dolu'nun alt kümesi olduğu
+    # için ayrı kategori değil — 5 ayrık kategori stackleniyor.
     t1_col = 1
-    t1_headers = ["Hafta", "Boş", "Proseste", "Dolu", "Hurdaya Ayrılacak", "Toplam"]
+    t1_headers = [
+        "Hafta", "Boş", "Proseste", "Dolu", "Hurdaya Ayrılacak",
+        "Rondela", "Toplam",
+    ]
     for j, h in enumerate(t1_headers):
         data_ws.cell(row=1, column=t1_col + j, value=h)
     for i, w in enumerate(weeks):
@@ -1555,20 +1558,22 @@ def _build_ozet_charts_sheet(
         # chart data labels (which Excel pulls via sourceLinked=true)
         # inherit the format. See _value_only_labels() for rationale.
         for col_offset, key in enumerate(
-            ["empty", "wip", "full", "scrap"], start=1
+            ["empty", "wip", "full", "scrap", "rondela"], start=1
         ):
             cell = data_ws.cell(
                 row=2 + i, column=t1_col + col_offset, value=wt.get(key, 0),
             )
             cell.number_format = "[$-tr-TR]#,##0"
-        # Toplam = Boş + WIP + Dolu + Hurda. Aynı stack yüksekliği,
-        # dolayısıyla overlay etiketi stack tepesine birebir oturur.
+        # Toplam = Boş + WIP + Dolu + Hurda + Rondela. Aynı stack
+        # yüksekliği, dolayısıyla overlay etiketi stack tepesine
+        # birebir oturur.
         total = (
             wt.get("empty", 0) + wt.get("wip", 0)
             + wt.get("full", 0) + wt.get("scrap", 0)
+            + wt.get("rondela", 0)
         )
         total_cell = data_ws.cell(
-            row=2 + i, column=t1_col + 5, value=total
+            row=2 + i, column=t1_col + 6, value=total
         )
         total_cell.number_format = "[$-tr-TR]#,##0"
     t1_last = 1 + len(weeks)
@@ -1584,7 +1589,7 @@ def _build_ozet_charts_sheet(
     data_ref = Reference(
         data_ws,
         min_col=t1_col + 1, min_row=1,
-        max_col=t1_col + 4, max_row=t1_last,
+        max_col=t1_col + 5, max_row=t1_last,
     )
     chart1.add_data(data_ref, titles_from_data=True)
     cats_ref = Reference(data_ws, min_col=t1_col, min_row=2, max_row=t1_last)
@@ -1619,8 +1624,8 @@ def _build_ozet_charts_sheet(
     # kalıyor. min_row=2 header satırını atlıyor.
     total_ref = Reference(
         data_ws,
-        min_col=t1_col + 5, min_row=2,
-        max_col=t1_col + 5, max_row=t1_last,
+        min_col=t1_col + 6, min_row=2,
+        max_col=t1_col + 6, max_row=t1_last,
     )
     total_line.add_data(total_ref, titles_from_data=False)
     total_line.set_categories(cats_ref)
@@ -1650,7 +1655,7 @@ def _build_ozet_charts_sheet(
     # stack plus the data tables in the other sheets still surface
     # the Hurda number when the user needs it.
     # Bar series order matches the stack bottom-up: 0=Boş, 1=WIP,
-    # 2=Dolu, 3=Hurdaya Ayrılacak.
+    # 2=Dolu, 3=Hurdaya Ayrılacak, 4=Rondela.
     if len(chart1.series) >= 4:
         chart1.series[3].dLbls = DataLabelList(delete=True)
 
