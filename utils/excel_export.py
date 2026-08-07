@@ -649,7 +649,7 @@ def _build_uretim_yeri_ozeti_sheet(
         "Hedef Tonaj",
         "Hedef Konteyner",
         "Toplam Tonaj",
-        "Sapma (%)",
+        "Tonaj Sapma %",
         "Dolu Konteyner Başına Yük (ton/konteyner)",
     ]
     ws.append(headers)
@@ -3122,7 +3122,7 @@ def _build_uretim_yeri_karsilastirma_sheet(
         "Hedef Tonaj",
         "Hedef Konteyner",
         "Toplam Tonaj",
-        "Sapma (%)",
+        "Tonaj Sapma %",
         "Dolu Konteyner Başına Yük",
     ]
     cols_per_table = len(sub_headers)
@@ -4796,16 +4796,17 @@ def build_week_excel(
     )
     _build_renk_ozeti_sheet(wb, rows)
     _build_dolu_yuk_ozeti_sheet(wb, all_weeks_rows or [], manual_aggs or [])
+    # Dolu Konteyner Sayısı Özeti — Yük Özeti'nin hemen saginda (M14).
+    # Basit tablo — chart yok, pipeline riski minimum.
+    _build_dolu_konteyner_ozeti_sheet(
+        wb, all_weeks_rows or [], manual_aggs or [],
+    )
     # Yari Mamul Tonaji Ozeti — hedef verildiyse ana grafik ve
     # per-tesis grafiklerine mavi/yesil hedef line overlay eklenir.
     _build_yari_mamul_tonaj_ozeti_sheet(
         wb, all_weeks_rows or [], manual_aggs or [],
         targets_by_week_site=targets_by_week_site,
         site_labels=site_labels,
-    )
-    # Basit tablo — chart yok, pipeline riski minimum.
-    _build_dolu_konteyner_ozeti_sheet(
-        wb, all_weeks_rows or [], manual_aggs or [],
     )
     _build_uretim_yeri_karsilastirma_sheet(
         wb, all_weeks_rows or [], manual_aggs or [],
