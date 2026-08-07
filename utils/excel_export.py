@@ -614,12 +614,20 @@ def _build_uretim_yeri_kirilim_sheet(
 
 def _build_uretim_yeri_ozeti_sheet(
     wb: Workbook,
-    dept_aggs: dict[tuple[str, str], dict[str, Any]],
+    all_weeks_rows: list[dict[str, Any]],
+    manual_aggs: list[dict[str, Any]] | None,
+    week_iso: str | None,
     week_targets: dict[int, float] | None = None,
     site_labels: dict[int, tuple[str, str]] | None = None,
     ratios_by_site_id: dict[int, float] | None = None,
 ) -> None:
     """Sheet 3: per-site aggregate with percentage and ton/dolu KPI.
+
+    M3/M4/M5 fix: portal (count_submissions) + Excel upload
+    (manual_site_aggregates) verileri _aggregate_all_weeks ile
+    birleştirilir. Manual upload için full_count zaten
+    ceil(tonaj/oran) ile hesaplanmıştır — Karşılaştırma sheet ile
+    aynı sayılar. Sadece ``week_iso`` haftası için tablo üretilir.
 
     ``week_targets`` + ``site_labels`` verilirse 'Hedef Tonaj' + 'Sapma%'
     sütunları eklenir. ``ratios_by_site_id`` verilirse ayrıca 'Hedef
@@ -657,23 +665,25 @@ def _build_uretim_yeri_ozeti_sheet(
     # satır yüksekliği ile iki satıra kırılıyor.
     _style_header_row(ws, len(headers), wrap_text=True, row_height=42)
 
+    # M3/M4/M5 fix: seçili haftanın portal + manual birleşik
+    # agregasyonu. weekly_site[week][site] dict'i _aggregate_all_weeks
+    # tarafından zaten portal (cs) + Excel upload (manual_aggs)
+    # kaynaklarını doğru birleştiriyor (double-count önlemesiyle).
+    _, _weekly_site, _, _, _ = _aggregate_all_weeks(
+        all_weeks_rows or [], manual_aggs or [],
+    )
+    _site_dict = _weekly_site.get(week_iso, {}) if week_iso else {}
     site_aggs: dict[str, dict[str, Any]] = {}
-    for (site, _dept), agg in dept_aggs.items():
-        s = site_aggs.setdefault(site, {
-            "empty": 0, "wip": 0, "full": 0, "kanban": 0,
-            "scrap": 0, "rondela": 0, "tonnage": 0.0,
-        })
-        s["empty"] += int(agg["empty"] or 0)
-        s["wip"] += int(agg.get("wip") or 0)
-        s["full"] += int(agg["full"] or 0)
-        s["kanban"] += int(agg["kanban"] or 0)
-        s["scrap"] += int(agg["scrap"] or 0)
-        s["rondela"] = s.get("rondela", 0) + int(agg.get("rondela") or 0)
-        if agg["tonnage"] is not None:
-            try:
-                s["tonnage"] += float(agg["tonnage"])
-            except (TypeError, ValueError):
-                pass
+    for _site_name, _agg in _site_dict.items():
+        site_aggs[_site_name] = {
+            "empty":   int(_agg.get("empty", 0) or 0),
+            "wip":     int(_agg.get("wip", 0) or 0),
+            "full":    int(_agg.get("full", 0) or 0),
+            "kanban":  int(_agg.get("kanban", 0) or 0),
+            "scrap":   int(_agg.get("scrap", 0) or 0),
+            "rondela": int(_agg.get("rondela", 0) or 0),
+            "tonnage": float(_agg.get("tonnage", 0.0) or 0.0),
+        }
 
     grand_total_bdh = sum(
         s["empty"] + s["wip"] + s["full"] + s["scrap"] + s.get("rondela", 0)
@@ -4787,14 +4797,18 @@ def build_week_excel(
         wb, all_weeks_rows or [], manual_aggs or [],
     )
     _build_renk_kirilim_sheet(wb, rows)
-    dept_aggs = _build_uretim_yeri_kirilim_sheet(wb, rows)
+    # Kırılım sheet'i portal (count_submissions) bölüm bazlı veriyi
+    # gösterir; return değeri artık kullanılmıyor (Özet sheet'i M3/M4/M5
+    # fix'i sonrası kendi agregasyonunu yapıyor).
+    _build_uretim_yeri_kirilim_sheet(wb, rows)
     # Uretim Yeri Ozeti'ne bu hafta gecerli hedefleri geciriyoruz
     # (Hedef Tonaj ve Sapma % sütunlari).
     _selected_week_targets = None
     if targets_by_week_site:
         _selected_week_targets = targets_by_week_site.get(week_iso)
     _build_uretim_yeri_ozeti_sheet(
-        wb, dept_aggs,
+        wb,
+        all_weeks_rows or [], manual_aggs or [], week_iso,
         week_targets=_selected_week_targets,
         site_labels=site_labels,
         ratios_by_site_id=ratios_by_site_id,
