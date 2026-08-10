@@ -1907,7 +1907,10 @@ def _build_ozet_charts_sheet(
     #   Data column layout: each row is one week so the chart resolves
     #   to ONE series with N points (not N series with 1 point each).
     # ================================================================
-    t2_col = 7  # well clear of table 1
+    # M2 sonrası Chart 1 col 1-7 kullaniyor (Rondela + Toplam) -- t2 col
+    # 7'den baslarsa Chart 2 "Hafta" bashligi Chart 1 Toplam degerlerini
+    # overwrite ediyor. col 8'e kaydirildi (t3_col=10 hala bos).
+    t2_col = 8
     data_ws.cell(row=1, column=t2_col, value="Hafta")
     data_ws.cell(row=1, column=t2_col + 1, value="Ton / Dolu Konteyner")
     # Use full_weeks (excludes manual-only entries) so W17 etc. don't
