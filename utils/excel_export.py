@@ -191,46 +191,58 @@ def _set_line_series_color(series, hex_code: str) -> None:
 # Dashboard — one-page summary view (KPI cards + mini chart + top sites)
 # ---------------------------------------------------------------------------
 
-def _compute_week_kpis(rows: list[dict[str, Any]]) -> dict[str, Any]:
-    """Aggregate the per-(site×dept×color) rows down to the KPI numbers
-    surfaced on the Dashboard (matches the portal Analiz page logic).
+def _compute_week_kpis(
+    rows: list[dict[str, Any]],
+    manual_aggs: list[dict[str, Any]] | None = None,
+    week_iso: str | None = None,
+) -> dict[str, Any]:
+    """Aggregate the per-(site×dept×color) rows + manual_aggs down to the
+    KPI numbers surfaced on the Dashboard.
+
+    manual_aggs + week_iso verilirse Excel upload verisi de dahil edilir
+    (show_tonnage=False olan tesisler icin dolu/tonaj burdan gelir).
+    Aksi halde sadece portal rows toplanir (backwards compat).
     """
-    total_empty = sum(int(r.get("Boş") or 0) for r in rows)
-    total_wip = sum(int(r.get("Proseste") or 0) for r in rows)
-    total_full = sum(int(r.get("Dolu") or 0) for r in rows)
-    total_kanban = sum(int(r.get("Kanban") or 0) for r in rows)
-    total_scrap = sum(int(r.get("Hurda") or 0) for r in rows)
-    total_rondela = sum(int(r.get("Rondela") or 0) for r in rows)
+    # Portal + manual birlesik agregasyon — _aggregate_all_weeks zaten
+    # double-count korumasi ile portal ve manual kaynaklari birlestiriyor.
+    manual_this_week = (
+        [m for m in (manual_aggs or []) if m.get("week_iso") == week_iso]
+        if week_iso else []
+    )
+    _weekly_totals, _weekly_site, _, _, _ = _aggregate_all_weeks(
+        rows, manual_this_week,
+    )
+    if week_iso and week_iso in _weekly_totals:
+        wt = _weekly_totals[week_iso]
+        ws_dict = _weekly_site.get(week_iso, {})
+    elif _weekly_totals:
+        # week_iso verilmediyse (backwards compat) tek hafta bekleniyor.
+        wt = next(iter(_weekly_totals.values()))
+        ws_dict = next(iter(_weekly_site.values()), {})
+    else:
+        wt, ws_dict = {}, {}
+
+    total_empty = int(wt.get("empty", 0) or 0)
+    total_wip = int(wt.get("wip", 0) or 0)
+    total_full = int(wt.get("full", 0) or 0)
+    total_kanban = int(wt.get("kanban", 0) or 0)
+    total_scrap = int(wt.get("scrap", 0) or 0)
+    total_rondela = int(wt.get("rondela", 0) or 0)
     # Toplam Konteyner = Boş + WIP + Dolu + Hurda + Rondela.
     total_containers = (
         total_empty + total_wip + total_full + total_scrap + total_rondela
     )
+    total_tonnage = float(wt.get("tonnage", 0.0) or 0.0)
 
-    # Tonnage: once per submission_id (color rows share the submission tonnage).
-    seen_subs: set[int] = set()
-    total_tonnage = 0.0
-    site_tonnage: dict[str, float] = {}
-    for r in rows:
-        sub_id = r.get("Submission ID")
-        if sub_id is None or sub_id in seen_subs:
-            continue
-        seen_subs.add(sub_id)
-        ton = r.get("Gerçekleşen Tonaj")
-        if ton is None:
-            continue
-        try:
-            ton_f = float(ton)
-        except (TypeError, ValueError):
-            continue
-        total_tonnage += ton_f
-        site = r.get("Üretim Yeri") or ""
-        site_tonnage[site] = site_tonnage.get(site, 0.0) + ton_f
-
-    # Per-site full container counts (across all colors).
-    site_full: dict[str, int] = {}
-    for r in rows:
-        site = r.get("Üretim Yeri") or ""
-        site_full[site] = site_full.get(site, 0) + int(r.get("Dolu") or 0)
+    # Per-site full/tonnage — ratio hesabi icin _weekly_site kullaniyoruz
+    # (portal + manual birlesik). Manual override edilen tesislerde full
+    # zaten ceil(tonaj/oran) ile hesaplanmis oluyor.
+    site_full: dict[str, int] = {
+        s: int(a.get("full", 0) or 0) for s, a in ws_dict.items()
+    }
+    site_tonnage: dict[str, float] = {
+        s: float(a.get("tonnage", 0.0) or 0.0) for s, a in ws_dict.items()
+    }
 
     # Ortalama Dolu Konteyner Ağırlığı: average of per-site (ton/full) ratios.
     site_ratios: list[float] = []
@@ -1501,7 +1513,14 @@ def _build_ozet_charts_sheet(
         latest_rows_only = [
             r for r in all_rows if r.get("Hafta") == latest_week
         ]
-        latest_kpis = _compute_week_kpis(latest_rows_only)
+        # manual_aggs + week_iso -> KPI'lar Excel upload verisini de
+        # dahil eder (show_tonnage=False olan tesisler icin dolu/tonaj
+        # burdan gelir). Yeni liste Madde 6'nin fix'i.
+        latest_kpis = _compute_week_kpis(
+            latest_rows_only,
+            manual_aggs=manual_aggs,
+            week_iso=latest_week,
+        )
 
         # Subtitle: which week the KPIs reflect.
         ws.merge_cells("A2:X2")
