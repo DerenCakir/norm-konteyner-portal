@@ -293,6 +293,7 @@ def _kpi_card_excel(
         "amber":  "B45309",
         "rose":   "BE123C",
         "slate":  "334155",
+        "purple": "7C3AED",
     }.get(tone, "1F3A8A")
 
     # Label band — kompakt
@@ -1909,15 +1910,22 @@ def _build_ozet_charts_sheet(
             ),
             tone="blue",
         )
-        # Hurda kartı — Toplam = Boş + Proseste + Dolu + Hurda olduğu
-        # için Hurda da panelde görünmeli; aksi takdirde dört kartın
-        # toplamı Toplam'a denk gelmiyor.
+        # Hurda kartı — Toplam = Boş + Proseste + Dolu + Hurda + Rondela
+        # olduğu için Hurda ve Rondela da panelde görünmeli; aksi takdirde
+        # beş kartın toplamı Toplam'a denk gelmiyor.
         _kpi_card_excel(
             ws, row=chart1_anchor_row + 16, col=19, width=2,
             label="Hurdaya Ayrılacak",
             value=_fmt_int_tr(latest_kpis["scrap"]),
             sub="Kullanım dışı",
             tone="rose",
+        )
+        _kpi_card_excel(
+            ws, row=chart1_anchor_row + 20, col=19, width=2,
+            label="Rondela",
+            value=_fmt_int_tr(latest_kpis["rondela"]),
+            sub="Ayrı kategori",
+            tone="purple",
         )
 
     # ================================================================
