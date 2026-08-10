@@ -3112,9 +3112,14 @@ def _build_ozet_charts_sheet(
             )
             _mini("L", "Boş Konteyner", 4, "#,##0", "BE123C", site_empty_vals)
             _mini("P", "Dolu Konteyner", 5, "#,##0", "1F3A8A", site_full_vals)
+            # y_min=0.10 (Chart 2 ana ton/konteyner ile tutarli). Onceki
+            # 0.25 cap'i bazi tesislerde (ornek: Norm Civata Salihli W23=
+            # 0.2272, W26=0.2512) veriyi grafik alt sinirinin ALTINA
+            # dusuruyordu -> bar hic gorunmuyordu, "0 gibi" alginlanindi
+            # (yeni liste Madde 7).
             _mini(
                 "T", "Dolu Konteyner Tonajı", 6, "0.00", "F59E0B",
-                site_ton_per_dolu_vals, y_min=0.25,
+                site_ton_per_dolu_vals, y_min=0.10,
             )
 
 
