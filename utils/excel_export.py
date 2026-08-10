@@ -1748,7 +1748,10 @@ def _build_ozet_charts_sheet(
     _clean_axis(chart_rel.x_axis)
     _clean_axis(chart_rel.y_axis)
     chart_rel.y_axis.numFmt = "[$-tr-TR]#,##0"
-    chart_rel.y_axis.scaling.min = 0
+    # Sol Y ekseni (tonaj) 8.000'den basliyor -- tonaj tipik olarak
+    # 10K-14K bandinda seyrettigi icin 0'dan cizmek haftalik farkı
+    # goze carptirmiyordu (yeni liste Madde 4).
+    chart_rel.y_axis.scaling.min = 8000
     chart_rel.gapWidth = 30
     for s in chart_rel.series:
         gp = GraphicalProperties(solidFill="EA580C")
