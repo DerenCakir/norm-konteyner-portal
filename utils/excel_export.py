@@ -3146,6 +3146,16 @@ def _build_uretim_yeri_karsilastirma_sheet(
     """
     import math as _math
     ws = wb.create_sheet("Üretim Yeri Karşılaştırma")
+    # M11: W31 ve sonrasi tablolarda "Dolu Konteyner" sutunu amber
+    # (Excel upload'dan sabit oran ile hesaplanmis oldugunu gosterir).
+    _COMPUTED_FILL = PatternFill("solid", fgColor="FEF3C7")  # amber-100
+
+    def _is_computed_week(week_iso: str) -> bool:
+        try:
+            return int(week_iso.split("-W")[-1]) >= 31
+        except (ValueError, IndexError):
+            return False
+
     # Site adi -> id (hedef lookup icin)
     site_labels = site_labels or {}
     name_to_id = {name: sid for sid, (_c, name) in site_labels.items()}
@@ -3188,6 +3198,18 @@ def _build_uretim_yeri_karsilastirma_sheet(
     for j in range(2, cols_per_table + 1):
         ws.column_dimensions[get_column_letter(j)].width = 14
 
+    # M11 legend — A2'de tablo genisligi kadar merged
+    ws["A2"] = (
+        "⚠ Sarı vurgulu 'Dolu Konteyner' sütunu (W31 ve sonrası): "
+        "değer Excel upload'dan sabit oran hesabıyla belirlenmiştir."
+    )
+    ws["A2"].font = Font(italic=True, color="64748B", size=10)
+    ws["A2"].alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.merge_cells(
+        start_row=2, start_column=1,
+        end_row=2, end_column=cols_per_table,
+    )
+
     start_row = 3
     for w in weeks:
         # Week title row, merged across the table width. Manual-only
@@ -3213,12 +3235,19 @@ def _build_uretim_yeri_karsilastirma_sheet(
         wrap_center = Alignment(
             horizontal="center", vertical="center", wrap_text=True,
         )
+        _is_computed = _is_computed_week(w)
         for j, h in enumerate(sub_headers):
             cell = ws.cell(row=header_row, column=1 + j, value=h)
             cell.fill = _HEADER_FILL
             cell.font = _HEADER_FONT
             cell.alignment = wrap_center
             cell.border = _BORDER
+            # M11: W31+ tabloda Dolu Konteyner (j=3) baslik font italic
+            # (fill mavi header kalir, italic uyari isareti).
+            if _is_computed and j == 3:
+                cell.font = Font(
+                    bold=True, color="FFFFFF", italic=True, size=11,
+                )
 
         sites_in_week = weekly_site[w]
         grand_total_bdh = sum(
@@ -3269,6 +3298,9 @@ def _build_uretim_yeri_karsilastirma_sheet(
             for j, val in enumerate(values):
                 cell = ws.cell(row=r_offset, column=1 + j, value=val)
                 cell.border = _BORDER
+                # M11: W31+ tabloda Dolu Konteyner (j=3) amber fill.
+                if _is_computed and j == 3:
+                    cell.fill = _COMPUTED_FILL
                 if j == 0:
                     cell.alignment = _LEFT
                 elif j == 8:  # Toplam (%)
@@ -3326,7 +3358,11 @@ def _build_uretim_yeri_karsilastirma_sheet(
         ]
         for j, val in enumerate(total_values):
             cell = ws.cell(row=total_row, column=1 + j, value=val)
-            cell.fill = _TOTAL_FILL
+            # M11: W31+ TOPLAM'da Dolu Konteyner (j=3) amber, digerleri _TOTAL_FILL
+            if _is_computed and j == 3:
+                cell.fill = _COMPUTED_FILL
+            else:
+                cell.fill = _TOTAL_FILL
             cell.font = _TOTAL_FONT
             cell.border = _BORDER
             if j == 0:
@@ -3657,8 +3693,20 @@ def _build_dolu_yuk_ozeti_sheet(
     hücre o tesisin o haftaki ``tonaj / dolu konteyner`` oranını gösterir.
     Alt satır haftalık ağırlıklı ortalamayı verir. (Ortalama sütunu
     M10 ile kaldırıldı.)
+
+    **W31 ve sonrasi (M15):** dolu konteyner adedi bazi sitelerde Excel
+    upload'dan sabit oran hesabi ile belirleniyor -> ton/kont sabit
+    gorunur. Bu haftalarin sutunlari amber (FEF3C7) fill ile
+    isaretlenir, altta legend acikla.
     """
     ws = wb.create_sheet("Dolu Konteyner Başına Yük Özeti")
+    _COMPUTED_FILL = PatternFill("solid", fgColor="FEF3C7")  # amber-100
+
+    def _is_computed_week(week_iso: str) -> bool:
+        try:
+            return int(week_iso.split("-W")[-1]) >= 31
+        except (ValueError, IndexError):
+            return False
 
     if not all_rows and not manual_aggs:
         ws["A1"] = "Henüz veri yok."
@@ -3688,6 +3736,14 @@ def _build_dolu_yuk_ozeti_sheet(
     headers = ["Üretim Yeri"] + [_short_week(w) for w in weeks]
     ws.append(headers)
     _style_header_row(ws, len(headers))
+    # W31+ hafta baslik hucrelerine italic isaret (fill zaten mavi
+    # baslik ile carpistiyor, sadece font italic).
+    for j, w in enumerate(weeks, start=2):
+        if _is_computed_week(w):
+            hc = ws.cell(row=1, column=j)
+            hc.font = Font(
+                bold=True, color="FFFFFF", italic=True, size=11,
+            )
 
     for idx, site in enumerate(all_sites, start=2):
         row_vals: list[Any] = [site]
@@ -3705,7 +3761,14 @@ def _build_dolu_yuk_ozeti_sheet(
         for col_idx in range(1, len(row_vals) + 1):
             cell = ws.cell(row=idx, column=col_idx)
             cell.border = _BORDER
-            if zebra:
+            # M15: W31+ hafta sutunlari amber; digerlerinde zebra fill
+            if col_idx >= 2:
+                week_here = weeks[col_idx - 2]
+                if _is_computed_week(week_here):
+                    cell.fill = _COMPUTED_FILL
+                elif zebra:
+                    cell.fill = zebra
+            elif zebra:
                 cell.fill = zebra
             if col_idx == 1:
                 cell.alignment = _LEFT
@@ -3729,14 +3792,30 @@ def _build_dolu_yuk_ozeti_sheet(
 
     for col_idx in range(1, len(total_vals) + 1):
         cell = ws.cell(row=total_row_idx, column=col_idx)
-        cell.fill = _TOTAL_FILL
         cell.font = _TOTAL_FONT
         cell.border = _BORDER
+        # M15: TOPLAM'da W31+ hafta hucreleri amber, digerlerinde _TOTAL_FILL
+        if col_idx >= 2:
+            week_here = weeks[col_idx - 2]
+            cell.fill = _COMPUTED_FILL if _is_computed_week(week_here) else _TOTAL_FILL
+        else:
+            cell.fill = _TOTAL_FILL
         if col_idx == 1:
             cell.alignment = _RIGHT
         else:
             cell.alignment = _RIGHT
             cell.number_format = "0.00"
+
+    # M15 legend — 2 satir asagida (TOPLAM'in altinda).
+    note_row = ws.max_row + 2
+    ws.cell(
+        row=note_row, column=1,
+        value=(
+            "⚠ Sarı renkli sütunlar (W31 ve sonrası): dolu konteyner "
+            "sayısı sabit oran kabulü ile hesaplandığından bu haftalarda "
+            "ton/konteyner değeri sabit görünür."
+        ),
+    ).font = Font(italic=True, color="64748B", size=10)
 
     # freeze_panes kaldırıldı (hem 'B2' hem _style_header_row'un
     # verdiği 'A2') — altta çizilen grafiklerin görüntü alanını
