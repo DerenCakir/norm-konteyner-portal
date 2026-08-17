@@ -3278,10 +3278,11 @@ def _build_uretim_yeri_karsilastirma_sheet(
                     cell.alignment = _RIGHT
                     if sapma is not None and sapma != 0:
                         cell.number_format = "\"+\"0.0%;\"-\"0.0%"
-                        cell.font = Font(
-                            bold=True,
-                            color="047857" if sapma > 0 else "BE123C",
-                        )
+                        # M18: hedefin uzerinde (pozitif) = kirmizi/bold;
+                        # hedefin altinda (negatif) = notr siyah (font
+                        # ekleme yok). Hedefi gecmek istemiyoruz.
+                        if sapma > 0:
+                            cell.font = Font(bold=True, color="BE123C")
                     else:
                         cell.number_format = "0.0%"
                 elif j == 13:  # Dolu Konteyner Başına Yük
@@ -3305,9 +3306,10 @@ def _build_uretim_yeri_karsilastirma_sheet(
         total_row = header_row + 1 + len(sites_in_week)
         ton_per_total = (totals["tonnage"] / totals["full"]) if totals["full"] else 0
         total_hedef = totals["hedef"] if totals["hedef"] > 0 else None
+        # M17: TOPLAM satirinda Sapma % kaldirildi. Toplam sapma =
+        # toplam tonaj / toplam hedef; tesis-bazli sapmalarin
+        # ortalamasi degil -- farkli aggregation, yanilticiydi.
         total_sapma = None
-        if total_hedef and total_hedef > 0:
-            total_sapma = (totals["tonnage"] - total_hedef) / total_hedef
         total_hedef_kont = (
             totals["hedef_kont"] if _any_hk_wk else None
         )
@@ -3332,14 +3334,13 @@ def _build_uretim_yeri_karsilastirma_sheet(
             elif j == 8:  # Toplam %
                 cell.alignment = _RIGHT
                 cell.number_format = "0.0%"
-            elif j == 12:  # Sapma (%)
+            elif j == 12:  # Sapma (%) — M17: total_sapma zaten None
                 cell.alignment = _RIGHT
                 if total_sapma is not None and total_sapma != 0:
                     cell.number_format = "\"+\"0.0%;\"-\"0.0%"
-                    cell.font = Font(
-                        bold=True,
-                        color="047857" if total_sapma > 0 else "BE123C",
-                    )
+                    # M18: pozitif = kirmizi/bold, negatif = notr siyah.
+                    if total_sapma > 0:
+                        cell.font = Font(bold=True, color="BE123C")
                 else:
                     cell.number_format = "0.0%"
             elif j == 13:  # ton/konteyner
@@ -3869,10 +3870,11 @@ def _build_dolu_konteyner_ozeti_sheet(
                 if show_delta and col_idx == len(row_vals) \
                         and delta_val is not None and delta_val != 0:
                     cell.number_format = "\"+\"0.0%;\"-\"0.0%"
-                    cell.font = Font(
-                        bold=True,
-                        color="047857" if delta_val > 0 else "BE123C",
-                    )
+                    # M18: konteyner sayisi artmasi (pozitif) = kirmizi;
+                    # azalmasi (negatif) = notr siyah. Dolu artmak
+                    # stok/maliyet, istemiyoruz.
+                    if delta_val > 0:
+                        cell.font = Font(bold=True, color="BE123C")
 
     # TOPLAM satiri
     total_row_idx = ws.max_row + 1
@@ -3909,10 +3911,9 @@ def _build_dolu_konteyner_ozeti_sheet(
             if show_delta and col_idx == len(total_vals) \
                     and tot_delta is not None and tot_delta != 0:
                 cell.number_format = "\"+\"0.0%;\"-\"0.0%"
-                cell.font = Font(
-                    bold=True,
-                    color="047857" if tot_delta > 0 else "BE123C",
-                )
+                # M18: pozitif = kirmizi, negatif = notr.
+                if tot_delta > 0:
+                    cell.font = Font(bold=True, color="BE123C")
 
     # Alt aciklama satiri
     note_row = ws.max_row + 2
@@ -3976,7 +3977,10 @@ def _build_yari_mamul_tonaj_ozeti_sheet(
     # gecmisi baz almayi istedi. Yeterli hafta yoksa (< 2) sutunu atliyoruz.
     latest_wk = weeks[-1]
     prev_weeks = weeks[:-1]
-    show_delta_col = bool(prev_weeks)
+    # M19: "Önceki Haftalar Ortalama ve bu hafta karsilastirma" sutunu
+    # kullanicidan istegiyle kaldirildi. Delta hesap kodu bypassta;
+    # geri istenirse True yeter.
+    show_delta_col = False
 
     if show_delta_col:
         delta_label = "Önceki Haftalar Ortalama ve bu hafta karşılaştırma"
@@ -4829,28 +4833,16 @@ def build_week_excel(
     default_ws = wb.active
     wb.remove(default_ws)
 
-    # Executive summary — hafta karşılaştırması + doğal dil özet cümleler.
-    # 0. sırada oluşturuluyor ki dosya açılınca ilk gelen sayfa bu olsun.
-    _build_haftalik_analiz_sheet(
-        wb, all_weeks_rows or [], manual_aggs or [],
-    )
+    # M16: "Haftalık Analiz Özeti" ve "Üretim Yeri Özeti" sheet'leri
+    # kullanicidan "dosya cok kalabalik" geri bildirimi ile kaldirildi.
+    # Uretim Yeri Ozeti = Karsilastirma sheet'inin bu hafta tablosu ile
+    # aynı, redundant. Fonksiyon tanimlari kod'da (_build_haftalik_
+    # analiz_sheet, _build_uretim_yeri_ozeti_sheet) durur -- geri
+    # istenirse tek satir uncomment yeter.
     _build_renk_kirilim_sheet(wb, rows)
     # Kırılım sheet'i portal (count_submissions) bölüm bazlı veriyi
-    # gösterir; return değeri artık kullanılmıyor (Özet sheet'i M3/M4/M5
-    # fix'i sonrası kendi agregasyonunu yapıyor).
+    # gösterir; return değeri artik kullanilmiyor.
     _build_uretim_yeri_kirilim_sheet(wb, rows)
-    # Uretim Yeri Ozeti'ne bu hafta gecerli hedefleri geciriyoruz
-    # (Hedef Tonaj ve Sapma % sütunlari).
-    _selected_week_targets = None
-    if targets_by_week_site:
-        _selected_week_targets = targets_by_week_site.get(week_iso)
-    _build_uretim_yeri_ozeti_sheet(
-        wb,
-        all_weeks_rows or [], manual_aggs or [], week_iso,
-        week_targets=_selected_week_targets,
-        site_labels=site_labels,
-        ratios_by_site_id=ratios_by_site_id,
-    )
     _build_renk_ozeti_sheet(wb, rows)
     _build_dolu_yuk_ozeti_sheet(wb, all_weeks_rows or [], manual_aggs or [])
     # Dolu Konteyner Sayısı Özeti — Yük Özeti'nin hemen saginda (M14).
