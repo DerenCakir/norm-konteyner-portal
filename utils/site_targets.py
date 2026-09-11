@@ -90,8 +90,11 @@ def create_new_period(
     targets_by_site_id: dict[int, Decimal],
     created_by: int,
 ) -> list[SiteTonnageTarget]:
-    """Yeni dönem başlat: verilen tarihten itibaren siteler için hedefler
-    yazılır.
+    """UPSERT: verilen tarihten itibaren siteler için hedefler yazılır.
+
+    Var olan `(site, effective_from)` kaydı UPDATE edilir; yoksa INSERT.
+    Kullanici ayni tarihe defalarca kayit yapabilir -- unique constraint
+    hatasi vermez.
 
     Geçmişe dönük veya out-of-order girişi de destekler:
       • Önceki dönem (``effective_from < new_from``) kapsıyor mu (açık uçlu
@@ -100,10 +103,6 @@ def create_new_period(
       • Sonraki dönem (``effective_from > new_from``) var mı? → yeni
         kaydın ``effective_to``, o en yakın sonraki dönemin
         ``effective_from - 1``'ine set edilir (yoksa NULL — açık uçlu).
-
-    Aynı (site, effective_from) daha önce yazıldıysa hata verir
-    (UniqueConstraint). Bu davranış istenerek — kullanıcı önce eski
-    kaydı düzeltmeli / silmeli.
     """
     if effective_from is None:
         raise ValueError("effective_from gerekli")
@@ -115,7 +114,9 @@ def create_new_period(
 
     site_ids = list(targets_by_site_id.keys())
 
-    # 1) Önceki dönemleri kapat (yeni_from < mevcut kapsam ise)
+    # 1) Önceki dönemleri kapat (yeni_from < mevcut kapsam ise).
+    #    NOT: Ayni effective_from'a esit olanlar burada dokunulmuyor --
+    #    onlar asagida UPSERT ile update ediliyor.
     prev_stmt = select(SiteTonnageTarget).where(
         SiteTonnageTarget.production_site_id.in_(site_ids),
         SiteTonnageTarget.effective_from < effective_from,
@@ -139,23 +140,44 @@ def create_new_period(
         if sid not in next_start_by_site:
             next_start_by_site[sid] = row.effective_from
 
-    # 3) Yeni kayıtları ekle
-    created: list[SiteTonnageTarget] = []
+    # 3) Ayni (site, effective_from) icin mevcut kayitlari cek (UPSERT
+    #    icin update etmek uzere).
+    existing_stmt = select(SiteTonnageTarget).where(
+        SiteTonnageTarget.production_site_id.in_(site_ids),
+        SiteTonnageTarget.effective_from == effective_from,
+    )
+    existing_by_site: dict[int, SiteTonnageTarget] = {
+        row.production_site_id: row
+        for row in session.scalars(existing_stmt)
+    }
+
+    # 4) UPSERT — var olan kayitlari UPDATE, yenileri INSERT
+    created_or_updated: list[SiteTonnageTarget] = []
     for site_id, ton in targets_by_site_id.items():
         next_start = next_start_by_site.get(site_id)
         eff_to = (next_start - timedelta(days=1)) if next_start else None
-        row = SiteTonnageTarget(
-            production_site_id=site_id,
-            weekly_target_ton=ton,
-            effective_from=effective_from,
-            effective_to=eff_to,
-            created_by=created_by,
-        )
-        session.add(row)
-        created.append(row)
+
+        existing = existing_by_site.get(site_id)
+        if existing is not None:
+            # UPDATE — kullanicinin yeni girdigi degeri yaz.
+            existing.weekly_target_ton = ton
+            existing.effective_to = eff_to
+            existing.created_by = created_by
+            created_or_updated.append(existing)
+        else:
+            # INSERT — yeni kayit
+            row = SiteTonnageTarget(
+                production_site_id=site_id,
+                weekly_target_ton=ton,
+                effective_from=effective_from,
+                effective_to=eff_to,
+                created_by=created_by,
+            )
+            session.add(row)
+            created_or_updated.append(row)
 
     session.flush()
-    return created
+    return created_or_updated
 
 
 def get_targets_by_week_site(

@@ -1094,13 +1094,17 @@ if _is_active("targets"):
 
     default_start = _next_monday(_date.today())
     with st.form("new_target_period_form", clear_on_submit=False):
+        # key=... ekli -> Streamlit widget internal state'i tutarli;
+        # rerun sonrasi UI ve submit'te giden deger ayni olur.
         start_date = st.date_input(
             "Geçerlilik Tarihi (Pazartesi)",
             value=default_start,
             min_value=_date(2020, 1, 6),
+            key="new_target_start_date",
             help=(
                 "Bu tarih dahil olmak üzere yeni hedefler geçerli — "
-                "siz tekrar değiştirene kadar. Geçmiş tarih seçebilirsiniz."
+                "siz tekrar değiştirene kadar. Geçmiş tarih seçebilirsiniz. "
+                "Aynı tarihe tekrar giriş yaparsanız mevcut hedef güncellenir."
             ),
         )
         st.markdown("**Üretim yeri hedefleri (ton):**")
