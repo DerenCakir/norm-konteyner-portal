@@ -3176,7 +3176,16 @@ def _build_uretim_yeri_karsilastirma_sheet(
     # are included with a 'Manuel veri' tag in the title so admins know
     # the Kanban / Hurda / Tonaj columns will be zero by design (those
     # fields don't exist in the historical input).
-    weeks = sorted(weekly_site.keys(), reverse=True)
+    # Sayim verisi olan haftalar + hedef girilen haftalar birlesimi.
+    # Hedef girilmis ama sayimi olmayan hafta icin de tablo cizilir
+    # (tesis satirlari 0, sadece Hedef sutunlari dolu gorunur).
+    _target_only_weeks = set(
+        (targets_by_week_site or {}).keys()
+    ) - set(weekly_site.keys())
+    weeks = sorted(
+        set(weekly_site.keys()) | _target_only_weeks,
+        reverse=True,
+    )
 
     sub_headers = [
         "Üretim Yeri", "Boş", "Proseste", "Dolu", "Dolu içindeki Kanban",
@@ -3249,7 +3258,19 @@ def _build_uretim_yeri_karsilastirma_sheet(
                     bold=True, color="FFFFFF", italic=True, size=11,
                 )
 
-        sites_in_week = weekly_site[w]
+        sites_in_week = dict(weekly_site.get(w, {}))
+        # Target-only hafta: sayim verisi yok ama hedef girilmis. Hedefi
+        # olan tesisler icin synthetic satirlar ekle (butun metrikler 0,
+        # Hedef Tonaj sutunu dolu gorunecek).
+        _week_tgts_here = (targets_by_week_site or {}).get(w, {})
+        if not sites_in_week and _week_tgts_here and site_labels:
+            for _sid_t in _week_tgts_here:
+                _, _sname_t = site_labels.get(_sid_t, (None, None))
+                if _sname_t:
+                    sites_in_week[_sname_t] = {
+                        "empty": 0, "wip": 0, "full": 0, "kanban": 0,
+                        "scrap": 0, "rondela": 0, "tonnage": 0.0,
+                    }
         grand_total_bdh = sum(
             s["empty"] + s.get("wip", 0) + s["full"] + s["scrap"] + s.get("rondela", 0)
             for s in sites_in_week.values()

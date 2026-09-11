@@ -49,6 +49,7 @@ from utils.cached_queries import (
 )
 from utils.excel_export import build_all_weeks_excel, build_week_excel
 from utils.site_targets import (
+    all_target_effective_weeks,
     create_new_period as create_target_period,
     delete_target as delete_site_target,
     get_all_site_labels,
@@ -2319,11 +2320,16 @@ if _is_active("excel"):
         manual_aggs = get_manual_site_aggregates()
         # Hedef vs Gerçekleşen sheet'i için: her hafta için o haftanın
         # Pazartesi'sinde geçerli hedefleri topla.
-        _weeks_in_export = sorted({
+        _weeks_in_export = {
             r["Hafta"] for r in all_weeks_rows
             if r.get("Hafta")
-        })
+        }
+        # Hedef girilen ama sayimi olmayan haftalari da dahil et --
+        # Karsilastirma sheet'inde bu haftalar icin tablo olusur, tesis
+        # satirlari 0 olur ama Hedef Tonaj sutunu dolu gorunur.
         with get_session() as _s:
+            _target_weeks = all_target_effective_weeks(_s)
+            _weeks_in_export = sorted(_weeks_in_export | set(_target_weeks))
             excel_targets = get_targets_by_week_site(_s, _weeks_in_export)
             excel_site_labels = get_all_site_labels(_s)
             # Site oranlari: hedef konteyner adet hesabi icin (Excel'de

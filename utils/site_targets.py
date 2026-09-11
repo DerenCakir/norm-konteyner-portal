@@ -197,6 +197,24 @@ def get_targets_by_week_site(
     return result
 
 
+def all_target_effective_weeks(session: Session) -> list[str]:
+    """Hedef girilen tum effective_from tarihlerini ISO haftaya cevirir.
+
+    Kullanici hedef girerken sectigi Pazartesi'ler burada listelenir --
+    Excel export'a bu haftalari dahil edip Karsilastirma sheet'inde
+    tablo cizmemizi saglar (sayim verisi olmasa dahi).
+    """
+    from utils.week import week_iso_from_date
+    stmt = select(SiteTonnageTarget.effective_from).distinct()
+    weeks: set[str] = set()
+    for eff_from in session.scalars(stmt):
+        try:
+            weeks.add(week_iso_from_date(eff_from))
+        except Exception:
+            continue
+    return sorted(weeks)
+
+
 def get_all_site_labels(session: Session) -> dict[int, tuple[str, str]]:
     """{site_id: (code, name)} — aktif tüm üretim yerleri."""
     from db.models import ProductionSite
