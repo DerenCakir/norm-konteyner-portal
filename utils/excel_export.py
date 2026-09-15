@@ -3297,15 +3297,13 @@ def _build_uretim_yeri_karsilastirma_sheet(
             if hedef and hedef > 0:
                 sapma = (agg["tonnage"] - hedef) / hedef
             # Site sabit orani (Excel upload icin dolu = ceil(ton/oran)
-            # hesabinda kullaniliyor). Ton/kont hesabinda W31+ haftalarda
-            # dinamik ton/dolu yerine sabit orani gostersin.
+            # hesabinda kullaniliyor).
             _r_here = ratios_by_site_id.get(sid) if sid is not None else None
             # Dolu Konteyner Basina Yuk:
-            # - W31+ hafta ve tesisin oranı var -> SABIT oran (kullanicinin
-            #   talebi: dolu Excel upload'dan hesaplandigi icin ton/kont
-            #   zaten oran kadar; "sabit 0.42" gibi tutarli goster).
-            # - Diger durumlar -> dinamik ton/full (eski davranis).
-            if _is_computed and _r_here and _r_here > 0:
+            # - Tesisin site orani varsa -> SABIT oran (tum haftalarda,
+            #   kullanicinin talebi: Lojistik icin 0.42 gibi tutarli goster).
+            # - Site orani yoksa -> dinamik ton/full (eski davranis).
+            if _r_here and _r_here > 0:
                 ton_per = float(_r_here)
             else:
                 ton_per = (agg["tonnage"] / agg["full"]) if agg["full"] else 0
@@ -3368,23 +3366,28 @@ def _build_uretim_yeri_karsilastirma_sheet(
                 totals["hedef"] += float(hedef)
 
         total_row = header_row + 1 + len(sites_in_week)
-        # TOPLAM Dolu Konteyner Basina Yuk:
-        # - W31+ hafta -> tonaj-agirlikli tesis oran ortalamasi (tesis
-        #   satirlariyla tutarli, "sabit 0.42" mantigi).
-        # - Diger -> dinamik toplam tonaj / toplam dolu.
-        if _is_computed:
-            _r_sum, _t_sum = 0.0, 0.0
-            for _site_t, _agg_t in sites_in_week.items():
-                _sid_t = name_to_id.get(_site_t)
-                _rt = ratios_by_site_id.get(_sid_t) if _sid_t is not None else None
-                _ton_t = float(_agg_t.get("tonnage", 0.0) or 0.0)
-                if _rt and _rt > 0 and _ton_t > 0:
-                    _r_sum += float(_rt) * _ton_t
-                    _t_sum += _ton_t
-            if _t_sum > 0:
-                ton_per_total = _r_sum / _t_sum
+        # TOPLAM Dolu Konteyner Basina Yuk (tum haftalarda):
+        # Tesis satirlariyla tutarli olsun diye her tesis icin effective
+        # ratio (site oranı varsa oran, yoksa dinamik ton/dolu),
+        # tonaj-agirlikli ortalama.
+        _wsum, _wtot = 0.0, 0.0
+        for _site_t, _agg_t in sites_in_week.items():
+            _ton_t = float(_agg_t.get("tonnage", 0.0) or 0.0)
+            if _ton_t <= 0:
+                continue
+            _sid_t = name_to_id.get(_site_t)
+            _rt = ratios_by_site_id.get(_sid_t) if _sid_t is not None else None
+            _full_t = int(_agg_t.get("full", 0) or 0)
+            if _rt and _rt > 0:
+                _eff = float(_rt)
+            elif _full_t > 0:
+                _eff = _ton_t / _full_t
             else:
-                ton_per_total = (totals["tonnage"] / totals["full"]) if totals["full"] else 0
+                continue
+            _wsum += _eff * _ton_t
+            _wtot += _ton_t
+        if _wtot > 0:
+            ton_per_total = _wsum / _wtot
         else:
             ton_per_total = (totals["tonnage"] / totals["full"]) if totals["full"] else 0
         total_hedef = totals["hedef"] if totals["hedef"] > 0 else None
